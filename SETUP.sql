@@ -60,8 +60,8 @@
 *   log_change() RETURNS trigger
 *
 ***********************************************************/
-DROP SCHEMA IF EXISTS audit CASCADE;
-CREATE SCHEMA audit;
+DROP SCHEMA IF EXISTS pgmemento CASCADE;
+CREATE SCHEMA pgmemento;
 
 /***********************************************************
 CREATE TABLES
@@ -486,7 +486,7 @@ LANGUAGE plpgsql;
 * The functions creates an empty copy of the table that will be
 * changed (which means it has to be executed before the change).
 * Every created copy is documented (with timestamp) in the 
-* table_templates table within the audit schema.
+* table_templates table within the pgmemento schema.
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_table_template(
   original_table_name TEXT,

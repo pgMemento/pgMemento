@@ -44,7 +44,7 @@
 * If a table state is produced as a base table it will not have
 * a primary key. The primary key might be reconstruced by
 * querying the recent primary key of the table. If no primary
-* can be redefined the pgmemento_id column will be used.
+* can be redefined the audit_id column will be used.
 ***********************************************************/
 -- define a primary key for a produced table
 CREATE OR REPLACE FUNCTION pgmemento.pkey_table_state( 
@@ -65,8 +65,8 @@ BEGIN
                INTO pkey_columns USING '"' || original_schema_name || '".' || table_name;
 
   IF length(pkey_columns) = 0 THEN
-    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''pgmemento_id'' will be used as primary key.', table_name;
-    pkey_columns := 'pgmemento_id';
+    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''audit_id'' will be used as primary key.', table_name;
+    pkey_columns := 'audit_id';
   END IF;
 
   EXECUTE format('ALTER TABLE %I.%I ADD CONSTRAINT %I_PK PRIMARY KEY (' || pkey_columns || ')', target_schema_name, table_name, table_name);

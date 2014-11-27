@@ -248,7 +248,7 @@ BEGIN
         template_schema := original_schema_name;
         template_table := original_table_name;
       ELSE
-        template_schema := 'audit';
+        template_schema := 'pgmemento';
       END IF;
 
       -- let's go back in time - restore a table state at a given date
