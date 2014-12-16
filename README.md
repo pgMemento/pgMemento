@@ -72,9 +72,10 @@ them *shameonme* and can not tell you exactly how they differ from pgMemento.
 I might have directly copied some elements of these tools, therefore I'm
 now referencing tools where I looked up details:
 
-* [pgMemento trigger 91plus](http://wiki.postgresql.org/wiki/pgMemento_trigger_91plus) by ringerc
+* [audit trigger 91plus](http://wiki.postgresql.org/wiki/audit_trigger_91plus) by ringerc
 * [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum
-* [Cyan pgMemento](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen
+* [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen
+* [wingspan-auditing] (https://github.com/wingspan/wingspan-auditing) by Gary Sieling
 
 
 5. How To
