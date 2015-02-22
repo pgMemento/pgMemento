@@ -16,8 +16,8 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                       | Author
--- 0.2.0     2014-05-22   some intermediate version           FKun
+-- Version | Date       | Description                                   | Author
+-- 0.1.0     2014-11-26   initial commit                                  FKun
 --
 
 /**********************************************************

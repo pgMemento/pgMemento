@@ -9,34 +9,35 @@
 -------------------------------------------------------------------------------
 -- About:
 -- This script provides functions to set up pgMemento for a schema in an 
--- PostgreSQL 9.3+ database.
+-- PostgreSQL 9.4+ database.
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                       | Author
--- 0.2.0     2014-05-26   some intermediate version           FKun
+-- Version | Date       | Description                                    | Author
+-- 0.2.0     2015-02-21   new table structure, more triggers and JSONB     FKun
+-- 0.1.0     2014-11-26   initial commit                                   FKun
 --
 
 /**********************************************************
 * C-o-n-t-e-n-t:
 *
-* AUDIT SCHEMA
+* PGMEMENTO SCHEMA
 *   Addtional schema that contains the log tables and
 *   all functions to enable versioning of the database.
 *
 * TABLES:
-*   audit_log
+*   row_log
+*   table_event_log
 *   table_templates
 *   transaction_log
 *
 * INDEXES:
-*   transaction_log_internal_idx;
-*   transaction_log_op_idx;
-*   transaction_log_table_idx;
 *   transaction_log_date_idx;
-*   audit_log_internal_idx;
-*   audit_log_audit_idx;
+*   table_event_log_txid_idx;
+*   table_event_log_op_idx;
+*   row_log_table_idx;
+*   row_log_audit_idx;
 *   templates_table_idx;
 *   templates_date_idx;
 *
@@ -57,7 +58,11 @@
 *   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *
 * TRIGGER FUNCTIONS
-*   log_change() RETURNS trigger
+*   log_delete() RETURNS trigger
+*   log_insert() RETURNS trigger
+*   log_tansactions RETURNS trigger
+*   log_truncate() RETURNS trigger
+*   log_update() RETURNS trigger
 *
 ***********************************************************/
 DROP SCHEMA IF EXISTS pgmemento CASCADE;
@@ -67,39 +72,47 @@ CREATE SCHEMA pgmemento;
 CREATE TABLES
 
 ***********************************************************/
--- transaction metadata is logged into the into the transaction_log table
+-- transaction metadata is logged into the transaction_log table
 DROP TABLE IF EXISTS pgmemento.transaction_log CASCADE;
 CREATE TABLE pgmemento.transaction_log
 (
-  id SERIAL,
-  internal_transaction_id BIGINT,
-  table_operation TEXT,
-  schema_name TEXT,
-  table_name TEXT,
-  table_relid OID,
+  txid BIGINT,
   stmt_date TIMESTAMP,
   user_name TEXT,
-  client_name TEXT,
-  application_name TEXT
+  client_name TEXT
 );
 
 ALTER TABLE pgmemento.transaction_log
-ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id);
+ADD CONSTRAINT transaction_log_pk PRIMARY KEY (txid);
 
--- all row changes are logged into the audit_log table
-DROP TABLE IF EXISTS pgmemento.audit_log CASCADE;
-CREATE TABLE pgmemento.audit_log
+-- eventy on tables are logged into the table_event_log table
+DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
+CREATE TABLE pgmemento.table_event_log
 (
   id SERIAL,
-  internal_transaction_id BIGINT,
-  table_relid OID,
-  stmt_date TIMESTAMP,
-  audit_id INTEGER,
-  table_content JSON
+  transaction_id BIGINT,
+  op_id SMALLINT,
+  table_operation VARCHAR(8),
+  schema_name TEXT,
+  table_name TEXT,
+  table_relid OID
 );
 
-ALTER TABLE pgmemento.audit_log
-ADD CONSTRAINT audit_log_pk PRIMARY KEY (id);
+ALTER TABLE pgmemento.table_event_log
+ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
+
+-- all row changes are logged into the row_log table
+DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
+CREATE TABLE pgmemento.row_log
+(
+  id BIGSERIAL,
+  event_id INTEGER,
+  audit_id BIGINT,
+  changes JSONB
+);
+
+ALTER TABLE pgmemento.row_log
+ADD CONSTRAINT row_log_pk PRIMARY KEY (id);
 
 -- need to somehow log the structure of a table
 DROP TABLE IF EXISTS pgmemento.table_templates CASCADE;
@@ -110,34 +123,61 @@ CREATE TABLE pgmemento.table_templates
   original_schema TEXT,
   original_table TEXT,
   original_relid OID,
-  creation_date TIMESTAMP
+  creation_date TIMESTAMP WITH TIME ZONE
 );
 
 ALTER TABLE pgmemento.table_templates
 ADD CONSTRAINT table_templates_pk PRIMARY KEY (id);
 
+-- create constraints
+ALTER TABLE pgmemento.table_event_log
+  ADD CONSTRAINT table_event_constraint UNIQUE (transaction_id, table_relid, op_id),
+  ADD CONSTRAINT table_event_log_txid_fk FOREIGN KEY (transaction_id)
+    REFERENCES pgmemento.transaction_log (txid) MATCH FULL
+    ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE pgmemento.row_log
+  ADD CONSTRAINT row_log_table_fk FOREIGN KEY (event_id)
+    REFERENCES pgmemento.table_event_log (id) MATCH FULL
+    ON DELETE RESTRICT ON UPDATE CASCADE;
+
 -- create indexes on all columns that are queried later
-DROP INDEX IF EXISTS transaction_log_internal_idx;
-DROP INDEX IF EXISTS transaction_log_op_idx;
-DROP INDEX IF EXISTS transaction_log_table_idx;
 DROP INDEX IF EXISTS transaction_log_date_idx;
-DROP INDEX IF EXISTS audit_log_internal_idx;
-DROP INDEX IF EXISTS audit_log_audit_idx;
+DROP INDEX IF EXISTS table_event_log_txid_idx;
+DROP INDEX IF EXISTS table_event_log_op_idx;
+DROP INDEX IF EXISTS row_log_table_idx;
+DROP INDEX IF EXISTS row_log_audit_idx;
 DROP INDEX IF EXISTS templates_table_idx;
 DROP INDEX IF EXISTS templates_date_idx;
 
-CREATE INDEX transaction_log_internal_idx ON pgmemento.transaction_log (internal_transaction_id, table_relid, stmt_date);
-CREATE INDEX transaction_log_op_idx ON pgmemento.transaction_log (table_operation);
-CREATE INDEX transaction_log_table_idx ON pgmemento.transaction_log (schema_name, table_name);
-CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log (stmt_date);
-CREATE INDEX audit_log_internal_idx ON pgmemento.audit_log (internal_transaction_id, table_relid, stmt_date);
-CREATE INDEX audit_log_audit_idx ON pgmemento.audit_log (audit_id);
-CREATE INDEX templates_table_idx ON pgmemento.table_templates (original_schema, original_table);
-CREATE INDEX templates_date_idx ON pgmemento.table_templates (creation_date);
+CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
+CREATE INDEX table_event_log_txid_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
+CREATE INDEX table_event_log_op_idx ON pgmemento.table_event_log USING BTREE (op_id);
+CREATE INDEX table_event_table_idx ON pgmemento.table_event_log USING BTREE (table_relid);
+CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
+CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
+CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
+CREATE INDEX templates_table_idx ON pgmemento.table_templates USING BTREE (original_schema, original_table);
+CREATE INDEX templates_date_idx ON pgmemento.table_templates USING BTREE (creation_date);
 
 
+/***********************************************************
+CREATE SEQUENCE
+
+***********************************************************/
+DROP SEQUENCE IF EXISTS pgmemento.audit_id_seq;
+CREATE SEQUENCE pgmemento.audit_id_seq
+	INCREMENT BY 1
+	MINVALUE 0
+	MAXVALUE 2147483647
+	START WITH 1
+	CACHE 1
+	NO CYCLE
+	OWNED BY NONE;
+
+	
 /**********************************************************
-* ENABLE/DISABLE AUDIT
+* ENABLE/DISABLE PGMEMENTO
 *
 * Enables/disables pgMemento for a specified table/schema.
 ***********************************************************/
@@ -217,12 +257,16 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('CREATE TRIGGER log_trigger AFTER INSERT OR UPDATE OR DELETE ON %I.%I
-                    FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_change()', schema_name, table_name);
+  EXECUTE format('CREATE TRIGGER log_transaction_trigger BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON %I.%I
+                    FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_transaction()', schema_name, table_name);
   EXECUTE format('CREATE TRIGGER log_truncate_trigger BEFORE TRUNCATE ON %I.%I
-                    FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_change()', schema_name, table_name);
-  EXECUTE format('CREATE TRIGGER log_transaction_trigger AFTER INSERT OR UPDATE OR DELETE ON %I.%I
-                    FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_change()', schema_name, table_name);
+                    FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_truncate()', schema_name, table_name);
+  EXECUTE format('CREATE TRIGGER log_insert_trigger AFTER INSERT ON %I.%I
+                    FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert()', schema_name, table_name);
+  EXECUTE format('CREATE TRIGGER log_update_trigger AFTER UPDATE ON %I.%I
+                    FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update()', schema_name, table_name);
+  EXECUTE format('CREATE TRIGGER log_delete_trigger AFTER DELETE ON %I.%I
+                    FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_delete()', schema_name, table_name);
 END;
 $$
 LANGUAGE plpgsql;
@@ -248,7 +292,9 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('DROP TRIGGER IF EXISTS log_trigger ON %I.%I', schema_name, table_name);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schema_name, table_name);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schema_name, table_name);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schema_name, table_name);
   EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schema_name, table_name);
   EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schema_name, table_name);
 END;
@@ -283,7 +329,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN audit_id SERIAL', schema_name, table_name);
+  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(%L::regclass)', schema_name, table_name, 'pgmemento.audit_id_seq');
   EXECUTE format('CREATE INDEX %I ON %I.%I (audit_id)', table_name || '_audit_idx', schema_name, table_name); 
 END;
 $$
@@ -332,86 +378,162 @@ LANGUAGE plpgsql;
 
 
 /**********************************************************
-* TRIGGER PROCEDURE log_change
+* TRIGGER PROCEDURE log_transaction
 *
-* Procedure that is called when a trigger events are fired.
-* Metadata of each statement is written to the transaction_log table. 
-* Row-level changes are written to the audit_log table.
-*   - INSERTs will be logged without specifying the content
-*   - UPDATEs will produce a diff between OLD and NEW 
-*     saving OLD values as JSON into the audit_log_table
-*   - DELETEs and TRUNCATEs will log the complete row as JSON.
+* Procedure that is called when a log_transaction_trigger is fired.
+* Metadata of each transaction is written to the transaction_log table.
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.log_change() RETURNS trigger AS
+CREATE OR REPLACE FUNCTION pgmemento.log_transaction() RETURNS trigger AS
 $$
 DECLARE
-  rec RECORD;
-  logged INTEGER := 0;
-  json_diff JSON;
+  operation_id SMALLINT;
 BEGIN
-  -- handle statement-level trigger events
-  IF TG_LEVEL = 'STATEMENT' THEN
-    -- log row content affect by a TRUNCATE operation
-    IF TG_OP = 'TRUNCATE' THEN
-      FOR rec IN EXECUTE format('SELECT * FROM %I', TG_TABLE_NAME) LOOP
-        EXECUTE 'INSERT INTO pgmemento.audit_log 
-                   (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
-                 VALUES 
-                   (nextval(''pgmemento.AUDIT_LOG_ID_SEQ''), txid_current(), $1, statement_timestamp()::timestamp, $2, $3)' 
-                 USING TG_RELID, rec.audit_id, row_to_json(OLD);
-      END LOOP;
-    END IF;
+  BEGIN
+    -- log transaction
+    INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
+      VALUES (txid_current(), statement_timestamp()::timestamp, current_user, inet_client_addr());
 
-    -- log statement if not already happened during current transaction
-    EXECUTE 'SELECT 1 FROM pgmemento.transaction_log
-               WHERE (internal_transaction_id = $1 AND table_relid = $2 AND stmt_date = statement_timestamp()::timestamp)
-                 AND table_operation = $3'
-                 INTO logged USING txid_current(), TG_RELID, TG_OP;
+    EXCEPTION
+      WHEN unique_violation THEN
+	    NULL;
+  END;
 
-    IF logged IS NULL THEN
-      EXECUTE 'INSERT INTO pgmemento.transaction_log
-                 (id, internal_transaction_id, table_operation, schema_name, table_name, table_relid,
-                  stmt_date, user_name, client_name, application_name) 
-               VALUES
-                 (nextval(''pgmemento.TRANSACTION_LOG_ID_SEQ''), txid_current(), $1, $2, $3, $4,
-                  statement_timestamp()::timestamp, current_user, inet_client_addr(), 
-                  (SELECT setting FROM pg_settings WHERE name = ''application_name''))'
-               USING TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_RELID;
-    END IF;
-  -- handle row-level trigger events
-  ELSE
-    IF TG_OP = 'INSERT' THEN
-      EXECUTE 'INSERT INTO pgmemento.audit_log
-                 (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
-               VALUES 
-                 (nextval(''pgmemento.AUDIT_LOG_ID_SEQ''), txid_current(), $1, statement_timestamp()::timestamp, $2, NULL)' 
-               USING TG_RELID, NEW.audit_id;
+  CASE TG_OP
+    WHEN 'INSERT' THEN operation_id := 1;
+	WHEN 'UPDATE' THEN operation_id := 2;
+    WHEN 'DELETE' THEN operation_id := 3;
+	WHEN 'TRUNCATE' THEN operation_id := 4;
+  END CASE;
 
-	ELSIF TG_OP = 'UPDATE' THEN
-      EXECUTE 'SELECT pgmemento.build_json(array_agg(to_json(old.key)), array_agg(old.value)) FROM json_each($1) old
-                 LEFT OUTER JOIN json_each($2) new ON old.key = new.key
-                   WHERE old.value::text <> new.value::text OR new.key IS NULL
-		   HAVING array_agg(to_json(old.key)) IS NOT NULL
-		   AND array_agg(old.value) IS NOT NULL' 
-                   INTO json_diff USING row_to_json(OLD), row_to_json(NEW);
-                   
-	IF json_diff IS NOT NULL THEN
+  BEGIN
+    EXECUTE 'INSERT INTO pgmemento.table_event_log
+               (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+             VALUES
+               (txid_current(), $1, $2, $3, $4, $5)'
+               USING operation_id, TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_RELID;
 
-      EXECUTE 'INSERT INTO pgmemento.audit_log
-                 (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
-               VALUES 
-                 (nextval(''pgmemento.AUDIT_LOG_ID_SEQ''), txid_current(), $1, statement_timestamp()::timestamp, $2, $3)' 
-               USING TG_RELID, NEW.audit_id, json_diff;
-        END IF;
+    EXCEPTION
+      WHEN unique_violation THEN
+	    NULL;
+  END;
 
-	ELSIF TG_OP = 'DELETE' THEN
-      EXECUTE 'INSERT INTO pgmemento.audit_log
-                 (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
-               VALUES 
-                 (nextval(''pgmemento.AUDIT_LOG_ID_SEQ''), txid_current(), $1, statement_timestamp()::timestamp, $2, $3)' 
-               USING TG_RELID, OLD.audit_id, row_to_json(OLD);
-    END IF;
-  END IF;
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* TRIGGER PROCEDURE log_truncate
+*
+* Procedure that is called when a log_truncate_trigger is fired.
+* Table pgmemento.row_log is filled up with entries of truncated table.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.log_truncate() RETURNS trigger AS
+$$
+DECLARE
+  e_id INTEGER;
+BEGIN
+  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
+             WHERE transaction_id = txid_current() 
+               AND table_relid = $1
+               AND op_id = 4'
+               INTO e_id USING TG_RELID;
+
+  EXECUTE format('INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+                    SELECT %L, audit_id, row_to_json(%I)::jsonb AS content FROM %I.%I',
+                    e_id, TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME);
+
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* TRIGGER PROCEDURE log_insert
+*
+* Procedure that is called when a log_insert_trigger is fired.
+* Table pgmemento.row_log is filled up with inserted entries
+* without specifying the content.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.log_insert() RETURNS trigger AS
+$$
+DECLARE
+  e_id INTEGER;
+BEGIN
+  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
+             WHERE transaction_id = txid_current() 
+               AND table_relid = $1
+               AND op_id = 1'
+               INTO e_id USING TG_RELID;
+
+  EXECUTE 'INSERT INTO pgmemento.row_log (event_id, audit_id)
+             VALUES ($1, $2)'
+             USING e_id, NEW.audit_id;
+			 
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* TRIGGER PROCEDURE log_update
+*
+* Procedure that is called when a log_update_trigger is fired.
+* Table pgmemento.row_log is filled up with updated entries
+* but logging only the difference between OLD and NEW.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
+$$
+DECLARE
+  e_id INTEGER;
+  json_diff JSONB;
+BEGIN
+  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
+             WHERE transaction_id = txid_current() 
+               AND table_relid = $1
+               AND op_id = 2'
+               INTO e_id USING TG_RELID;
+
+  EXECUTE format('WITH json_diff AS (
+                    SELECT COALESCE(
+                     (SELECT (''{'' || string_agg(to_json(key) || '':'' || value, '','') || ''}'') FROM jsonb_each(%L::jsonb)
+                        WHERE NOT (''{'' || to_json(key) || '':'' || value || ''}'')::jsonb <@ %L),
+                      ''{}'')::jsonb AS delta
+                  )
+				  INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+                    SELECT %L, %L, delta FROM json_diff',
+	                row_to_json(OLD), row_to_json(NEW), e_id, NEW.audit_id);
+
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* TRIGGER PROCEDURE log_delete
+*
+* Procedure that is called when a log_delete_trigger is fired.
+* Table pgmemento.row_log is filled up with deleted entries
+* including the complete row as JSONB.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.log_delete() RETURNS trigger AS
+$$
+DECLARE
+  e_id INTEGER;
+BEGIN
+  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
+             WHERE transaction_id = txid_current() 
+               AND table_relid = $1
+               AND op_id = 3'
+               INTO e_id USING TG_RELID;
+
+  EXECUTE 'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+             VALUES ($1, $2, $3)'
+             USING e_id, OLD.audit_id, row_to_json(OLD)::jsonb;
 
   RETURN NULL;
 END;
@@ -425,36 +547,50 @@ LANGUAGE plpgsql;
 * Log table content in the audit_log table (as inserted values)
 * to have a baseline for table versioning.
 **********************************************************/
--- log all rows of a table in the audit_log table as inserted values
+-- log all rows of a table in the row_log table as inserted values
 CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
   original_table_name TEXT,
   original_schema_name TEXT DEFAULT 'public'
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  transaction_id BIGINT;
-  rec RECORD;
+  row_count INTEGER;
+  e_id INTEGER;
 BEGIN
-  transaction_id := txid_current();
+  EXECUTE format('SELECT count(*) FROM %I.%I', original_schema_name, original_table_name)
+            INTO row_count;
 
-  -- fill transaction_log table  
-  EXECUTE 'INSERT INTO pgmemento.transaction_log 
-             (id, internal_transaction_id, table_operation, schema_name, table_name, table_relid,
-              stmt_date, user_name, client_name, application_name) 
-           VALUES (nextval(''pgmemento.TRANSACTION_LOG_ID_SEQ''), $1, ''INSERT'', $2, $3, $4::regclass::oid,
-             statement_timestamp()::timestamp, current_user, inet_client_addr(), 
-             (SELECT setting FROM pg_settings WHERE name = ''application_name''))'
-           USING transaction_id, original_schema_name, original_table_name, 
-                 original_schema_name || '.' || original_table_name;
+  IF row_count <> 0 THEN
+    BEGIN
+      -- fill transaction_log table 
+      INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
+        VALUES (txid_current(), statement_timestamp()::timestamp, current_user, inet_client_addr());
 
-  -- fill audit_log table  
-  FOR rec IN EXECUTE format('SELECT * FROM %I.%I', original_schema_name, original_table_name) LOOP
-    EXECUTE 'INSERT INTO pgmemento.audit_log
-               (id, internal_transaction_id, table_relid, stmt_date, audit_id, table_content)
-             VALUES 
-               (nextval(''pgmemento.AUDIT_LOG_ID_SEQ''), $1, $2::regclass::oid, statement_timestamp()::timestamp, $3, NULL)' 
-             USING transaction_id, original_schema_name || '.' || original_table_name, rec.audit_id;
-  END LOOP;
+      EXCEPTION
+        WHEN unique_violation THEN
+	      NULL;
+    END;
+
+    BEGIN
+      -- fill table_event_log table  
+      EXECUTE 'INSERT INTO pgmemento.table_event_log
+                 (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+               VALUES
+                 (txid_current(), 1, ''INSERT'', $1, $2, $3::regclass::oid)
+               RETURNING id' INTO e_id
+                 USING original_schema_name, original_table_name, original_schema_name || '.' || original_table_name;
+
+      EXCEPTION
+        WHEN unique_violation THEN
+	      NULL;
+    END;
+
+    IF e_id IS NOT NULL THEN
+      EXECUTE format('INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+                        SELECT %L, audit_id, NULL::jsonb AS changes FROM %I.%I',
+                        e_id, original_schema_name, original_table_name);
+    END IF;
+  END IF;
 END;
 $$
 LANGUAGE plpgsql;

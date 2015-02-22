@@ -36,8 +36,10 @@ down somewhere. From these notes it can figure out, how a past state might have
 looked like.
 
 pgMemento is a bunch of PL/pgSQL scripts that enable auditing of a PostgreSQL
-database. I take extensive use of JSON functions to log my data. Thus
-version 9.3 or higher is needed.
+database. I take extensive use of JSON/JSONB functions to log my data. Thus
+version 9.4 or higher is needed. I also PL/V8 to work with the JSON-logs on
+the server side. This extension has to be installed on the server. Downloads
+can be found [here](http://pgxn.org/dist/plv8/1.4.3/) [or here](http://www.postgresonline.com/journal/archives/341-PLV8-binaries-for-PostgreSQL-9.4-windows-both-32-bit-and-64-bit.html).
 
 As I'm on schemaless side with JSON one audit table is enough to save 
 all changes of all my tables. I do not need to care a lot about the 
@@ -47,7 +49,14 @@ For me, the main advantage using JSON is the ability to convert table rows
 to one column and populate them back to sets of records without losing 
 information on the data types. This is very handy when creating a past
 table state. I think the same applies to the PostgreSQL extension hstore
-so pgMemento could also be realized using hstore except JSON.
+so pgMemento could also be realized using hstore except JSONB.
+
+But taking a look into the past of the database is not the main motivation.
+In the future everybody will use logical decoding for that, I guess. With pgMemento
+the user shall be able to rollback certain transactions happended in the past.
+I want to design a logic that checks if a transactions can be reverted in order
+that it fits to following transactions, eg. a DELETE is simple, but what about
+reverting an UPDATE on data that has been deleted later anyway? 
 
 For further reading please consider that pgMemento has neither been tested nor
 benchmarked a lot by myself.
@@ -56,7 +65,8 @@ benchmarked a lot by myself.
 3. System requirements
 ----------------------
 
-* PostgreSQL 9.3 
+* PostgreSQL 9.4
+* PL/V8
 
 
 4. Background & References
@@ -76,6 +86,7 @@ now referencing tools where I looked up details:
 * [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum
 * [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen
 * [wingspan-auditing] (https://github.com/wingspan/wingspan-auditing) by Gary Sieling
+* [pgaudit](https://github.com/2ndQuadrant/pgaudit) by 2ndQuadrant
 
 
 5. How To
@@ -100,149 +111,187 @@ complete schema e.g.
 This function creates triggers and an additional column named audit_id
 for all tables in the 'public' schema except for tables 'not_this_table' 
 and 'not_that_table'. Now changes on the audited tables write information
-to the tables 'pgmemento.transaction_log' and 'pgmemento.audit_log'.
+to the tables 'pgmemento.transaction_log', 'pgmemento.table_event_log' 
+and 'pgmemento.row_log'.
 
 When setting up a new database I would recommend to start pgMemento after
 bulk imports. Otherwise the import will be slower and several different 
-timestamps might appear in the audit_log table. The more timestamps are 
-recorded the more queries are necessary to restore a table state.
+timestamps might appear in the transaction_log table.
 
 ATTENTION: It is important to generate a proper baseline on which a
-table/database versioning can reflect on. Before you beginn or continue
+table/database versioning can reflect on. Before you begin or continue
 to work with the database and change contents, define the present state
 as the initial versioning state by executing the procedure
-`pgmemento.log_table_state` (or `pgmemento.log_schema_state`). For each row in the
-audited tables another row will be written to the audit_log table
-telling the system that it has been 'inserted' at the timestamp the
-procedure has been executed.
+`pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
+For each row in the audited tables another row will be written to the 
+row_log table telling the system that it has been 'inserted' at the 
+timestamp the procedure has been executed.
 
 
 ### 5.3. Have a look at the logged information
 
-For example, if you have run an UPDATE command on 'table_A' changing the
-value of some rows of 'column_B' to 'new_value' the following entries will 
-appear in the log tables:
+For example, an UPDATE command on 'table_A' changing the value of some 
+rows of 'column_B' to 'new_value' will appear in the log tables like this:
 
 TRANSACTION_LOG
 
-| ID  | tx_id    | operation | schema | table_name | relid    | timestamp               | user  | client address | applicatopn |
-| --- |:--------:|:---------:|:------:|:----------:|:--------:|:-----------------------:|:-----:|:--------------:|:-----------:|
-| 100 | 11111111 | UPDATE    | public | table_A    | 22222222 | 2014-05-22 15:00:00.100 | felix | 192.168.0.0/32 | pgAdmin III | 
+| txid_id  | stmt_date                | user_name  | client address  |
+| -------- |:------------------------:|:----------:|:---------------:|
+| 1        | 2015-02-22 15:00:00.100  | felix      | ::1/128         |
 
-AUDIT_LOG
+TABLE_EVENT_LOG
 
-| ID  | tx_id    | relid    | timestamp               | audit_id | table_content            |
-| --- |:--------:|:--------:|:-----------------------:|:--------:|:------------------------:|
-| 500 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 70       | {"column_B":"old_value"} |
-| 501 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 71       | {"column_B":"old_value"} |
-| 502 | 11111111 | 22222222 | 2014-05-22 15:00:00.100 | 72       | {"column_B":"old_value"} |
+| ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid
+| --- |:--------------:|:-----:|:---------------:|:-----------:|:------------------------:|
+| 1   | 1              | 2     | UPDATE          | public      | table_A     | 44444444   |
+
+
+ROW_LOG
+
+| ID  | event_id  | audit_id | changes                  |
+| --- |:---------:|:--------:|:------------------------:|
+| 1   | 1         | 555      | {"column_B":"old_value"} |
+| 2   | 1         | 556      | {"column_B":"old_value"} |
+| 3   | 1         | 557      | {"column_B":"old_value"} |
 
 As you can see only the changes are logged. DELETE and TRUNCATE commands
 would cause logging of the complete rows while INSERTs would leave a 
-blank field for the 'table_content' column.
+blank field for the 'changes' column.
 
 
 ### 5.4. Restore a past state of your database
 
 A table state is restored with the procedure `pgmemento.restore_table_state
-('timestamp_x', 'name_of_audited_table', 'public', 'name_for_target_schema', 'VIEW', 0)`. 
-A whole database state might be restored with `pgmemento.restore_schema_state`.
-The result is written to another schema specified by the user. It 
-can be written to VIEWs (default) or TABLEs. If chosen VIEW you are able
-to execute the procedure again to update the target schema by passing a
-new timestamp. The old view(s) will be replaced. Simply specifiy the last
-parameter of the fuction (integer) as 1.
+(transaction_id, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
+* With a given transaction id the user requests the state of a given table before that transaction.
+* The result is written to another schema specified by the user. 
+* It can be written to VIEWs (default) or TABLEs. 
+* If chosen VIEW the procedure can be executed again (e.g. by using another transaction id)
+  and replaces the old view(s) if the last parameter is specified as 1.
+* A whole database state might be restored with `pgmemento.restore_schema_state`.
 
 How does the restoring work? Well, imagine a time line like this:
 
-1______2___3__4___5______6_7_8__9___10 [Timestamps] <br/>
-I______U___D__I___U_x____U_U_I__D__now [Operations] <br/>
-I = Insert, U = Update, D = Delete, x = the date I'm interested in
+1_2_3_4_5_6_7_8_9_10 [Transactions] <br/>
+I_U_D_I_U_U_U_I_D_now [Operations] <br/>
+I = Insert, U = Update, D = Delete
 
-Let me tell you how a record of one example row I'll use in the following
-looked liked at date x:
+Let me tell you how a record looked liked at date x of one sample row 
+I will use in the following:
 
 TABLE_A
 
 | ID  | column_B  | column_C | audit_id |
 | --- |:---------:|:--------:|:--------:|
-| 1   | new_value | abc      | 70       |
+| 1   | new_value | abc      | 555      |
 
 
-#### 5.4.1. Fetching audit_ids
+#### 5.4.1. The next transaction after date x
+
+If the user just wants to restore a past table/database state by using
+a timestamp he will need to find out which is the next transaction 
+happened to be after date x:
+
+WITH get_next_txid AS (
+  SELECT txid FROM pgmemento.transaction_log
+  WHERE stmt_date >= '2015-02-22 16:00:00' LIMIT 1
+)
+SELECT pgmemento.restore_schema_state(
+  txid,
+  'public',
+  'test',
+  'VIEW',
+  ARRAY['not_this_table'], ['not_that_table'],
+  1
+) FROM get_next_txid;  
+
+Let's say the resulting transaction has the ID 6.
+
+
+#### 5.4.2. Fetching audit_ids (done internally)
  
-I need to know which entries were valid at the date I've requested (x).
-I look up the transaction_log table to see if I could find an entry for
-date x and table 'table_A'. No? Ok, I've rounded up the timestamp, 
-that's why. So dear transaction_log table, tell me what is the next 
-older timestamp you got for 'table_A'. 
+I need to know which entries were valid before transaction 6 started.
+This can be done by simple JOIN of the log tables querying for audit_ids.
+But still, two steps are necessary:
+* find out which audit_ids belong to DELETE and TRUNCATE operations 
+  (op_id > 2) before transaction 6 => excluded_ids
+* find out which audit_ids appear before transaction 6 and not belong
+  to the excluded ids of step 1 => valid_ids
 
-Timestamp 5. An UPDATE statement happened there. Get me all the rows 
-affected by this transaction from the audit_log table (where table_name
-is 'table_A'), but I'm only interested in their audit_ids.
-
-Timestamp 4. Ah yes, an INSERT command. Again get me all the audit_ids 
-but leave out the ones I already have or to say it in a different way:
-Leave out the ones that appear after this timestamp (>) until my queried
-date (<=).
-
-Timestamp 3. An DELETE statement? I'm not interested in anything what 
-happened there. The rows were deleted an do not appear at my queried 
-date. The same would apply for TRUNCATE events.
-
-Timestamp 2. An UPDATE again. Do the same like at timestamp 4.
-
-Timestamp 1. OK, INSERT - Again: Get the IDs, leave out IDs that appear 
-during the last timestamps.
-
-
-#### 5.4.2. Generate entries from JSON logs
-
-Ok, now that I know, which entries were valid at date x let's perform 
-the PostgreSQL function `json_populate_recordset` on the column 
-'table_content' in the 'audit_log' table using the fetched audit_ids to 
-transform JSON back to tables. But wait, in some rows I only got this 
-fragment `{"column_B":"old_value"}`. Well of course, it's just the 
-change not the complete row. What to do?
-
-We have to check the timestamps after date x in ascending order and 
-collect each JSON diff to build up complete records of a past state. 
-If some values have changed multiple times corresponding key-value 
-pairs in newer JSON diffs are ignored as we are only interested in the
-oldest version. 
-
-So at timestamp 6 a first JSON diff is just fetched, e.g. 
-`{"column_B":"new_value"}`. 
-
-At timestamp 7 another update happened and a JSON diff is fetched 
-again, e.g. `{"column_B":"newer_value";"column_C":"abc"}`, which has 
-to be merged into the JSON log we've already got. The result would be
-`{"column_B":"new_value;"column_C":"abc"}`.
-
-Timestamp 8 does not appear in our timestamp query because it refers to 
-an INSERT operation which just adds new entries with their own audit_ids.
-
-As for timestamp 9 some rows were deleted which logs the whole content
-of the affected tuples (as we remember from 5.3.). Finally, the 
-audited table itself is also queried against the audit_id because for 
-rows that have not been deleted the last JSON diff has to be generated 
-from the recent version of the table entry.
-
-The final result of our long journey would be the following JSON object:
-`{"column_B":"newer_value";"column_C":"abc";"id":1";"audit_id":70;"new_attribute":"extra"}`
-
-As you can see the ordering of columns is a little disarranged and 
-a new column found its way to our JSON log. Both problems do not matter
-when performing `json_populate_recordset` as it uses a table template 
-that defines the table structure. This leads to a another important 
-aspect of pgMemento.
+WITH 
+  excluded_ids AS (
+    SELECT DISTINCT r.audit_id
+    FROM pgmemento.row_log r
+    JOIN pgmemento.table_event_log e ON r.event_id = e.id
+    JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+    WHERE t.txid < 6 
+      AND e.table_relid = 'public.table_A'::regclass::oid 
+	  AND e.op_id > 2
+  ), 
+  valid_ids AS (
+    SELECT DISTINCT y.audit_id
+    FROM pgmemento.row_log y
+    JOIN pgmemento.table_event_log e ON y.event_id = e.id
+    JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+    LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
+    WHERE t.txid < 6
+    AND e.table_relid = 'public.table_A'::regclass::oid 
+    AND (
+      n.audit_id IS NULL 
+      OR 
+      y.audit_id != n.audit_id)
+  )
+SELECT audit_id FROM valid_ids ORDER BY audit_id;
 
 
-#### 5.4.3. Table templates
+#### 5.4.3. Generate entries from JSONB logs (done internally)
+
+For each fetched audit_id the function 'pgmemento.generate_log_entry' is 
+executed. It iterates over all column names of a given table and searches 
+for the first appearance in the 'changes' column of the 'pgmemento.row_log' 
+table for or after a given transaction (>=). AS JSONB is used GIN indexing
+is of benefit here. If no log corresponding to the column name exists in
+the row_log table, the recent state of the table is queried.
+
+The column name and the found value together form a JSONB object by using
+the 'json_object_agg' function of PostgreSQL. On each iteration these JSONB 
+objects are concatenated with the 'pgmemento.concat_json' function (PL/V8) 
+to create a complete replica of the table row for the requested date.
+
+SELECT json_object_agg('column_B',
+  COALESCE(
+    (SELECT (r.changes -> 'column_B') 
+       FROM pgmemento.row_log r
+       JOIN pgmemento.table_event_log e ON r.event_id = e.id
+       JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+       WHERE t.txid >= 6 
+         AND r.audit_id = 555
+         AND (r.changes ? 'column_B')
+         ORDER BY r.id LIMIT 1
+    ),
+    (SELECT COALESCE(to_json(column_B), NULL)::jsonb 
+       FROM public.table_A a 
+       WHERE a.audit_id = 555
+    )
+  )
+)::jsonb
+
+
+#### 5.4.4. Recreate tables from JSONB logs
+
+PostgreSQL offers the functions 'json_populate_recordset' which converts
+a setof anyelement (e.g. an array) into records, ergo a table. All created
+JSONB-like records from step 5.4.3. are aggregated with the 'json_agg' function
+and passed to 'json_populate_recordset' that will return a table that looks
+like the table state at date x.
+
+
+#### 5.4.5. Table templates
 
 If I would use 'table_A' as the template for `json_populate_recordset` 
-I would receive the correct order of columns but could not exclude new
-columns. I need to know the structure of 'table_A' at date x, too.
+I would receive the correct order and the correct data types of columns but 
+could not exclude columns that did not exist at date x. I need to know the 
+structure of 'table_A' at the requested date, too.
 
 Unfortunately pgMemento can yet not perform logging of DDL commands, like
 `ALTER TABLE [...]`. It forces the user to do a manual column backup. 
@@ -254,7 +303,6 @@ states.
 
 IMPORTANT: A table template has to be created before the audited table
 is altered.
-
 
 ### 5.5. Work with the past state
 
@@ -291,6 +339,8 @@ However, here are some plans I have for the near future:
   a full rollback on a database (see `REVERT.sql`). But the
   approach is a bit over the top if I just want to revert one 
   transaction.
+* Develop an alternative way to the row-based 'generate_log_entry' function
+  to have a faster restoring process.
 
   
 6. Developers
