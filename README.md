@@ -192,7 +192,7 @@ If the user just wants to restore a past table/database state by using
 a timestamp he will need to find out which is the next transaction 
 happened to be after date x:
 
-WITH get_next_txid AS (
+`WITH get_next_txid AS (
   SELECT txid FROM pgmemento.transaction_log
   WHERE stmt_date >= '2015-02-22 16:00:00' LIMIT 1
 )
@@ -203,7 +203,7 @@ SELECT pgmemento.restore_schema_state(
   'VIEW',
   ARRAY['not_this_table'], ['not_that_table'],
   1
-) FROM get_next_txid;  
+) FROM get_next_txid;`  
 
 Let's say the resulting transaction has the ID 6.
 
@@ -218,7 +218,7 @@ But still, two steps are necessary:
 * find out which audit_ids appear before transaction 6 and not belong
   to the excluded ids of step 1 => valid_ids
 
-WITH 
+`WITH 
   excluded_ids AS (
     SELECT DISTINCT r.audit_id
     FROM pgmemento.row_log r
@@ -241,7 +241,7 @@ WITH
       OR 
       y.audit_id != n.audit_id)
   )
-SELECT audit_id FROM valid_ids ORDER BY audit_id;
+SELECT audit_id FROM valid_ids ORDER BY audit_id;`
 
 
 #### 5.4.3. Generate entries from JSONB logs (done internally)
@@ -258,7 +258,7 @@ the 'json_object_agg' function of PostgreSQL. On each iteration these JSONB
 objects are concatenated with the 'pgmemento.concat_json' function (PL/V8) 
 to create a complete replica of the table row for the requested date.
 
-SELECT json_object_agg('column_B',
+`SELECT json_object_agg('column_B',
   COALESCE(
     (SELECT (r.changes -> 'column_B') 
        FROM pgmemento.row_log r
@@ -274,7 +274,7 @@ SELECT json_object_agg('column_B',
        WHERE a.audit_id = 555
     )
   )
-)::jsonb
+)::jsonb;`
 
 
 #### 5.4.4. Recreate tables from JSONB logs
