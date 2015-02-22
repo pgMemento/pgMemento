@@ -141,9 +141,9 @@ TRANSACTION_LOG
 
 TABLE_EVENT_LOG
 
-| ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid
-| --- |:--------------:|:-----:|:---------------:|:-----------:|:------------------------:|
-| 1   | 1              | 2     | UPDATE          | public      | table_A     | 44444444   |
+| ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid |
+| --- |:--------------:|:-----:|:---------------:|:-----------:|:-----------:|:-----------:|
+| 1   | 1              | 2     | UPDATE          | public      | table_A     | 44444444    |
 
 
 ROW_LOG
