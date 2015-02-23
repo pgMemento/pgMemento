@@ -1,7 +1,8 @@
 pgMemento
 =====
 
-pgMemento is a versioning approach for PostgreSQL using PL/pgSQL functions
+pgMemento is a versioning approach for PostgreSQL using triggers and server-side
+functions in PL/pgSQL and PL/V8.
 
 
 0. Index
@@ -35,31 +36,36 @@ Databases have no memories of what happened in the past unless it is written
 down somewhere. From these notes it can figure out, how a past state might have
 looked like.
 
-pgMemento is a bunch of PL/pgSQL scripts that enable auditing of a PostgreSQL
-database. I take extensive use of JSON/JSONB functions to log my data. Thus
-version 9.4 or higher is needed. I also PL/V8 to work with the JSON-logs on
-the server side. This extension has to be installed on the server. Downloads
-can be found [here](http://pgxn.org/dist/plv8/1.4.3/) [or here](http://www.postgresonline.com/journal/archives/341-PLV8-binaries-for-PostgreSQL-9.4-windows-both-32-bit-and-64-bit.html).
+pgMemento is a bunch of mostly PL/pgSQL scripts that enable auditing of a 
+PostgreSQL database. I take extensive use of JSON/JSONB functions to log my data. 
+Thus version 9.4 or higher is needed. I also use PL/V8 to work with the JSON-logs 
+on the server side. This extension has to be installed on the server. Downloads
+can be found [here](http://pgxn.org/dist/plv8/1.4.3/) or [here](http://www.postgresonline.com/journal/archives/341-PLV8-binaries-for-PostgreSQL-9.4-windows-both-32-bit-and-64-bit.html).
 
-As I'm on schemaless side with JSON one audit table is enough to save 
+As I'm on schemaless side with JSONB one audit table is enough to save 
 all changes of all my tables. I do not need to care a lot about the 
 structure of my tables.
 
-For me, the main advantage using JSON is the ability to convert table rows
+For me, the main advantage using JSONB is the ability to convert table rows
 to one column and populate them back to sets of records without losing 
 information on the data types. This is very handy when creating a past
 table state. I think the same applies to the PostgreSQL extension hstore
 so pgMemento could also be realized using hstore except JSONB.
 
 But taking a look into the past of the database is not the main motivation.
-In the future everybody will use logical decoding for that, I guess. With pgMemento
-the user shall be able to rollback certain transactions happended in the past.
-I want to design a logic that checks if a transactions can be reverted in order
-that it fits to following transactions, eg. a DELETE is simple, but what about
-reverting an UPDATE on data that has been deleted later anyway? 
+In the future everybody will use logical decoding for that, I guess. With 
+pgMemento the user shall be able to roll back certain transactions happened in 
+the past. I want to design a logic that checks if a transactions can be reverted 
+in order that it fits to following transactions, e.g. a DELETE is simple, but 
+what about reverting an UPDATE on data that has been deleted later anyway? 
 
 For further reading please consider that pgMemento has neither been tested nor
-benchmarked a lot by myself.
+benchmarked a lot by myself. It is still work-in-progress. 
+
+I tagged a first version of pgMemento (v0.1) that uses the JSON data type 
+and can be used along with PostgreSQL 9.3, but it is slower and can not 
+handle very big data as JSON strings. I recommend to always use the newest
+version of pgMemento.
 
 
 3. System requirements
@@ -77,7 +83,7 @@ changes in your database is a well known practice. There are other tools
 out there which can also be used I guess. When I started the development
 for pgMemento I wasn't aware of that there are so many solutions out there
 (and new ones popping up every once in while). I haven't tested any of 
-them *shameonme* and can not tell you exactly how they differ from pgMemento.
+them and can not tell you exactly how they differ from pgMemento.
 
 I might have directly copied some elements of these tools, therefore I'm
 now referencing tools where I looked up details:
@@ -96,17 +102,21 @@ now referencing tools where I looked up details:
 
 Run the `SETUP.sql` script to create the schema `pgmemento` with tables
 and functions. `VERSIONING.sql` is necessary to restore past table
-states and `INDEX_SCHEMA.sql` includes funtions to define constraints
-in the schema where the tables / schema state has been restored (in order 
-they have been restored as tables).
+states and `INDEX_SCHEMA.sql` includes functions to define constraints
+in the schema where the tables state has been restored.
 
 
 ### 5.2. Start pgMemento
 
-The functions can be used to intialize auditing for single tables or a 
+The functions can be used to initialize auditing for single tables or a 
 complete schema e.g.
 
-`SELECT pgmemento.create_schema_audit('public', ARRAY['not_this_table'], ['not_that_table']);`
+<pre>
+SELECT pgmemento.create_schema_audit(
+  'public', 
+  ARRAY['not_this_table'], ['not_that_table']
+);
+</pre>
 
 This function creates triggers and an additional column named audit_id
 for all tables in the 'public' schema except for tables 'not_this_table' 
@@ -124,7 +134,7 @@ to work with the database and change contents, define the present state
 as the initial versioning state by executing the procedure
 `pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
 For each row in the audited tables another row will be written to the 
-row_log table telling the system that it has been 'inserted' at the 
+'row_log' table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed.
 
 
@@ -165,7 +175,7 @@ A table state is restored with the procedure `pgmemento.restore_table_state
 (transaction_id, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
 * With a given transaction id the user requests the state of a given table before that transaction.
 * The result is written to another schema specified by the user. 
-* It can be written to VIEWs (default) or TABLEs. 
+* Tables can be restored as VIEWs (default) or TABLEs. 
 * If chosen VIEW the procedure can be executed again (e.g. by using another transaction id)
   and replaces the old view(s) if the last parameter is specified as 1.
 * A whole database state might be restored with `pgmemento.restore_schema_state`.
@@ -185,6 +195,20 @@ TABLE_A
 | --- |:---------:|:--------:|:--------:|
 | 1   | new_value | abc      | 555      |
 
+Imagine that this row is updated again in transactions 6 and 7 and 
+deleted at last in transaction 9. In the 'row_log' table this would
+be logged as follows:
+
+| ID  | event_id  | audit_id | changes                                                           |
+| --- |:---------:|:--------:|:-----------------------------------------------------------------:|
+| ... | ...       | ...      | ...                                                               |
+| 66  | 15        | 555      | {"column_B":"new_value"}                                          |
+| ... | ...       | ...      | ...                                                               |
+| 77  | 21        | 555      | {"column_C":"abc"}                                                |
+| ... | ...       | ...      | ...                                                               |
+| ... | ...       | ...      | ...                                                               |
+| 99  | 21        | 555      | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
+| ... | ...       | ...      | ...                                                               |
 
 #### 5.4.1. The next transaction after date x
 
@@ -192,7 +216,8 @@ If the user just wants to restore a past table/database state by using
 a timestamp he will need to find out which is the next transaction 
 happened to be after date x:
 
-`WITH get_next_txid AS (
+<pre>
+WITH get_next_txid AS (
   SELECT txid FROM pgmemento.transaction_log
   WHERE stmt_date >= '2015-02-22 16:00:00' LIMIT 1
 )
@@ -203,9 +228,10 @@ SELECT pgmemento.restore_schema_state(
   'VIEW',
   ARRAY['not_this_table'], ['not_that_table'],
   1
-) FROM get_next_txid;`  
+) FROM get_next_txid;
+</pre>
 
-Let's say the resulting transaction has the ID 6.
+The resulting transaction has the ID 6.
 
 
 #### 5.4.2. Fetching audit_ids (done internally)
@@ -218,35 +244,37 @@ But still, two steps are necessary:
 * find out which audit_ids appear before transaction 6 and not belong
   to the excluded ids of step 1 => valid_ids
 
-`WITH 
+<pre>
+WITH
   excluded_ids AS (
     SELECT DISTINCT r.audit_id
     FROM pgmemento.row_log r
     JOIN pgmemento.table_event_log e ON r.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-    WHERE t.txid < 6 
-      AND e.table_relid = 'public.table_A'::regclass::oid 
+    WHERE t.txid < 6
+      AND e.table_relid = 'public.table_A'::regclass::oid
 	  AND e.op_id > 2
-  ), 
-  valid_ids AS (
+  ),
+  valid_ids AS (  
     SELECT DISTINCT y.audit_id
     FROM pgmemento.row_log y
     JOIN pgmemento.table_event_log e ON y.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
     LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
     WHERE t.txid < 6
-    AND e.table_relid = 'public.table_A'::regclass::oid 
+    AND e.table_relid = 'public.table_A'::regclass::oid
     AND (
-      n.audit_id IS NULL 
-      OR 
+      n.audit_id IS NULL
+      OR
       y.audit_id != n.audit_id)
   )
-SELECT audit_id FROM valid_ids ORDER BY audit_id;`
+SELECT audit_id FROM valid_ids ORDER BY audit_id;
+</pre>
 
 
 #### 5.4.3. Generate entries from JSONB logs (done internally)
 
-For each fetched audit_id the function 'pgmemento.generate_log_entry' is 
+For each fetched audit_id the function `pgmemento.generate_log_entry` is 
 executed. It iterates over all column names of a given table and searches 
 for the first appearance in the 'changes' column of the 'pgmemento.row_log' 
 table for or after a given transaction (>=). AS JSONB is used GIN indexing
@@ -254,35 +282,44 @@ is of benefit here. If no log corresponding to the column name exists in
 the row_log table, the recent state of the table is queried.
 
 The column name and the found value together form a JSONB object by using
-the 'json_object_agg' function of PostgreSQL. On each iteration these JSONB 
-objects are concatenated with the 'pgmemento.concat_json' function (PL/V8) 
-to create a complete replica of the table row for the requested date.
+the `json_object_agg` function of PostgreSQL. For the sample row the 
+intermediate results would look like this:
+* '{"ID":1}' (--> first entry found in 'row_log' for column 'ID' has ID 99)
+* '{"column_B":"new_value"}' (--> first entry found in 'row_log' for column 'ID' has ID 66)
+* '{"column_C":"abc"}' (--> first entry found in 'row_log' for column 'ID' has ID 77)
+* '{"audit_id":555}' (--> first entry found in 'row_log' for column 'ID' has ID 99)
 
-`SELECT json_object_agg('column_B',
+On each iteration these JSONB objects are concatenated with the 
+`pgmemento.concat_json` function (PL/V8) to create a complete replica of 
+the table row for the requested date.
+
+<pre>
+SELECT json_object_agg('column_B',
   COALESCE(
-    (SELECT (r.changes -> 'column_B') 
+    (SELECT (r.changes -> 'column_B')
        FROM pgmemento.row_log r
        JOIN pgmemento.table_event_log e ON r.event_id = e.id
        JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-       WHERE t.txid >= 6 
+       WHERE t.txid >= 6
          AND r.audit_id = 555
          AND (r.changes ? 'column_B')
          ORDER BY r.id LIMIT 1
     ),
-    (SELECT COALESCE(to_json(column_B), NULL)::jsonb 
-       FROM public.table_A a 
+    (SELECT COALESCE(to_json(column_B), NULL)::jsonb
+       FROM public.table_A a
        WHERE a.audit_id = 555
     )
   )
-)::jsonb;`
+)::jsonb;
+</pre>
 
 
 #### 5.4.4. Recreate tables from JSONB logs
 
-PostgreSQL offers the functions 'json_populate_recordset' which converts
+PostgreSQL offers the functions `json_populate_recordset` which converts
 a setof anyelement (e.g. an array) into records, ergo a table. All created
-JSONB-like records from step 5.4.3. are aggregated with the 'json_agg' function
-and passed to 'json_populate_recordset' that will return a table that looks
+JSONB-like records from step 5.4.3. are aggregated with the `json_agg` function
+and passed to `json_populate_recordset` that will return a table that looks
 like the table state at date x.
 
 
@@ -298,7 +335,7 @@ Unfortunately pgMemento can yet not perform logging of DDL commands, like
 By executing the procedure `pgmemento.create_table_template` an empty copy
 of the audited table is created in the pgmemento schema (concatenated with
 an internal ID). Every created table is documented (with timestamp) in 
-'pgmemento.table_templates' which is queried when restoring former table 
+`pgmemento.table_templates` which is queried when restoring former table 
 states.
 
 IMPORTANT: A table template has to be created before the audited table
@@ -334,9 +371,9 @@ However, here are some plans I have for the near future:
 * Have another table to store metadata of additional created schemas
   for former table / database states.
 * Develop a method to revert specific changes e.g. connected to a 
-  transaction_id, date, user etc. I've already developped procedures
+  transaction_id, date, user etc. I've already developed procedures
   to merge a whole schema into another schema, e.g. to be able to do 
-  a full rollback on a database (see `REVERT.sql`). But the
+  a full roll back on a database (see `REVERT.sql`). But the
   approach is a bit over the top if I just want to revert one 
   transaction.
 * Develop an alternative way to the row-based 'generate_log_entry' function
@@ -364,6 +401,7 @@ fkunde@virtualcitysystems.de
 * Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
 * Ollyc (Stackoverflow) --> Query to list all foreign keys of a table
 * Denis de Bernardy (Stackoverflow, mesoconcepts) --> Query to list all indexes of a table
+* Ugur Yilmaz --> feedback and suggestions
 
 
 9. Disclaimer
