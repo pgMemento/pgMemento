@@ -24,10 +24,10 @@
 *
 * FUNCTIONS:
 *   concat_json(obj1 jsonb, obj2 jsonb) RETURNS json
-*   generate_log_entry(tid INTEGER, schema_name TEXT, table_name TEXT, aid BIGINT) RETURNS jsonb
-*   restore_schema_state(tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
+*   generate_log_entry(tid BIGINT, aid BIGINT, schema_name TEXT, table_name TEXT, template_schema TEXT, template_table TEXT) RETURNS jsonb
+*   restore_schema_state(tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   restore_table_state(tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
+*   restore_table_state(tid BIGINT, original_table_name TEXT, original_schema_name TEXT, 
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW') RETURNS SETOF VOID
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.concat_json(obj1 jsonb, obj2 jsonb) RETURNS json AS
@@ -50,12 +50,12 @@ LANGUAGE plv8;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
-  tid INTEGER,
+  tid BIGINT,
+  aid BIGINT
   schema_name TEXT,
   table_name TEXT,
   template_schema TEXT,
-  template_table TEXT,
-  aid BIGINT
+  template_table TEXT
   ) RETURNS jsonb AS
 $$
 DECLARE
@@ -108,7 +108,7 @@ LANGUAGE plpgsql;
 * The user can choose if it will appear as a TABLE or VIEW.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
-  tid INTEGER,
+  tid BIGINT,
   original_table_name TEXT,
   original_schema_name TEXT,
   target_schema_name TEXT,
@@ -190,7 +190,7 @@ BEGIN
                                    AND e.table_relid = %L::regclass::oid 
                                    AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
                             )
-                            SELECT json_agg(pgmemento.generate_log_entry(%L, %L, %L, %L, %L, audit_id)) 
+                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L)) 
                             FROM valid_ids ORDER BY audit_id
                             )
                           )',
@@ -216,7 +216,7 @@ LANGUAGE plpgsql;
 
 -- perform restore_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
-  tid INTEGER,
+  tid BIGINT,
   original_schema_name TEXT,
   target_schema_name TEXT, 
   target_table_type TEXT DEFAULT 'VIEW',
