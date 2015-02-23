@@ -51,7 +51,7 @@ LANGUAGE plv8;
 
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   tid BIGINT,
-  aid BIGINT
+  aid BIGINT,
   schema_name TEXT,
   table_name TEXT,
   template_schema TEXT,
