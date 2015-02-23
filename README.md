@@ -251,9 +251,9 @@ WITH
     FROM pgmemento.row_log r
     JOIN pgmemento.table_event_log e ON r.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-    WHERE t.txid < 6
+    WHERE t.txid &lt 6
       AND e.table_relid = 'public.table_A'::regclass::oid
-	  AND e.op_id > 2
+	  AND e.op_id &gt 2
   ),
   valid_ids AS (  
     SELECT DISTINCT y.audit_id
@@ -261,12 +261,13 @@ WITH
     JOIN pgmemento.table_event_log e ON y.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
     LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
-    WHERE t.txid < 6
-    AND e.table_relid = 'public.table_A'::regclass::oid
-    AND (
-      n.audit_id IS NULL
-      OR
-      y.audit_id != n.audit_id)
+    WHERE t.txid &lt 6
+      AND e.table_relid = 'public.table_A'::regclass::oid
+      AND (
+        n.audit_id IS NULL
+        OR
+        y.audit_id != n.audit_id
+      )
   )
 SELECT audit_id FROM valid_ids ORDER BY audit_id;
 </pre>
