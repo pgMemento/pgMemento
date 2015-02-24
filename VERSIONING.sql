@@ -171,7 +171,7 @@ BEGIN
       -- let's go back in time - restore a table state at a given date
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
         EXECUTE format('CREATE ' || replace_view || target_table_type || ' %I.%I AS 
-                          SELECT * FROM json_populate_recordset(null::%I.%I,
+                          SELECT * FROM jsonb_populate_recordset(null::%I.%I,
                             (WITH excluded_ids AS (
                                SELECT DISTINCT r.audit_id
                                FROM pgmemento.row_log r
@@ -190,7 +190,7 @@ BEGIN
                                    AND e.table_relid = %L::regclass::oid 
                                    AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
                             )
-                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L)) 
+                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L))::jsonb 
                             FROM valid_ids ORDER BY audit_id
                             )
                           )',
