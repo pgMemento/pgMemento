@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.2.0     2015-02-21   new queries, JSON concat using PL/V8            FKun
+-- 0.2.0     2015-02-21   new queries, JSONB merge using PL/V8            FKun
 -- 0.1.0     2014-11-26   initial commit                                  FKun
 --
 
@@ -23,14 +23,14 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   concat_json(obj1 jsonb, obj2 jsonb) RETURNS json
+*   merge_jsonb(obj1 jsonb, obj2 jsonb) RETURNS json
 *   generate_log_entry(tid BIGINT, aid BIGINT, schema_name TEXT, table_name TEXT, template_schema TEXT, template_table TEXT) RETURNS jsonb
 *   restore_schema_state(tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   restore_table_state(tid BIGINT, original_table_name TEXT, original_schema_name TEXT, 
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW') RETURNS SETOF VOID
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.concat_json(obj1 jsonb, obj2 jsonb) RETURNS json AS
+CREATE OR REPLACE FUNCTION pgmemento.merge_jsonb(obj1 jsonb, obj2 jsonb) RETURNS json AS
 $$
   var a = JSON.parse(obj1);
   var b = JSON.parse(obj2);
@@ -90,7 +90,7 @@ BEGIN
       INTO json_object;
 
     IF json_object IS NOT NULL THEN
-      json_result := pgmemento.concat_json(json_result, json_object)::jsonb;
+      json_result := pgmemento.merge_jsonb(json_result, json_object)::jsonb;
     END IF;
   END LOOP;
 
