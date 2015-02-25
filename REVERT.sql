@@ -27,7 +27,57 @@
 *   recreate_schema_state(schema_name TEXT, target_schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') 
 *     RETURNS SETOF VOID
 *   recreate_table_state(table_name TEXT, schema_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   revert_transaction(tid BIGINT) RETURNS SETOF VOID
 ***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid BIGINT) RETURNS SETOF VOID AS
+$$
+DECLARE
+  r RECORD;
+  column_name TEXT;
+  delimeter VARCHAR(1);
+  update_stmt TEXT;
+BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
+
+  FOR r IN EXECUTE 'SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+                      FROM pgmemento.row_log r
+                      JOIN pgmemento.table_event_log e ON r.event_id = e.id
+                      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+                      WHERE t.txid = $1
+                      ORDER BY e.op_id DESC, e.id DESC, r.audit_id ASC' USING tid LOOP
+    -- INSERT case
+    IF r.op_id = 1 THEN
+      EXECUTE format('DELETE FROM %I.%I WHERE audit_id = %L', r.schema_name, r.table_name, r.audit_id);
+
+    -- UPDATE case
+    ELSIF r.op_id = 2 THEN
+      -- set variables for update statement
+      delimeter := '';
+      update_stmt := format('UPDATE %I.%I SET', r.schema_name, r.table_name);
+
+      -- loop over found keys
+      FOR column_name IN EXECUTE 'SELECT jsonb_object_keys($1)' USING r.changes LOOP
+        update_stmt := update_stmt || delimeter ||
+                         format(' %I = (SELECT %I FROM jsonb_populate_record(null::%I.%I, %L))',
+                         column_name, column_name, r.schema_name, r.table_name, r.changes);
+        delimeter := ',';
+      END LOOP;
+
+      -- add condition and execute
+      update_stmt := update_stmt || format(' WHERE audit_id = %L', r.audit_id);
+      EXECUTE update_stmt;
+
+    -- DELETE and TRUNCATE case
+    ELSE
+      r.changes := pgmemento.merge_jsonb(r.changes, json_object_agg('audit_id',nextval('pgmemento.audit_id_seq'))::jsonb);
+      EXECUTE format('INSERT INTO %I.%I
+                        SELECT * FROM jsonb_populate_record(null::%I.%I, %L)',
+                        r.schema_name, r.table_name, r.schema_name, r.table_name, r.changes);
+    END IF;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 
 /**********************************************************
 * RECREATE SCHEMA STATE
