@@ -190,13 +190,14 @@ BEGIN
                                    AND e.table_relid = %L::regclass::oid 
                                    AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
                             )
-                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L))::jsonb 
-                            FROM valid_ids ORDER BY audit_id
+                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L) ORDER BY audit_id)::jsonb 
+                            FROM valid_ids
                             )
                           )',
                           target_schema_name, original_table_name, template_schema, template_table,
                           tid, original_schema_name || '.' || original_table_name,
-				          tid, original_schema_name, original_table_name, template_schema, template_table);
+                          tid, original_schema_name || '.' || original_table_name,
+                          tid, original_schema_name, original_table_name, template_schema, template_table);
       ELSE
         RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', target_table_type;
       END IF;
