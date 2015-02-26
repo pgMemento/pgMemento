@@ -39,12 +39,31 @@ DECLARE
 BEGIN
   SET CONSTRAINTS ALL DEFERRED;
 
-  FOR r IN EXECUTE 'SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-                      FROM pgmemento.row_log r
-                      JOIN pgmemento.table_event_log e ON r.event_id = e.id
-                      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                      WHERE t.txid = $1
-                      ORDER BY e.op_id DESC, e.id DESC, r.audit_id ASC' USING tid LOOP
+  FOR r IN EXECUTE 
+    'SELECT * FROM (
+       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+          FROM pgmemento.row_log r
+          JOIN pgmemento.table_event_log e ON r.event_id = e.id
+          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+          WHERE t.txid = $1 AND e.op_id > 2
+          ORDER BY r.audit_id ASC)
+        UNION ALL
+       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+          FROM pgmemento.row_log r
+          JOIN pgmemento.table_event_log e ON r.event_id = e.id
+          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+          WHERE t.txid = $1 AND e.op_id = 2
+          ORDER BY r.audit_id DESC)
+        UNION ALL
+       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+          FROM pgmemento.row_log r
+          JOIN pgmemento.table_event_log e ON r.event_id = e.id
+          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+          WHERE t.txid = $1 AND e.op_id = 1
+          ORDER BY r.audit_id DESC)
+     ) txid_content
+     ORDER BY op_id DESC' USING tid LOOP
+
     -- INSERT case
     IF r.op_id = 1 THEN
       EXECUTE format('DELETE FROM %I.%I WHERE audit_id = %L', r.schema_name, r.table_name, r.audit_id);
