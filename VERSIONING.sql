@@ -123,6 +123,12 @@ DECLARE
   template_schema TEXT;
   template_table TEXT;
   replace_view TEXT := '';
+  restore_query TEXT;
+  column_name TEXT;
+  v_columns TEXT := '';
+  v_columns_count NUMERIC := 0;
+  for_each_valid_id TEXT := '';
+  delimeter VARCHAR(1) := '';
 BEGIN
   -- test if target schema already exist
   EXECUTE 'SELECT 1 FROM information_schema.schemata WHERE schema_name = $1' INTO is_set_schema USING target_schema_name;
@@ -170,34 +176,75 @@ BEGIN
 
       -- let's go back in time - restore a table state at a given date
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
-        EXECUTE format('CREATE ' || replace_view || target_table_type || ' %I.%I AS 
-                          SELECT * FROM jsonb_populate_recordset(null::%I.%I,
-                            (WITH excluded_ids AS (
-                               SELECT DISTINCT r.audit_id
-                               FROM pgmemento.row_log r
-                               JOIN pgmemento.table_event_log e ON r.event_id = e.id
-                               JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                                 WHERE t.txid < %L 
-                                   AND e.table_relid = %L::regclass::oid 
-	                               AND e.op_id > 2), 
-                             valid_ids AS (
-                               SELECT DISTINCT y.audit_id
-                               FROM pgmemento.row_log y
-                               JOIN pgmemento.table_event_log e ON y.event_id = e.id
-                               JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                               LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
-                                 WHERE t.txid < %L
-                                   AND e.table_relid = %L::regclass::oid 
-                                   AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
-                            )
-                            SELECT json_agg(pgmemento.generate_log_entry(%L, audit_id, %L, %L, %L, %L) ORDER BY audit_id)::jsonb 
-                            FROM valid_ids
-                            )
-                          )',
-                          target_schema_name, original_table_name, template_schema, template_table,
-                          tid, original_schema_name || '.' || original_table_name,
-                          tid, original_schema_name || '.' || original_table_name,
-                          tid, original_schema_name, original_table_name, template_schema, template_table);
+        restore_query := format('CREATE ' || replace_view || target_table_type || ' %I.%I AS
+          WITH restore AS (
+            WITH excluded_ids AS (
+              SELECT DISTINCT r.audit_id
+                FROM pgmemento.row_log r
+                JOIN pgmemento.table_event_log e ON r.event_id = e.id
+                JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+                WHERE t.txid < %L
+                  AND e.table_relid = %L::regclass::oid 
+                  AND e.op_id > 2), 
+            valid_ids AS (
+              SELECT DISTINCT y.audit_id
+                FROM pgmemento.row_log y
+                JOIN pgmemento.table_event_log e ON y.event_id = e.id
+                JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+                LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
+                WHERE t.txid < %L
+                  AND e.table_relid = %L::regclass::oid 
+                  AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
+            )
+            SELECT v.log_entry FROM valid_ids f
+            JOIN LATERAL (
+              SELECT json_build_object(',
+              target_schema_name, original_table_name,
+              tid, original_schema_name || '.' || original_table_name,
+              tid, original_schema_name || '.' || original_table_name);
+
+        -- get the content of each column that happened to be in the table when the transaction was executed
+        FOR column_name IN 
+          EXECUTE 'SELECT attname FROM pg_attribute WHERE attrelid = $1::regclass and attstattarget != 0 ORDER BY attnum' 
+                     USING template_schema || '.' || template_table LOOP
+
+          v_columns_count := v_columns_count + 1;
+          v_columns := v_columns || delimeter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
+
+          -- first: try to find the value within logged changes in row_log (first occurrence greater than txid will be the correct value)
+          -- second: if not found, query the recent state for information
+          for_each_valid_id := for_each_valid_id || delimeter || format(
+            '(SELECT * FROM (
+                SELECT %L AS key, COALESCE(
+                  (SELECT (r.changes -> %L) 
+                     FROM pgmemento.row_log r
+                     JOIN pgmemento.table_event_log e ON r.event_id = e.id
+                     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+                     WHERE t.txid >= %L
+                       AND r.audit_id = f.audit_id
+                       AND (r.changes ? %L)
+                       ORDER BY r.id LIMIT 1
+                  ),
+                (SELECT COALESCE(to_json(%I), NULL)::jsonb 
+                   FROM %I.%I
+                   WHERE audit_id = f.audit_id
+                )
+                ) AS value) q
+              ) q',
+              column_name, column_name, tid, column_name,
+              column_name, original_schema_name, original_table_name) || v_columns_count;
+
+          delimeter := ',';
+        END LOOP;
+
+        restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) ORDER BY f.audit_id)' ||
+          format('SELECT p.* FROM restore rq
+                    JOIN LATERAL (
+                      SELECT * FROM jsonb_populate_record(null::%I.%I, rq.log_entry)
+                    ) p ON (true)',
+                    template_schema, template_table);
+
+        EXECUTE restore_query;
       ELSE
         RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', target_table_type;
       END IF;
