@@ -275,53 +275,96 @@ SELECT audit_id FROM valid_ids ORDER BY audit_id;
 
 #### 5.4.3. Generate entries from JSONB logs (done internally)
 
-For each fetched audit_id the function `pgmemento.generate_log_entry` is 
-executed. It iterates over all column names of a given table and searches 
-for the first appearance in the 'changes' column of the 'pgmemento.row_log' 
-table for or after a given transaction (>=). AS JSONB is used GIN indexing
-is of benefit here. If no log corresponding to the column name exists in
-the row_log table, the recent state of the table is queried.
+For each fetched audit_id a row has to be reconstructed. This is done by
+searching the values of each column of the given table. AS JSONB is used 
+GIN indexing is of benefit here. If no log corresponding to the column 
+name exists in the row_log table, the recent state of the table is queried.
 
-The column name and the found value together form a JSONB object by using
-the `json_object_agg` function of PostgreSQL. For the sample row the 
-intermediate results would look like this:
+<pre>
+SELECT 
+  'column_B' AS key, 
+  COALESCE(
+    (SELECT (r.changes -> 'column_B') 
+       FROM pgmemento.row_log r
+       JOIN pgmemento.table_event_log e ON r.event_id = e.id
+       JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+       WHERE t.txid >= 6
+         AND r.audit_id = f.audit_id
+         AND (r.changes ? 'column_B')
+         ORDER BY r.id LIMIT 1
+    ),
+    (SELECT COALESCE(to_json(column_B), NULL)::jsonb 
+       FROM schema_Z.table_A
+       WHERE audit_id = f.audit_id
+    )
+  ) AS value;
+</pre>
+
+By the end I would have a series of keys and values, like for example:
 * '{"ID":1}' (--> first entry found in 'row_log' for column 'ID' has ID 99)
 * '{"column_B":"new_value"}' (--> first entry found in 'row_log' for column 'ID' has ID 66)
 * '{"column_C":"abc"}' (--> first entry found in 'row_log' for column 'ID' has ID 77)
 * '{"audit_id":555}' (--> first entry found in 'row_log' for column 'ID' has ID 99)
 
-On each iteration these JSONB objects are concatenated with the 
-`pgmemento.concat_json` function (PL/V8) to create a complete replica of 
-the table row for the requested date.
+These fragments can be put in alternating order and passed to the 
+`json_build_object` function to generate a complete replica of the 
+row as JSONB.
 
 <pre>
-SELECT json_object_agg('column_B',
-  COALESCE(
-    (SELECT (r.changes -> 'column_B')
-       FROM pgmemento.row_log r
-       JOIN pgmemento.table_event_log e ON r.event_id = e.id
-       JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-       WHERE t.txid >= 6
-         AND r.audit_id = 555
-         AND (r.changes ? 'column_B')
-         ORDER BY r.id LIMIT 1
-    ),
-    (SELECT COALESCE(to_json(column_B), NULL)::jsonb
-       FROM public.table_A a
-       WHERE a.audit_id = 555
-    )
-  )
-)::jsonb;
+<font color='lightgreen'>-- end of WITH block, that collects valid audit_ids</font>
+)
+SELECT v.log_entry FROM valid_ids f 
+JOIN LATERAL ( <font color='lightgreen'>-- for each audit_id do:</font>
+  SELECT json_build_object( 
+    q1.key, q1.value, 
+    q2.key, q2.value,
+    ...
+    )::jsonb AS log_entry 
+  FROM ( <font color='lightgreen'>-- query for values</font>
+    SELECT q.key, q.value FROM ( 
+      SELECT 'id' AS key, r.changes -> 'id' 
+      FROM pgmemento.row_log r 
+      ...
+      )q 
+    ) q1,
+    SELECT q.key, q.value FROM (
+      SELECT 'name' AS key, r.changes -> 'name'
+      FROM pgmemento.row_log r ...
+      )q 
+    ) q2, 
+    ...
+) v ON (true)
+ORDER BY f.audit_id
 </pre>
 
 
-#### 5.4.4. Recreate tables from JSONB logs
+#### 5.4.4. Recreate tables from JSONB logs (done internally)
 
-PostgreSQL offers the functions `json_populate_recordset` which converts
-a setof anyelement (e.g. an array) into records, ergo a table. All created
-JSONB-like records from step 5.4.3. are aggregated with the `json_agg` function
-and passed to `json_populate_recordset` that will return a table that looks
-like the table state at date x.
+The last step on the list would be to bring the generated JSONB objects
+into a tabular representation. PostgreSQL offers the function 
+`jsonb_populate_record` to do this job.
+
+<pre>
+SELECT * FROM jsonb_populate_record(null::table_A, jsonb_object);
+</pre>
+
+But it cannot be written just like that because we need to combine it with
+a query that returns numerous JSONB objects. There is also the function
+`jsonb_populate_recordset` to return a set of records but it needs all
+JSONB objects to be aggregated which is a little overhead. The solution
+is to use a LATERAL JOIN:
+
+<pre>
+<font color='lightgreen'>-- previous steps are executed within a WITH block</font>
+)
+SELECT p.* FROM restore rq
+  JOIN LATERAL (
+    SELECT * FROM jsonb_populate_record(
+      null::table_A, <font color='lightgreen'>-- template table</font>
+      rq.log_entry   <font color='lightgreen'>-- reconstructed row as JSONB</font>
+    )
+  ) p ON (true)
+</pre>
 
 
 #### 5.4.5. Table templates
@@ -341,6 +384,7 @@ states.
 
 IMPORTANT: A table template has to be created before the audited table
 is altered.
+
 
 ### 5.5. Work with the past state
 
