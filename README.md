@@ -46,6 +46,8 @@ As I'm on schemaless side with JSONB one audit table is enough to save
 all changes of all my tables. I do not need to care a lot about the 
 structure of my tables.
 
+![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
+
 For me, the main advantage using JSONB is the ability to convert table rows
 to one column and populate them back to sets of records without losing 
 information on the data types. This is very handy when creating a past
@@ -244,6 +246,8 @@ But still, two steps are necessary:
 * find out which audit_ids appear before transaction 6 and not belong
   to the excluded ids of step 1 => valid_ids
 
+![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/fetch_auditids_en.png "Fetching Audit_IDs")
+
 <pre>
 WITH
   excluded_ids AS (
@@ -279,6 +283,8 @@ For each fetched audit_id a row has to be reconstructed. This is done by
 searching the values of each column of the given table. AS JSONB is used 
 GIN indexing is of benefit here. If no log corresponding to the column 
 name exists in the row_log table, the recent state of the table is queried.
+
+![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/fetch_values_en.png "Fetching values")
 
 <pre>
 SELECT 
