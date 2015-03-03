@@ -105,7 +105,10 @@ now referencing tools where I looked up details:
 Run the `SETUP.sql` script to create the schema `pgmemento` with tables
 and functions. `VERSIONING.sql` is necessary to restore past table
 states and `INDEX_SCHEMA.sql` includes functions to define constraints
-in the schema where the tables state has been restored.
+in the schema where the tables state has been restored. `REVERT.sql`
+contains a procedure to rollback changes of a certain transaction and
+some more procedures to move a recreated database state into the
+production schema that is truncated in advance.
 
 
 ### 5.2. Start pgMemento
@@ -168,10 +171,55 @@ ROW_LOG
 
 As you can see only the changes are logged. DELETE and TRUNCATE commands
 would cause logging of the complete rows while INSERTs would leave a 
-blank field for the 'changes' column.
+blank field for the 'changes' column. 
+
+The logged information can already be of use, e.g. list all transactions 
+that had an effect on a certain column by using the ? operator:
+
+<pre>
+SELECT t.txid 
+  FROM pgmemento.transaction_log t
+  JOIN pgmemento.table_event_log e ON t.txid = e.transaction_id
+  JOIN pgmemento.row_log r ON r.event_id = e.id
+  WHERE 
+    r.audit_id = 4 
+  AND 
+    (r.changes ? 'column_B');
+</pre>
+
+List all rows that once had a certain value by using the @> operator:
+
+<pre>
+SELECT DISTINCT audit_id 
+  FROM pgmemento.row_log
+  WHERE 
+    changes @> '{"column_B": "old_value"}'::jsonb;
+</pre>
 
 
-### 5.4. Restore a past state of your database
+### 5.4. Revert certain transactions
+
+The logged information can be used to revert certain transactions that
+happened in the past. The procedure is simply called `revert_transaction`.
+
+The procedure loops over each row that was affected by the transaction.
+Deleted rows are processed first as they are going to be inserted. The rows
+are sorted by their audit_id in ascending order because the oldest row
+(which have a lower audit_id) need to be inserted first. Next come updated
+rows. They are again sorted by their audit_id but in descending order.
+Finally, inserted rows are looked up (`ORDER BY audit_id DESC`) and deleted.
+
+Regarding referential integrity it is important that INSERTs are done before
+UPDATEs and UPDATEs are done before DELETEs. The order of the audit_ids is
+not only important for references between tables but also for self-references
+when dealing with tree-structures in one table.
+
+Note that newly inserted buildings will always get a new audit_id and not
+keep their old one (even though it would still be a unique ID). Otherwise
+the restoring part would get too complicated.
+
+
+### 5.5. Restore a past state of your database
 
 A table state is restored with the procedure `pgmemento.restore_table_state
 (transaction_id, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
@@ -212,7 +260,7 @@ be logged as follows:
 | 99  | 21        | 555      | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
 | ... | ...       | ...      | ...                                                               |
 
-#### 5.4.1. The next transaction after date x
+#### 5.5.1. The next transaction after date x
 
 If the user just wants to restore a past table/database state by using
 a timestamp he will need to find out which is the next transaction 
@@ -236,7 +284,7 @@ SELECT pgmemento.restore_schema_state(
 The resulting transaction has the ID 6.
 
 
-#### 5.4.2. Fetching audit_ids (done internally)
+#### 5.5.2. Fetching audit_ids (done internally)
  
 I need to know which entries were valid before transaction 6 started.
 This can be done by simple JOIN of the log tables querying for audit_ids.
@@ -277,12 +325,11 @@ SELECT audit_id FROM valid_ids ORDER BY audit_id;
 </pre>
 
 
-#### 5.4.3. Generate entries from JSONB logs (done internally)
+#### 5.5.3. Generate entries from JSONB logs (done internally)
 
 For each fetched audit_id a row has to be reconstructed. This is done by
-searching the values of each column of the given table. AS JSONB is used 
-GIN indexing is of benefit here. If no log corresponding to the column 
-name exists in the row_log table, the recent state of the table is queried.
+searching the values of each column of the given table. If the key is not 
+found in the row_log table, the recent state of the table is queried.
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/fetch_values_en.png "Fetching values")
 
@@ -334,7 +381,7 @@ JOIN LATERAL ( <font color='lightgreen'>-- for each audit_id do:</font>
       )q 
     ) q1,
     SELECT q.key, q.value FROM (
-      SELECT 'name' AS key, r.changes -> 'name'
+      SELECT 'column_B' AS key, r.changes -> 'column_B'
       FROM pgmemento.row_log r ...
       )q 
     ) q2, 
@@ -344,7 +391,7 @@ ORDER BY f.audit_id
 </pre>
 
 
-#### 5.4.4. Recreate tables from JSONB logs (done internally)
+#### 5.5.4. Recreate tables from JSONB logs (done internally)
 
 The last step on the list would be to bring the generated JSONB objects
 into a tabular representation. PostgreSQL offers the function 
@@ -373,7 +420,7 @@ SELECT p.* FROM restore rq
 </pre>
 
 
-#### 5.4.5. Table templates
+#### 5.5.5. Table templates
 
 If I would use 'table_A' as the template for `json_populate_recordset` 
 I would receive the correct order and the correct data types of columns but 
@@ -392,7 +439,7 @@ IMPORTANT: A table template has to be created before the audited table
 is altered.
 
 
-### 5.5. Work with the past state
+#### 5.5.6. Work with the past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
