@@ -1,6 +1,8 @@
 pgMemento
 =====
 
+![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
+
 pgMemento is a versioning approach for PostgreSQL using triggers and server-side
 functions in PL/pgSQL and PL/V8.
 
@@ -14,10 +16,11 @@ functions in PL/pgSQL and PL/V8.
 4. Background & References
 5. How To
 6. Future Plans
-7. Developers
-8. Contact
-9. Special thanks
-10. Disclaimer
+7. Media
+8. Developers
+9. Contact
+10. Special thanks
+11. Disclaimer
 
 
 1. License
@@ -217,6 +220,28 @@ when dealing with tree-structures in one table.
 Note that newly inserted buildings will always get a new audit_id and not
 keep their old one (even though it would still be a unique ID). Otherwise
 the restoring part would get too complicated.
+
+The query looks like this (in extracts):
+
+<pre>
+SELECT * FROM (
+  (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+     FROM pgmemento.row_log r
+     JOIN pgmemento.table_event_log e ON r.event_id = e.id
+     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+     WHERE t.txid = $1 AND e.op_id > 2 -- DELETE oder TRUNCATE
+       ORDER BY r.audit_id ASC) -- oldest tuples are inserted first
+  UNION ALL
+  (SELECT ...
+     WHERE t.txid = $1 AND e.op_id = 2 -- UPDATE
+       ORDER BY r.audit_id DESC) -- youngest tuples are updated first
+  UNION ALL
+  (SELECT ...
+     WHERE t.txid = $1 AND e.op_id = 1 -- INSERT
+       ORDER BY r.audit_id DESC) -- youngest tuples are deleted first
+) txid_content
+ORDER BY op_id DESC -- first process the DELETEs, then the UPDATEs and finally the INSERTs
+</pre>
 
 
 ### 5.5. Restore a past state of your database
@@ -466,31 +491,41 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
+* Do more benchmarking
+* Catch changes on DDL level (ALTER TABLE) by using Event Triggers and have a
+  better way to manage table templates
 * Have another table to store metadata of additional created schemas
   for former table / database states.
-* Develop a method to revert specific changes e.g. connected to a 
-  transaction_id, date, user etc. I've already developed procedures
-  to merge a whole schema into another schema, e.g. to be able to do 
-  a full roll back on a database (see `REVERT.sql`). But the
-  approach is a bit over the top if I just want to revert one 
-  transaction.
 * Develop an alternative way to the row-based 'generate_log_entry' function
   to have a faster restoring process.
+* Take more consideration in reverting transaction because it's very simple 
+  at the moment
+* Better protection for log tables?
 
-  
-6. Developers
+
+7. Media
+--------------------------------------
+
+I gave a presentation in german at FOSSGIS 2015:
+https://www.youtube.com/watch?v=EqLkLNyI6Yk
+
+Slides can be found here (will make an english version soon):
+http://slides.com/fxku/pgmemento#/
+
+
+8. Developers
 -------------
 
 Felix Kunde
 
 
-7. Contact
+9. Contact
 ----------
 
 fkunde@virtualcitysystems.de
 
 
-8. Special Thanks
+10. Special Thanks
 -----------------
 
 * Adam Brusselback --> benchmarking and bugfixing
@@ -502,7 +537,7 @@ fkunde@virtualcitysystems.de
 * Ugur Yilmaz --> feedback and suggestions
 
 
-9. Disclaimer
+11. Disclaimer
 --------------
 
 pgMemento IS PROVIDED "AS IS" AND "WITH ALL FAULTS." 
