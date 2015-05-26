@@ -10,7 +10,7 @@
 -- About:
 -- If pgMemento has been used to restore tables as BASE TABLEs they do not include
 -- PRIMARY KEYs, FOREIGN KEYs and INDEXes. This script provides functions to
--- add those elements by querying information on recent contraints (as 
+-- add those elements by querying information on recent constraints (as 
 -- constraint metadata is yet not logged by pgMemento). 
 -------------------------------------------------------------------------------
 --
@@ -42,7 +42,7 @@
 * PKEY TABLE STATE
 *
 * If a table state is produced as a base table it will not have
-* a primary key. The primary key might be reconstruced by
+* a primary key. The primary key might be reconstructed by
 * querying the recent primary key of the table. If no primary
 * can be redefined the audit_id column will be used.
 ***********************************************************/
@@ -95,7 +95,7 @@ LANGUAGE plpgsql;
 *
 * If multiple table states are produced as tables they are not
 * referenced which each other. Foreign key relations might be
-* reconstruced by querying the recent foreign keys of the table.
+* reconstructed by querying the recent foreign keys of the table.
 ***********************************************************/
 -- define foreign keys between produced tables
 CREATE OR REPLACE FUNCTION pgmemento.fkey_table_state( 
@@ -107,7 +107,7 @@ $$
 DECLARE
   fkey RECORD;
 BEGIN
-  -- rebuild foreign key contraints
+  -- rebuild foreign key constraints
   FOR fkey IN EXECUTE 'SELECT tc.constraint_name AS fkey_name, kcu.column_name AS fkey_column, ccu.table_name AS ref_table, ccu.column_name AS ref_column
                         FROM information_schema.table_constraints AS tc 
                         JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
@@ -154,7 +154,7 @@ LANGUAGE plpgsql;
 *
 * If a produced table shall be used for queries indexes will 
 * be necessary in order to guarantee high performance. Indexes
-* might be reconstruced by querying recent indexes of the table.
+* might be reconstructed by querying recent indexes of the table.
 ***********************************************************/
 -- define index(es) on columns of a produced table
 CREATE OR REPLACE FUNCTION pgmemento.index_table_state( 

@@ -4,7 +4,7 @@ pgMemento
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
 
 pgMemento is a versioning approach for PostgreSQL using triggers and server-side
-functions in PL/pgSQL and PL/V8.
+functions in PL/pgSQL.
 
 
 0. Index
@@ -77,7 +77,6 @@ version of pgMemento.
 ----------------------
 
 * PostgreSQL 9.4
-* PL/V8
 
 
 4. Background & References
@@ -247,8 +246,12 @@ ORDER BY op_id DESC -- first process the DELETEs, then the UPDATEs and finally t
 ### 5.5. Restore a past state of your database
 
 A table state is restored with the procedure `pgmemento.restore_table_state
-(transaction_id, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
-* With a given transaction id the user requests the state of a given table before that transaction.
+(start_from_txid, end_at_txid, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
+* With a given range of transaction ids the user specifies the time slot he is interested in.
+  If the first value is lower than the first txid in the transaction_log table a complete replica
+  of the table - how it was when second given txid had been executed - is created. Note that only
+  with this setting you are able to have a correct view on a past state of your database (if the
+  procedure is run against every table of the database).
 * The result is written to another schema specified by the user. 
 * Tables can be restored as VIEWs (default) or TABLEs. 
 * If chosen VIEW the procedure can be executed again (e.g. by using another transaction id)
@@ -318,6 +321,7 @@ But still, two steps are necessary:
   (op_id > 2) before transaction 6 => excluded_ids
 * find out which audit_ids appear before transaction 6 and not belong
   to the excluded ids of step 1 => valid_ids
+* note that `t.txid &gt; 1` reflects the first parameter for procedure `pgmemento.restore_table_state`
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/fetch_auditids_en.png "Fetching Audit_IDs")
 
@@ -328,7 +332,7 @@ WITH
     FROM pgmemento.row_log r
     JOIN pgmemento.table_event_log e ON r.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-    WHERE t.txid &lt; 6
+    WHERE t.txid &gt; 1 AND t.txid &lt; 6
       AND e.table_relid = 'public.table_A'::regclass::oid
 	  AND e.op_id &gt; 2
   ),
@@ -338,7 +342,7 @@ WITH
     JOIN pgmemento.table_event_log e ON y.event_id = e.id
     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
     LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
-    WHERE t.txid &lt; 6
+    WHERE t.txid &gt; 1 AND t.txid &lt; 6
       AND e.table_relid = 'public.table_A'::regclass::oid
       AND (
         n.audit_id IS NULL
