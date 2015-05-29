@@ -513,8 +513,8 @@ However, here are some plans I have for the near future:
 I gave a presentation in german at FOSSGIS 2015:
 https://www.youtube.com/watch?v=EqLkLNyI6Yk
 
-Slides can be found here (will make an english version soon):
-http://slides.com/fxku/pgmemento#/
+Slides can be found here:
+http://slides.com/fxku/pgmemento_en#/
 
 
 8. Developers
