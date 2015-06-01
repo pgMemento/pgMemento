@@ -9,21 +9,26 @@
 -------------------------------------------------------------------------------
 -- About:
 -- If pgMemento has been used to restore tables as BASE TABLEs they do not include
--- PRIMARY KEYs, FOREIGN KEYs and INDEXes. This script provides functions to
--- add those elements by querying information on recent constraints (as 
--- constraint metadata is yet not logged by pgMemento). 
+-- PRIMARY KEYs, FOREIGN KEYs, INDEXes, SEQUENCEs and DEFAULT values for columns. 
+-- This script provides procedures to add those elements by querying information 
+-- on recent contraints (as such metadata is yet not logged by pgMemento).
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                   | Author
--- 0.1.0     2014-11-26   initial commit                                  FKun
+-- Version | Date       | Description                                     | Author
+-- 0.2.0     2015-06-01   added support for sequences and default values    FKun
+-- 0.1.0     2014-11-26   initial commit                                    FKun
 --
 
 /**********************************************************
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
+*   default_values_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public',
+*     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   default_values_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*     RETURNS SETOF VOID
 *   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
@@ -35,6 +40,8 @@
 *   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   pkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*     RETURNS SETOF VOID
+*   sequence_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public')
 *     RETURNS SETOF VOID
 ***********************************************************/
 
@@ -225,6 +232,82 @@ CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
 $$
 BEGIN
   EXECUTE 'SELECT pgmemento.index_table_state(tablename, schemaname, $3) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING target_schema_name, except_tables, original_schema_name;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* SEQUENCE TABLE STATE
+*
+* Adds sequences to the created target schema by querying the 
+* recent sequences of the source schema. This is only necessary
+* if new data will be inserted in a previous database state.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.sequence_schema_state( 
+  target_schema_name TEXT,
+  original_schema_name TEXT DEFAULT 'public'
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  seq TEXT;
+  seq_value INTEGER;
+BEGIN
+  -- copy or move sequences
+  FOR seq IN EXECUTE 'SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = $1' USING original_schema_name LOOP
+    EXECUTE format('SELECT nextval(%L)', original_schema_name || '.' || seq) INTO seq_value;
+    IF seq_value > 1 THEN
+      seq_value = seq_value - 1;
+    END IF;
+    EXECUTE format('CREATE SEQUENCE %I.%I START ' || seq_value, target_schema_name, seq);
+  END LOOP;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* DEFAULT VALUES TABLE STATE
+*
+* Recreate the default values for columns of a given table. 
+* This is only necessary if new data will be inserted in a
+* previous database state.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.default_values_table_state( 
+  table_name TEXT,
+  target_schema_name TEXT,
+  original_schema_name TEXT DEFAULT 'public'
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  default_v RECORD;
+BEGIN
+  FOR default_v IN EXECUTE 'SELECT column_name, column_default FROM information_schema.columns
+                              WHERE (table_schema, table_name) = ($1, $2) AND column_default IS NOT NULL'
+                              USING table_name, original_schema_name LOOP
+    BEGIN
+      -- alter default values of tables
+      EXECUTE format('ALTER TABLE %I.%I
+                        ALTER COLUMN %I SET DEFAULT ' || default_v.column_default,
+                        target_schema_name, table_name, default_v.column_name);
+    END;
+  END LOOP;
+END
+$$
+LANGUAGE plpgsql;
+
+
+-- perform default_values_table_state on multiple tables in one schema
+CREATE OR REPLACE FUNCTION pgmemento.default_values_schema_state(
+  target_schema_name TEXT, 
+  original_schema_name TEXT DEFAULT 'public',
+  except_tables TEXT[] DEFAULT '{}'
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  EXECUTE 'SELECT pgmemento.default_values_table_state(tablename, schemaname, $3) FROM pg_tables 
              WHERE schemaname = $1 AND tablename <> ALL ($2)' 
              USING target_schema_name, except_tables, original_schema_name;
 END;
