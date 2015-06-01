@@ -8,13 +8,15 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script provides functions to
+-- This script provides functions to revert single transactions and entire database
+-- states.
 -- 
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.2.0     2015-02-26   added revert_transaction procedure              FKun
 -- 0.1.0     2014-11-26   initial commit                                  FKun
 --
 
@@ -179,6 +181,11 @@ BEGIN
 
   -- index tables in target schema
   EXECUTE 'SELECT pgmemento.index_table_state(tablename, schemaname, $3) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING target_schema_name, except_tables, schema_name;
+
+  -- add default values for tables in target schema
+  EXECUTE 'SELECT pgmemento.default_values_table_state(tablename, schemaname, $3) FROM pg_tables 
              WHERE schemaname = $1 AND tablename <> ALL ($2)' 
              USING target_schema_name, except_tables, schema_name;
 
