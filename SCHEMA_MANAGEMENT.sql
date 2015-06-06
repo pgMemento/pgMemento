@@ -1,4 +1,4 @@
--- INDEX_SCHEMA.sql
+-- SCHEMA_MANAGEMENT.sql
 --
 -- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
 --
@@ -12,13 +12,16 @@
 -- PRIMARY KEYs, FOREIGN KEYs, INDEXes, SEQUENCEs and DEFAULT values for columns. 
 -- This script provides procedures to add those elements by querying information 
 -- on recent contraints (as such metadata is yet not logged by pgMemento).
+-- Moreover, recreated tables can be moved or copied to another schema or they
+-- can just be dropped. This could be useful when choosing a restored state as to
+-- be the new production state.
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                     | Author
--- 0.2.0     2015-06-01   added support for sequences and default values    FKun
--- 0.1.0     2014-11-26   initial commit                                    FKun
+-- Version | Date       | Description                                   | Author
+-- 0.2.0     2015-06-06   added procedures and renamed file               FKun
+-- 0.1.0     2014-11-26   initial commit as INDEX_SCHEMA.sql              FKun
 --
 
 /**********************************************************
@@ -29,6 +32,8 @@
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   default_values_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
 *     RETURNS SETOF VOID
+*   drop_schema_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   drop_table_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
@@ -36,6 +41,10 @@
 *   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   index_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*     RETURNS SETOF VOID
+*   move_schema_state(target_schema_name TEXT, source_schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}',
+*     copy_data INTEGER DEFAULT 1) RETURNS SETOF void AS
+*   move_table_state(table_name TEXT, target_schema_name TEXT, source_schema_name TEXT, copy_data INTEGER DEFAULT 1
 *     RETURNS SETOF VOID
 *   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -240,7 +249,7 @@ LANGUAGE plpgsql;
 
 
 /**********************************************************
-* SEQUENCE TABLE STATE
+* SEQUENCE SCHEMA STATE
 *
 * Adds sequences to the created target schema by querying the 
 * recent sequences of the source schema. This is only necessary
@@ -298,7 +307,6 @@ END
 $$
 LANGUAGE plpgsql;
 
-
 -- perform default_values_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.default_values_schema_state(
   target_schema_name TEXT, 
@@ -308,6 +316,121 @@ CREATE OR REPLACE FUNCTION pgmemento.default_values_schema_state(
 $$
 BEGIN
   EXECUTE 'SELECT pgmemento.default_values_table_state(tablename, schemaname, $3) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING target_schema_name, except_tables, original_schema_name;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* MOVE (or COPY) TABLE STATE
+*
+* Allows for moving or copying tables to another schema. 
+* This can be useful when resetting the production state
+* by using an already restored state. In this case the 
+* content of the production schema should be removed and 
+* the content of the restored state would be moved.
+* Triggers for tables would have to be created again.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.move_table_state(
+  table_name TEXT,
+  target_schema_name TEXT,
+  source_schema_name TEXT,
+  copy_data INTEGER DEFAULT 1
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  IF copy_data <> 0 THEN
+    EXECUTE format('CREATE TABLE %I.%I AS SELECT * FROM %I.%I', target_schema_name, table_name, source_schema_name, table_name);
+  ELSE
+    EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', source_schema_name, table_name, target_schema_name);
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
+  target_schema_name TEXT, 
+  source_schema_name TEXT DEFAULT 'public',
+  except_tables TEXT[] DEFAULT '{}',
+  copy_data INTEGER DEFAULT 1
+  ) RETURNS SETOF void AS
+$$
+DECLARE
+  seq VARCHAR(30);
+  seq_value INTEGER;
+BEGIN
+  -- create new schema
+  EXECUTE format('CREATE SCHEMA %I', target_schema_name);
+
+  -- copy or move sequences
+  FOR seq IN EXECUTE 'SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = $1' USING source_schema_name LOOP
+    IF copy_data <> 0 THEN
+      EXECUTE format('SELECT nextval(%L)', source_schema_name || '.' || seq) INTO seq_value;
+      IF seq_value > 1 THEN
+        seq_value = seq_value - 1;
+      END IF;
+      EXECUTE format('CREATE SEQUENCE %I.%I START ' || seq_value, target_schema_name, seq);
+    ELSE
+      EXECUTE format('ALTER SEQUENCE %I.%I SET SCHEMA %I', source_schema_name, seq, target_schema_name);
+    END IF;
+  END LOOP;
+
+  -- copy or move tables
+  EXECUTE 'SELECT pgmemento.move_table_state(tablename, schemaname, $3, $4) FROM pg_tables 
+             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
+             USING target_schema_name, except_tables, source_schema_name, copy_data;
+ 
+  -- remove old schema if data were not copied but moved
+  IF copy_data = 0 THEN
+    EXECUTE format('DROP SCHEMA %I CASCADE', source_schema_name);
+  END IF;
+END
+$$
+LANGUAGE plpgsql;
+
+
+/**********************************************************
+* DROP TABLE STATE
+*
+* Drops a schema or table state e.g. if it is of no more use.
+* Note: The database schema itself is not dropped.
+***********************************************************/
+-- truncate and drop table and all depending objects
+CREATE OR REPLACE FUNCTION pgmemento.drop_table_state(
+  table_name TEXT,
+  target_schema_name TEXT DEFAULT 'public'
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  fkey TEXT;
+BEGIN
+  -- dropping depending references to given table
+  FOR fkey IN EXECUTE 'SELECT constraint_name AS fkey_name FROM information_schema.table_constraints 
+                         WHERE constraint_type = ''FOREIGN KEY'' AND table_schema = $1 AND table_name= $2'
+                          USING target_schema_name, table_name LOOP
+    EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', target_schema_name, table_name, fkey);
+  END LOOP;
+
+  -- hit the log_truncate_trigger
+  EXECUTE format('TRUNCATE TABLE %I.%I CASCADE', target_schema_name, table_name);
+
+  -- dropping the table
+  EXECUTE format('DROP TABLE %I.%I CASCADE', target_schema_name, table_name);
+END;
+$$
+LANGUAGE plpgsql;
+
+-- perform drop_table_state on multiple tables in one schema
+CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
+  target_schema_name TEXT, 
+  original_schema_name TEXT DEFAULT 'public',
+  except_tables TEXT[] DEFAULT '{}'
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  EXECUTE 'SELECT pgmemento.drop_table_state(tablename, schemaname, $3) FROM pg_tables 
              WHERE schemaname = $1 AND tablename <> ALL ($2)' 
              USING target_schema_name, except_tables, original_schema_name;
 END;
