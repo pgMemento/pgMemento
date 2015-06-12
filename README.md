@@ -495,16 +495,17 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
+* Separate script functions from API functions
 * Do more benchmarking
 * Catch changes on DDL level (ALTER TABLE) by using Event Triggers and have a
-  better way to manage table templates
-* Have another table to store metadata of additional created schemas
+  better way to manage table templates (e.g. by using metadata tables for
+  pkeys, fkeys, indexes, sequences, columns)
+* Have a view to store metadata of additional created schemas
   for former table / database states.
-* Develop an alternative way to the row-based 'generate_log_entry' function
-  to have a faster restoring process.
 * Take more consideration in reverting transaction because it's very simple 
   at the moment
 * Better protection for log tables?
+* Table partitioning strategy for row_log table
 
 
 7. Media
