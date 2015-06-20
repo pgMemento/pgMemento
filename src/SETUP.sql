@@ -134,12 +134,12 @@ ALTER TABLE pgmemento.table_event_log
   ADD CONSTRAINT table_event_constraint UNIQUE (transaction_id, table_relid, op_id),
   ADD CONSTRAINT table_event_log_txid_fk FOREIGN KEY (transaction_id)
     REFERENCES pgmemento.transaction_log (txid) MATCH FULL
-    ON DELETE RESTRICT ON UPDATE CASCADE;
+    ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE pgmemento.row_log
   ADD CONSTRAINT row_log_table_fk FOREIGN KEY (event_id)
     REFERENCES pgmemento.table_event_log (id) MATCH FULL
-    ON DELETE RESTRICT ON UPDATE CASCADE;
+    ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later
 DROP INDEX IF EXISTS transaction_log_date_idx;
