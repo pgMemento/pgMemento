@@ -77,6 +77,24 @@ $$
 LANGUAGE sql;
 
 
+CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
+  t_id BIGINT,
+  t_name TEXT,
+  s_name TEXT DEFAULT 'public'::text
+  ) RETURNS SETOF INTEGER AS
+$$
+BEGIN
+  RETURN QUERY 
+    DELETE FROM pgmemento.table_event_log 
+      WHERE transaction_id = t_id
+        AND schema_name = s_name
+        AND table_name = t_name RETURNING id;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+
 /***********************************************************
 CREATE VIEW
 
