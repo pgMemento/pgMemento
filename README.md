@@ -39,11 +39,9 @@ Databases have no memories of what happened in the past unless it is written
 down somewhere. From these notes it can figure out, how a past state might have
 looked like.
 
-pgMemento is a bunch of mostly PL/pgSQL scripts that enable auditing of a 
-PostgreSQL database. I take extensive use of JSON/JSONB functions to log my data. 
-Thus version 9.4 or higher is needed. I also use PL/V8 to work with the JSON-logs 
-on the server side. This extension has to be installed on the server. Downloads
-can be found [here](http://pgxn.org/dist/plv8/1.4.3/) or [here](http://www.postgresonline.com/journal/archives/341-PLV8-binaries-for-PostgreSQL-9.4-windows-both-32-bit-and-64-bit.html).
+pgMemento is a bunch of PL/pgSQL scripts that enable auditing of a PostgreSQL 
+database. I take extensive use of JSON/JSONB functions to log my data. 
+Thus, version 9.4 or higher is needed.
 
 As I'm on schemaless side with JSONB one audit table is enough to save 
 all changes of all my tables. I do not need to care a lot about the 
@@ -57,10 +55,10 @@ information on the data types. This is very handy when creating a past
 table state. I think the same applies to the PostgreSQL extension hstore
 so pgMemento could also be realized using hstore except JSONB.
 
-But taking a look into the past of the database is not the main motivation.
+But taking a look into the past of the database is not the only motivation.
 In the future everybody will use logical decoding for that, I guess. With 
-pgMemento the user shall be able to roll back certain transactions happened in 
-the past. I want to design a logic that checks if a transactions can be reverted 
+pgMemento the user shall be able to also roll back certain transactions happened 
+in the past. I want to design a logic that checks if a transactions can be reverted 
 in order that it fits to following transactions, e.g. a DELETE is simple, but 
 what about reverting an UPDATE on data that has been deleted later anyway? 
 
@@ -104,13 +102,15 @@ now referencing tools where I looked up details:
 
 ### 5.1. Add pgMemento to a database
 
-Run the `SETUP.sql` script to create the schema `pgmemento` with tables
-and functions. `VERSIONING.sql` is necessary to restore past table
-states and `INDEX_SCHEMA.sql` includes functions to define constraints
-in the schema where the tables state has been restored. `REVERT.sql`
-contains a procedure to rollback changes of a certain transaction and
-some more procedures to move a recreated database state into the
-production schema that is truncated in advance.
+A brief introduction about the different SQL files:
+* `SETUP.sql` contains DDL scripts for tables and basic setup functions
+* `VERSIONING.sql` is necessary to restore past table states
+* `SCHEMA_MANAGEMENT.sql` includes functions to define constraints in the schema where tables have been restored
+* `REVERT.sql` contains a procedure to rollback changes of a certain transaction and
+* `LOG_UTIL.sql` provides some helpe functions for handling the audited information
+
+Run the `INSTALL_PGMEMENTO.sql` script with the psql client of PostgreSQL.
+Now a new schema will appear in your database called `pgmemento`. 
 
 
 ### 5.2. Start pgMemento
@@ -143,6 +143,14 @@ as the initial versioning state by executing the procedure
 For each row in the audited tables another row will be written to the 
 'row_log' table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed.
+
+These two steps - `create_schema_state` and `log_schema_state` - can be
+coupled by when using the `ACTIVATE_PGMEMENTO.sql` script. When running
+this script the user is prompted for specifying the database schema which
+shall be audited and the tables that shall be excluded from auditing
+(simply separated by comma). Depending on the number of tables to alter
+and on the amount if data that assigned as INSERTed in the log tables
+this process can take a while.
 
 
 ### 5.3. Have a look at the logged information
@@ -197,7 +205,6 @@ SELECT DISTINCT audit_id
   WHERE 
     changes @> '{"column_B": "old_value"}'::jsonb;
 </pre>
-
 
 ### 5.4. Revert certain transactions
 
@@ -527,7 +534,7 @@ Felix Kunde
 9. Contact
 ----------
 
-fkunde@virtualcitysystems.de
+felix-kunde@gmx.de
 
 
 10. Special Thanks
