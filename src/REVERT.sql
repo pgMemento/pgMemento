@@ -39,29 +39,23 @@ BEGIN
   SET CONSTRAINTS ALL DEFERRED;
 
   FOR rec IN 
-    SELECT * FROM (
-      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-         FROM pgmemento.row_log r
-         JOIN pgmemento.table_event_log e ON r.event_id = e.id
-         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-         WHERE t.txid = tid AND e.op_id > 2
-         ORDER BY r.audit_id ASC)
-       UNION ALL
-      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-         FROM pgmemento.row_log r
-         JOIN pgmemento.table_event_log e ON r.event_id = e.id
-         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-         WHERE t.txid = tid AND e.op_id = 2
-         ORDER BY r.audit_id DESC)
-       UNION ALL
-      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-         FROM pgmemento.row_log r
-         JOIN pgmemento.table_event_log e ON r.event_id = e.id
-         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-         WHERE t.txid = tid AND e.op_id = 1
-         ORDER BY r.audit_id DESC)
-    ) txid_content
-    ORDER BY op_id DESC
+    SELECT r.audit_order, r.audit_id, r.changes, 
+           e.schema_name, e.table_name, e.op_id
+      FROM pgmemento.table_event_log e
+      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+      JOIN LATERAL (
+        SELECT 
+          CASE WHEN e.op_id > 2 THEN
+            rank() OVER (ORDER BY audit_id ASC)
+          ELSE
+            rank() OVER (ORDER BY audit_id DESC)
+          END AS audit_order,
+          audit_id, changes 
+        FROM pgmemento.row_log 
+          WHERE event_id = e.id
+      ) r ON (true)
+      WHERE t.txid = tid
+        ORDER BY e.id DESC, audit_order ASC
   LOOP
     -- INSERT case
     IF rec.op_id = 1 THEN
@@ -93,9 +87,8 @@ BEGIN
       WITH json_update AS (
         SELECT * FROM jsonb_each_text(rec.changes)
           UNION ALL
-        SELECT * FROM jsonb_each_text(j.aid) FROM (
-          (SELECT json_object_agg('audit_id',nextval('pgmemento.audit_id_seq'))::jsonb)
-        )
+        SELECT * FROM jsonb_each_text(
+          (SELECT json_object_agg('audit_id',nextval('pgmemento.audit_id_seq'))::jsonb))
       )
       SELECT json_object_agg(key, value)::jsonb INTO updated_changes FROM json_update;
 
