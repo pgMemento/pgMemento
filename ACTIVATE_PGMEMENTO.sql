@@ -1,6 +1,6 @@
 -- ACTIVATE_PGMEMENTO.sql
 --
--- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
+-- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
 --              This script is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
