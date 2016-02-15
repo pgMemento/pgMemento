@@ -1,6 +1,6 @@
 -- REVERT.sql
 --
--- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
+-- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
 --              This skript is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.2.1     2016-02-14   removed dynamic sql code                        FKun
 -- 0.2.0     2015-02-26   added revert_transaction procedure              FKun
 -- 0.1.0     2014-11-26   initial commit                                  FKun
 --
@@ -29,7 +30,7 @@
 CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid BIGINT) RETURNS SETOF VOID AS
 $$
 DECLARE
-  r RECORD;
+  rec RECORD;
   column_name TEXT;
   delimeter VARCHAR(1);
   update_stmt TEXT;
@@ -37,67 +38,73 @@ DECLARE
 BEGIN
   SET CONSTRAINTS ALL DEFERRED;
 
-  FOR r IN EXECUTE 
-    'SELECT * FROM (
-       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-          FROM pgmemento.row_log r
-          JOIN pgmemento.table_event_log e ON r.event_id = e.id
-          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-          WHERE t.txid = $1 AND e.op_id > 2
-          ORDER BY r.audit_id ASC)
-        UNION ALL
-       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-          FROM pgmemento.row_log r
-          JOIN pgmemento.table_event_log e ON r.event_id = e.id
-          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-          WHERE t.txid = $1 AND e.op_id = 2
-          ORDER BY r.audit_id DESC)
-        UNION ALL
-       (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-          FROM pgmemento.row_log r
-          JOIN pgmemento.table_event_log e ON r.event_id = e.id
-          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-          WHERE t.txid = $1 AND e.op_id = 1
-          ORDER BY r.audit_id DESC)
-     ) txid_content
-     ORDER BY op_id DESC' USING tid LOOP
-
+  FOR rec IN 
+    SELECT * FROM (
+      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+         FROM pgmemento.row_log r
+         JOIN pgmemento.table_event_log e ON r.event_id = e.id
+         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+         WHERE t.txid = tid AND e.op_id > 2
+         ORDER BY r.audit_id ASC)
+       UNION ALL
+      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+         FROM pgmemento.row_log r
+         JOIN pgmemento.table_event_log e ON r.event_id = e.id
+         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+         WHERE t.txid = tid AND e.op_id = 2
+         ORDER BY r.audit_id DESC)
+       UNION ALL
+      (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
+         FROM pgmemento.row_log r
+         JOIN pgmemento.table_event_log e ON r.event_id = e.id
+         JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+         WHERE t.txid = tid AND e.op_id = 1
+         ORDER BY r.audit_id DESC)
+    ) txid_content
+    ORDER BY op_id DESC
+  LOOP
     -- INSERT case
-    IF r.op_id = 1 THEN
-      EXECUTE format('DELETE FROM %I.%I WHERE audit_id = %L', r.schema_name, r.table_name, r.audit_id);
+    IF rec.op_id = 1 THEN
+      EXECUTE format('DELETE FROM %I.%I WHERE audit_id = $1', rec.schema_name, rec.table_name) USING rec.audit_id;
 
     -- UPDATE case
-    ELSIF r.op_id = 2 THEN
-      -- set variables for update statement
-      delimeter := '';
-      update_stmt := format('UPDATE %I.%I SET', r.schema_name, r.table_name);
+    ELSIF rec.op_id = 2 THEN
+      IF rec.changes IS NOT NULL AND rec.changes <> '{}'::jsonb THEN
+        -- set variables for update statement
+        delimeter := '';
+        update_stmt := format('UPDATE %I.%I SET', rec.schema_name, rec.table_name);
 
-      -- loop over found keys
-      FOR column_name IN EXECUTE 'SELECT jsonb_object_keys($1)' USING r.changes LOOP
-        update_stmt := update_stmt || delimeter ||
-                         format(' %I = (SELECT %I FROM jsonb_populate_record(null::%I.%I, %L))',
-                         column_name, column_name, r.schema_name, r.table_name, r.changes);
-        delimeter := ',';
-      END LOOP;
+        -- loop over found keys
+        FOR column_name IN SELECT jsonb_object_keys(rec.changes) LOOP
+          update_stmt := update_stmt || delimeter ||
+                           format(' %I = (SELECT %I FROM jsonb_populate_record(null::%I.%I, $1))',
+                           column_name, column_name, rec.schema_name, rec.table_name);
+          delimeter := ',';
+        END LOOP;
 
-      -- add condition and execute
-      update_stmt := update_stmt || format(' WHERE audit_id = %L', r.audit_id);
-      EXECUTE update_stmt;
+        -- add condition and execute
+        update_stmt := update_stmt || ' WHERE audit_id = $2';
+        EXECUTE update_stmt USING rec.changes, rec.audit_id;
+      END IF;
 
     -- DELETE and TRUNCATE case
     ELSE
-      EXECUTE 'WITH json_update AS
-                (SELECT * FROM jsonb_each_text($1)
-                   UNION ALL
-                 SELECT * FROM jsonb_each_text($2)
-                )
-                SELECT json_object_agg(key, value)::jsonb FROM json_update'
-                INTO updated_changes USING r.changes, json_object_agg('audit_id',nextval('pgmemento.audit_id_seq'))::jsonb;
+      -- re-insertion of deleted rows will use new audit_ids
+      WITH json_update AS (
+        SELECT * FROM jsonb_each_text(rec.changes)
+          UNION ALL
+        SELECT * FROM jsonb_each_text(j.aid) FROM (
+          (SELECT json_object_agg('audit_id',nextval('pgmemento.audit_id_seq'))::jsonb)
+        )
+      )
+      SELECT json_object_agg(key, value)::jsonb INTO updated_changes FROM json_update;
 
       EXECUTE format('INSERT INTO %I.%I
-                        SELECT * FROM jsonb_populate_record(null::%I.%I, %L)',
-                        r.schema_name, r.table_name, r.schema_name, r.table_name, updated_changes);
+                        SELECT * FROM jsonb_populate_record(null::%I.%I, $1)',
+                        rec.schema_name, rec.table_name, rec.schema_name, rec.table_name)
+                        USING updated_changes;
     END IF;
   END LOOP;
 END;
-$$ LANGUAGE plpgsql;
+$$ 
+LANGUAGE plpgsql;

@@ -1,6 +1,6 @@
 -- SETUP.sql
 --
--- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
+-- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
 --              This script is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
@@ -14,9 +14,10 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                    | Author
--- 0.2.0     2015-02-21   new table structure, more triggers and JSONB     FKun
--- 0.1.0     2014-11-26   initial commit                                   FKun
+-- Version | Date       | Description                                       | Author
+-- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
+-- 0.2.0     2015-02-21   new table structure, more triggers and JSONB        FKun
+-- 0.1.0     2014-11-26   initial commit                                      FKun
 --
 
 /**********************************************************
@@ -203,13 +204,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.create_table_audit(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.create_table_audit(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 -- drop pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
@@ -233,13 +231,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.drop_table_audit(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.drop_table_audit(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -277,13 +272,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.create_table_log_trigger(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.create_table_log_trigger(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 -- drop logging triggers for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
@@ -307,13 +299,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.drop_table_log_trigger(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.drop_table_log_trigger(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -329,7 +318,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(%L::regclass)', schema_name, table_name, 'pgmemento.audit_id_seq');
+  EXECUTE format('ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass)', schema_name, table_name);
   EXECUTE format('CREATE INDEX %I ON %I.%I (audit_id)', table_name || '_audit_idx', schema_name, table_name); 
 END;
 $$
@@ -341,13 +330,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.create_table_audit_id(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.create_table_audit_id(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 -- drop column 'audit_id' from a table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit_id(
@@ -368,13 +354,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.drop_table_audit_id(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.drop_table_audit_id(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -406,11 +389,10 @@ BEGIN
   END CASE;
 
   BEGIN
-    EXECUTE 'INSERT INTO pgmemento.table_event_log
-               (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
-             VALUES
-               (txid_current(), $1, $2, $3, $4, $5)'
-               USING operation_id, TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_RELID;
+    INSERT INTO pgmemento.table_event_log
+      (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+    VALUES
+      (txid_current(), operation_id, TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_RELID);
 
     EXCEPTION
       WHEN unique_violation THEN
@@ -434,15 +416,15 @@ $$
 DECLARE
   e_id INTEGER;
 BEGIN
-  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
-             WHERE transaction_id = txid_current() 
-               AND table_relid = $1
-               AND op_id = 4'
-               INTO e_id USING TG_RELID;
+  SELECT id INTO e_id
+    FROM pgmemento.table_event_log 
+      WHERE transaction_id = txid_current() 
+        AND table_relid = TG_RELID
+        AND op_id = 4;
 
   EXECUTE format('INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-                    SELECT %L, audit_id, row_to_json(%I)::jsonb AS content FROM %I.%I',
-                    e_id, TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME);
+                    SELECT $1, audit_id, row_to_json(%I)::jsonb AS content FROM %I.%I',
+                    TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME) USING e_id;
 
   RETURN NULL;
 END;
@@ -462,15 +444,14 @@ $$
 DECLARE
   e_id INTEGER;
 BEGIN
-  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
-             WHERE transaction_id = txid_current() 
-               AND table_relid = $1
-               AND op_id = 1'
-               INTO e_id USING TG_RELID;
+  SELECT id INTO e_id 
+    FROM pgmemento.table_event_log 
+      WHERE transaction_id = txid_current() 
+        AND table_relid = TG_RELID
+        AND op_id = 1;
 
-  EXECUTE 'INSERT INTO pgmemento.row_log (event_id, audit_id)
-             VALUES ($1, $2)'
-             USING e_id, NEW.audit_id;
+  INSERT INTO pgmemento.row_log (event_id, audit_id)
+    VALUES (e_id, NEW.audit_id);
 			 
   RETURN NULL;
 END;
@@ -491,21 +472,21 @@ DECLARE
   e_id INTEGER;
   json_diff JSONB;
 BEGIN
-  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
-             WHERE transaction_id = txid_current() 
-               AND table_relid = $1
-               AND op_id = 2'
-               INTO e_id USING TG_RELID;
+  SELECT id INTO e_id FROM pgmemento.table_event_log 
+    WHERE transaction_id = txid_current() 
+      AND table_relid = TG_RELID
+      AND op_id = 2;
 
-  EXECUTE format('WITH json_diff AS (
-                    SELECT COALESCE(
-                     (SELECT (''{'' || string_agg(to_json(key) || '':'' || value, '','') || ''}'') FROM jsonb_each(%L::jsonb)
-                        WHERE NOT (''{'' || to_json(key) || '':'' || value || ''}'')::jsonb <@ %L),
-                      ''{}'')::jsonb AS delta
-                  )
-				  INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-                    SELECT %L, %L, delta FROM json_diff',
-	                row_to_json(OLD), row_to_json(NEW), e_id, NEW.audit_id);
+  WITH json_diff AS (
+    SELECT COALESCE(
+      (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
+         FROM jsonb_each(row_to_json(OLD)::jsonb)
+           WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ row_to_json(NEW)::jsonb
+      ),
+      '{}')::jsonb AS delta
+    )
+    INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+      SELECT e_id, NEW.audit_id, delta FROM json_diff;
 
   RETURN NULL;
 END;
@@ -525,15 +506,14 @@ $$
 DECLARE
   e_id INTEGER;
 BEGIN
-  EXECUTE 'SELECT id FROM pgmemento.table_event_log 
-             WHERE transaction_id = txid_current() 
-               AND table_relid = $1
-               AND op_id = 3'
-               INTO e_id USING TG_RELID;
+  SELECT id INTO e_id
+    FROM pgmemento.table_event_log 
+      WHERE transaction_id = txid_current() 
+        AND table_relid = TG_RELID
+        AND op_id = 3;
 
-  EXECUTE 'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-             VALUES ($1, $2, $3)'
-             USING e_id, OLD.audit_id, row_to_json(OLD)::jsonb;
+  INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+    VALUES (e_id, OLD.audit_id, row_to_json(OLD)::jsonb);
 
   RETURN NULL;
 END;
@@ -573,12 +553,12 @@ BEGIN
 
     BEGIN
       -- fill table_event_log table  
-      EXECUTE 'INSERT INTO pgmemento.table_event_log
-                 (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
-               VALUES
-                 (txid_current(), 1, ''INSERT'', $1, $2, $3::regclass::oid)
-               RETURNING id' INTO e_id
-                 USING original_schema_name, original_table_name, original_schema_name || '.' || original_table_name;
+      INSERT INTO pgmemento.table_event_log
+        (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+      VALUES
+        (txid_current(), 1, 'INSERT', original_schema_name, original_table_name, 
+           (original_schema_name || '.' || original_table_name)::regclass::oid)
+      RETURNING id INTO e_id;
 
       EXCEPTION
         WHEN unique_violation THEN
@@ -587,8 +567,8 @@ BEGIN
 
     IF e_id IS NOT NULL THEN
       EXECUTE format('INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-                        SELECT %L, audit_id, NULL::jsonb AS changes FROM %I.%I',
-                        e_id, original_schema_name, original_table_name);
+                        SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I',
+                        original_schema_name, original_table_name) USING e_id;
     END IF;
   END IF;
 END;
@@ -601,13 +581,10 @@ CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.log_table_state(tablename, schemaname) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING schema_name, except_tables;
-END;
+  SELECT pgmemento.log_table_state(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -637,10 +614,11 @@ BEGIN
   template_name := original_table_name || '_' || template_count;
 
   -- saving metadata of the template
-  EXECUTE 'INSERT INTO pgmemento.table_templates (id, name, original_schema, original_table, original_relid, creation_date)
-             VALUES ($1, $2, $3, $4, $5::regclass::oid, now()::timestamp)'
-             USING template_count, template_name, original_schema_name, original_table_name,
-                     original_schema_name || '.' || original_table_name;
+  INSERT INTO pgmemento.table_templates 
+    (id, name, original_schema, original_table, original_relid, creation_date)
+  VALUES 
+    (template_count, template_name, original_schema_name, original_table_name,
+       (original_schema_name || '.' || original_table_name)::regclass::oid, now()::timestamp);
 
   -- creating the template
   EXECUTE format('CREATE UNLOGGED TABLE pgmemento.%I AS SELECT * FROM %I.%I WHERE false',

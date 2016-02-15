@@ -1,6 +1,6 @@
 -- SCHEMA_MANAGEMENT.sql
 --
--- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
+-- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
 --              This skript is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
@@ -20,6 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.2.1     2016-02-14   removed unnecessary plpgsql code                FKun
 -- 0.2.0     2015-06-06   added procedures and renamed file               FKun
 -- 0.1.0     2014-11-26   initial commit as INDEX_SCHEMA.sql              FKun
 --
@@ -30,13 +31,13 @@
 * FUNCTIONS:
 *   default_values_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public',
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   default_values_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*   default_values_table_state(tab_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
 *     RETURNS SETOF VOID
 *   drop_schema_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   drop_table_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   drop_table_state(tab_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*   fkey_table_state(tab_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
 *     RETURNS SETOF VOID
 *   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -73,14 +74,14 @@ DECLARE
   pkey_columns TEXT := '';
 BEGIN
   -- rebuild primary key columns to index produced tables
-  EXECUTE 'SELECT array_to_string(array_agg(pga.attname),'','') FROM pg_index pgi, pg_class pgc, pg_attribute pga 
-             WHERE pgc.oid = $1::regclass 
-             AND pgi.indrelid = pgc.oid 
-             AND pga.attrelid = pgc.oid 
-             AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary' 
-               INTO pkey_columns USING '"' || original_schema_name || '".' || table_name;
+  SELECT array_to_string(array_agg(pga.attname),',') INTO pkey_columns
+    FROM pg_index pgi, pg_class pgc, pg_attribute pga 
+      WHERE pgc.oid = (original_schema_name || '.' || table_name)::regclass 
+        AND pgi.indrelid = pgc.oid 
+        AND pga.attrelid = pgc.oid 
+        AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary;
 
-  IF length(pkey_columns) = 0 THEN
+  IF pkey_columns IS NULL THEN
     RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''audit_id'' will be used as primary key.', table_name;
     pkey_columns := 'audit_id';
   END IF;
@@ -97,13 +98,10 @@ CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.pkey_table_state(tablename, schemaname, $3) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, original_schema_name;
-END;
+  SELECT pgmemento.pkey_table_state(tablename, target_schema_name, schemaname) FROM pg_tables 
+    WHERE schemaname = original_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}')); 
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -115,7 +113,7 @@ LANGUAGE plpgsql;
 ***********************************************************/
 -- define foreign keys between produced tables
 CREATE OR REPLACE FUNCTION pgmemento.fkey_table_state( 
-  table_name TEXT,
+  tab_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'
   ) RETURNS SETOF VOID AS
@@ -124,24 +122,27 @@ DECLARE
   fkey RECORD;
 BEGIN
   -- rebuild foreign key constraints
-  FOR fkey IN EXECUTE 'SELECT tc.constraint_name AS fkey_name, kcu.column_name AS fkey_column, ccu.table_name AS ref_table, ccu.column_name AS ref_column
-                        FROM information_schema.table_constraints AS tc 
-                        JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
-                        JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
-                          WHERE constraint_type = ''FOREIGN KEY'' AND tc.table_schema = $1 AND tc.table_name=$2' 
-                          USING original_schema_name, table_name LOOP
+  FOR fkey IN 
+    SELECT tc.constraint_name AS fkey_name, kcu.column_name AS fkey_column, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+      FROM information_schema.table_constraints AS tc 
+      JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name
+      JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name
+        WHERE constraint_type = 'FOREIGN KEY' 
+          AND tc.table_schema = original_schema_name
+          AND tc.table_name = tab_name 
+  LOOP
     BEGIN
       -- test query
       EXECUTE format('SELECT 1 FROM %I.%I a, %I.%I b WHERE a.%I = b.%I LIMIT 1',
-                        target_schema_name, table_name, target_schema_name, fkey.ref_table, fkey.fkey_column, fkey.ref_column);
+                        target_schema_name, tab_name, target_schema_name, fkey.ref_table, fkey.fkey_column, fkey.ref_column);
 
       -- recreate foreign key of original table
       EXECUTE format('ALTER TABLE %I.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %I.%I ON UPDATE CASCADE ON DELETE RESTRICT',
-                        target_schema_name, table_name, fkey.fkey_name, fkey.fkey_column, target_schema_name, fkey.ref_table, fkey.ref_column);
+                        target_schema_name, tab_name, fkey.fkey_name, fkey.fkey_column, target_schema_name, fkey.ref_table, fkey.ref_column);
 
       EXCEPTION
         WHEN OTHERS THEN
-          RAISE NOTICE 'Could not recreate foreign key constraint ''%'' on table ''%'': %', fkey.fkey_name, table_name, SQLERRM;
+          RAISE NOTICE 'Could not recreate foreign key constraint ''%'' on table ''%'': %', fkey.fkey_name, tab_name, SQLERRM;
           NULL;
     END;
   END LOOP;
@@ -156,13 +157,10 @@ CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.fkey_table_state(tablename, schemaname, $3) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, original_schema_name;
-END;
+  SELECT pgmemento.fkey_table_state(tablename, target_schema_name, schemaname) FROM pg_tables 
+    WHERE schemaname = original_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -184,15 +182,18 @@ DECLARE
   dim INTEGER;
 BEGIN  
   -- rebuild user defined indexes
-  FOR idx IN EXECUTE 'SELECT pgc.relname AS idx_name, pgam.amname AS idx_type, array_to_string(
-                      ARRAY(SELECT pg_get_indexdef(pgi.indexrelid, k + 1, true) FROM generate_subscripts(pgi.indkey, 1) as k ORDER BY k)
-                      , '','') as idx_columns
-                      FROM pg_index pgi
-                      JOIN pg_class pgc ON pgc.oid = pgi.indexrelid
-                      JOIN pg_am pgam ON pgam.oid = pgc.relam
-                        AND pgi.indrelid = $1::regclass
-                        AND pgi.indisprimary = ''f''' 
-                        USING '"' || original_schema_name || '".' || table_name LOOP
+  FOR idx IN 
+    SELECT pgc.relname AS idx_name, pgam.amname AS idx_type, 
+      array_to_string(ARRAY(
+        SELECT pg_get_indexdef(pgi.indexrelid, k + 1, true) 
+          FROM generate_subscripts(pgi.indkey, 1) as k ORDER BY k)
+      , ',') as idx_columns
+    FROM pg_index pgi
+    JOIN pg_class pgc ON pgc.oid = pgi.indexrelid
+    JOIN pg_am pgam ON pgam.oid = pgc.relam
+      AND pgi.indrelid = (original_schema_name || '.' || table_name)::regclass
+      AND pgi.indisprimary = 'f'
+  LOOP
     BEGIN
       -- reset dim variable
       dim := 0;	  
@@ -204,9 +205,10 @@ BEGIN
       IF idx.idx_type = 'gist' THEN
         BEGIN		  
 		  -- query view 'geometry_columns' view to get the dimension of possible spatial column
-          EXECUTE 'SELECT coord_dimension FROM geometry_columns 
-                     WHERE f_table_schema = $1 AND f_table_name = $2 AND f_geometry_column = $3'
-                       INTO dim USING original_schema_name, table_name, idx.idx_columns;
+          SELECT coord_dimension INTO dim FROM geometry_columns 
+            WHERE f_table_schema = original_schema_name 
+              AND f_table_name = table_name 
+              AND f_geometry_column = idx.idx_columns;
 
           EXCEPTION
             WHEN OTHERS THEN
@@ -239,13 +241,10 @@ CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.index_table_state(tablename, schemaname, $3) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, original_schema_name;
-END;
+  SELECT pgmemento.index_table_state(tablename, target_schema_name, schemaname) FROM pg_tables 
+    WHERE schemaname = original_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -265,8 +264,10 @@ DECLARE
   seq_value INTEGER;
 BEGIN
   -- copy or move sequences
-  FOR seq IN EXECUTE 'SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = $1' USING original_schema_name LOOP
-    EXECUTE format('SELECT nextval(%L)', original_schema_name || '.' || seq) INTO seq_value;
+  FOR seq IN 
+    SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = original_schema_name 
+  LOOP
+    SELECT nextval(original_schema_name || '.' || seq) INTO seq_value;
     IF seq_value > 1 THEN
       seq_value = seq_value - 1;
     END IF;
@@ -285,7 +286,7 @@ LANGUAGE plpgsql;
 * previous database state.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.default_values_table_state( 
-  table_name TEXT,
+  tab_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'
   ) RETURNS SETOF VOID AS
@@ -293,14 +294,16 @@ $$
 DECLARE
   default_v RECORD;
 BEGIN
-  FOR default_v IN EXECUTE 'SELECT column_name, column_default FROM information_schema.columns
-                              WHERE (table_schema, table_name) = ($1, $2) AND column_default IS NOT NULL'
-                              USING table_name, original_schema_name LOOP
+  FOR default_v IN 
+    SELECT column_name, column_default FROM information_schema.columns
+      WHERE (table_schema, table_name) = (original_schema_name, tab_name) 
+        AND column_default IS NOT NULL
+  LOOP
     BEGIN
       -- alter default values of tables
       EXECUTE format('ALTER TABLE %I.%I
                         ALTER COLUMN %I SET DEFAULT ' || default_v.column_default,
-                        target_schema_name, table_name, default_v.column_name);
+                        target_schema_name, tab_name, default_v.column_name);
     END;
   END LOOP;
 END
@@ -314,13 +317,10 @@ CREATE OR REPLACE FUNCTION pgmemento.default_values_schema_state(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.default_values_table_state(tablename, schemaname, $3) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, original_schema_name;
-END;
+  SELECT pgmemento.default_values_table_state(tablename, target_schema_name, schemaname) FROM pg_tables 
+    WHERE schemaname = original_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}')); 
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -365,9 +365,11 @@ BEGIN
   EXECUTE format('CREATE SCHEMA %I', target_schema_name);
 
   -- copy or move sequences
-  FOR seq IN EXECUTE 'SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = $1' USING source_schema_name LOOP
+  FOR seq IN 
+    SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = source_schema_name 
+  LOOP
     IF copy_data <> 0 THEN
-      EXECUTE format('SELECT nextval(%L)', source_schema_name || '.' || seq) INTO seq_value;
+      SELECT nextval(source_schema_name || '.' || seq) INTO seq_value;
       IF seq_value > 1 THEN
         seq_value = seq_value - 1;
       END IF;
@@ -378,9 +380,8 @@ BEGIN
   END LOOP;
 
   -- copy or move tables
-  EXECUTE 'SELECT pgmemento.move_table_state(tablename, schemaname, $3, $4) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, source_schema_name, copy_data;
+  PERFORM pgmemento.move_table_state(tablename, target_schema_name, schemaname, copy_data) FROM pg_tables 
+    WHERE schemaname = source_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
  
   -- remove old schema if data were not copied but moved
   IF copy_data = 0 THEN
@@ -399,7 +400,7 @@ LANGUAGE plpgsql;
 ***********************************************************/
 -- truncate and drop table and all depending objects
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_state(
-  table_name TEXT,
+  tab_name TEXT,
   target_schema_name TEXT DEFAULT 'public'
   ) RETURNS SETOF VOID AS
 $$
@@ -407,32 +408,31 @@ DECLARE
   fkey TEXT;
 BEGIN
   -- dropping depending references to given table
-  FOR fkey IN EXECUTE 'SELECT constraint_name AS fkey_name FROM information_schema.table_constraints 
-                         WHERE constraint_type = ''FOREIGN KEY'' AND table_schema = $1 AND table_name= $2'
-                          USING target_schema_name, table_name LOOP
+  FOR fkey IN
+    SELECT constraint_name AS fkey_name FROM information_schema.table_constraints 
+      WHERE constraint_type = 'FOREIGN KEY' 
+        AND table_schema = target_schema_name 
+        AND table_name = tab_name
+  LOOP
     EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', target_schema_name, table_name, fkey);
   END LOOP;
 
   -- hit the log_truncate_trigger
-  EXECUTE format('TRUNCATE TABLE %I.%I CASCADE', target_schema_name, table_name);
+  EXECUTE format('TRUNCATE TABLE %I.%I CASCADE', target_schema_name, tab_name);
 
   -- dropping the table
-  EXECUTE format('DROP TABLE %I.%I CASCADE', target_schema_name, table_name);
+  EXECUTE format('DROP TABLE %I.%I CASCADE', target_schema_name, tab_name);
 END;
 $$
 LANGUAGE plpgsql;
 
 -- perform drop_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
-  target_schema_name TEXT, 
-  original_schema_name TEXT DEFAULT 'public',
+  target_schema_name TEXT,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.drop_table_state(tablename, schemaname, $3) FROM pg_tables 
-             WHERE schemaname = $1 AND tablename <> ALL ($2)' 
-             USING target_schema_name, except_tables, original_schema_name;
-END;
+  SELECT pgmemento.drop_table_state(tablename, schemaname) FROM pg_tables 
+    WHERE schemaname = target_schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;

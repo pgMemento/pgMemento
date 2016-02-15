@@ -1,6 +1,6 @@
 -- VERSIONING.sql
 --
--- Author:      Felix Kunde <fkunde@virtualcitysystems.de>
+-- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
 --              This skript is free software under the LGPL Version 3
 --              See the GNU Lesser General Public License at
@@ -14,9 +14,10 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                   | Author
--- 0.2.0     2015-05-26   more efficient queries                          FKun
--- 0.1.0     2014-11-26   initial commit                                  FKun
+-- Version | Date       | Description                                       | Author
+-- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
+-- 0.2.0     2015-05-26   more efficient queries                              FKun
+-- 0.1.0     2014-11-26   initial commit                                      FKun
 --
 
 /**********************************************************
@@ -52,9 +53,10 @@ BEGIN
 
   -- get the content of each column that happened to be in the table when the transaction was executed
   FOR column_name IN 
-    EXECUTE 'SELECT attname FROM pg_attribute WHERE attrelid = $1::regclass and attstattarget != 0 ORDER BY attnum' 
-               USING template_schema || '.' || template_table LOOP
-
+    SELECT attname FROM pg_attribute 
+      WHERE attrelid = (template_schema || '.' || template_table)::regclass 
+        AND attstattarget != 0 ORDER BY attnum
+  LOOP
     v_columns_count := v_columns_count + 1;
     v_columns := v_columns || delimeter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
 
@@ -128,16 +130,19 @@ DECLARE
   delimeter VARCHAR(1) := '';
 BEGIN
   -- test if target schema already exist
-  EXECUTE 'SELECT 1 FROM information_schema.schemata WHERE schema_name = $1' INTO is_set_schema USING target_schema_name;
+  SELECT 1 INTO is_set_schema 
+    FROM information_schema.schemata 
+      WHERE schema_name = target_schema_name;
 
   IF is_set_schema IS NULL THEN
     EXECUTE format('CREATE SCHEMA %I', target_schema_name);
   END IF;
 
   -- test if table or view already exist in target schema
-  EXECUTE 'SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = $2 
-             AND (table_type = ''BASE TABLE'' OR table_type = ''VIEW'')' 
-             INTO is_set_table USING original_table_name, target_schema_name;
+  SELECT 1 INTO is_set_table FROM information_schema.tables 
+    WHERE table_name = original_table_name 
+      AND table_schema = target_schema_name 
+      AND (table_type = 'BASE TABLE' OR table_type = 'VIEW');
 
   IF is_set_table IS NOT NULL THEN
     IF update_state = 1 THEN
@@ -152,18 +157,17 @@ BEGIN
     END IF;
   ELSE
     -- check if logging entries exist in the audit_log table
-    EXECUTE 'SELECT 1 FROM pgmemento.table_event_log WHERE schema_name = $1 AND table_name = $2 LIMIT 1'
-               INTO logged USING original_schema_name, original_table_name;
+    SELECT 1 INTO logged FROM pgmemento.table_event_log 
+	  WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
 
     IF logged IS NOT NULL THEN
       -- if the table structure has changed over time we need to use a template table
       -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
-      EXECUTE 'SELECT name FROM pgmemento.table_templates
-                 WHERE original_schema = $1 AND original_table = $2 
-                   AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = $3)
-				   AND creation_date <= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = $4)
-                 ORDER BY creation_date DESC LIMIT 1'
-                 INTO template_table USING original_schema_name, original_table_name, start_from_tid, end_at_tid;
+      SELECT name INTO template_table FROM pgmemento.table_templates
+        WHERE original_schema = original_schema_name AND original_table = original_table_name
+          AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = start_from_tid)
+          AND creation_date <= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = end_at_tid)
+          ORDER BY creation_date DESC LIMIT 1;
 
       IF template_table IS NULL THEN
         template_schema := original_schema_name;
@@ -271,10 +275,9 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
   update_state INTEGER DEFAULT '0'
   ) RETURNS SETOF VOID AS
 $$
-BEGIN
-  EXECUTE 'SELECT pgmemento.restore_table_state($1, $2, tablename, schemaname, $3, $4, $5) FROM pg_tables 
-             WHERE schemaname = $6 AND tablename <> ALL ($7)'
-             USING start_from_tid, end_at_tid, target_schema_name, target_table_type, update_state, original_schema_name, except_tables;
-END;
+  SELECT pgmemento.restore_table_state(
+    start_from_tid, end_at_tid, tablename, schemaname, target_schema_name, target_table_type, update_state
+  ) FROM pg_tables 
+    WHERE schemaname = original_schema_name AND tablename <> ALL (except_tables);
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
