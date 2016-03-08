@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.2.2     2016-03-08   minor change to generate_log_entry function         FKun
 -- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
 -- 0.2.0     2015-05-26   more efficient queries                              FKun
 -- 0.1.0     2014-11-26   initial commit                                      FKun
@@ -24,7 +25,7 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   generate_log_entry(tid BIGINT, aid BIGINT, schema_name TEXT, table_name TEXT, template_schema TEXT, template_table TEXT) RETURNS jsonb
+*   generate_log_entry(tid BIGINT, aid BIGINT, original_table_name TEXT, original_schema_name TEXT DEFAULT 'public') RETURNS jsonb
 *   restore_schema_state(start_from_tid BIGINT, end_at_tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   restore_table_state(start_from_tid BIGINT, end_at_tid BIGINT, original_table_name TEXT, original_schema_name TEXT, 
@@ -33,64 +34,87 @@
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   tid BIGINT,
   aid BIGINT,
-  schema_name TEXT,
-  table_name TEXT,
-  template_schema TEXT,
-  template_table TEXT
+  original_table_name TEXT,
+  original_schema_name TEXT DEFAULT 'citydb'
   ) RETURNS jsonb AS
 $$
 DECLARE
+  logged INTEGER := 0;
+  template_schema TEXT;
+  template_table TEXT;
   restore_query TEXT;
   column_name TEXT;
   v_columns TEXT := '';
   v_columns_count NUMERIC := 0;
   for_each_valid_id TEXT := '';
-  delimeter VARCHAR(1) := '';
-  json_result JSONB;
+  delimiter VARCHAR(1) := '';
+  json_result JSONB := '{}'::jsonb;
 BEGIN
-  -- start building the SQL command
-  restore_query := 'SELECT json_build_object(';
+  -- check if logging entries exist in the audit_log table
+  SELECT 1 INTO logged FROM pgmemento.table_event_log 
+	WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
 
-  -- get the content of each column that happened to be in the table when the transaction was executed
-  FOR column_name IN 
-    SELECT attname FROM pg_attribute 
-      WHERE attrelid = (template_schema || '.' || template_table)::regclass 
-        AND attstattarget != 0 ORDER BY attnum
-  LOOP
-    v_columns_count := v_columns_count + 1;
-    v_columns := v_columns || delimeter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
+  IF logged IS NOT NULL THEN
+    -- if the table structure has changed over time we need to use a template table
+    -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
+    SELECT name INTO template_table FROM pgmemento.table_templates
+      WHERE original_schema = original_schema_name AND original_table = original_table_name
+        AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = tid)
+        ORDER BY creation_date DESC LIMIT 1;
 
-    -- first: try to find the value within logged changes in row_log (first occurrence greater than txid will be the correct value)
-    -- second: if not found, query the recent state for information
-    for_each_valid_id := for_each_valid_id || delimeter || format(
-      '(SELECT * FROM (
-          SELECT %L AS key, COALESCE(
-            (SELECT (r.changes -> %L) 
-               FROM pgmemento.row_log r
-                 JOIN pgmemento.table_event_log e ON r.event_id = e.id
-                 JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                 WHERE t.txid >= %L
-                   AND r.audit_id = %L
-                   AND (r.changes ? %L)
-                   ORDER BY r.id LIMIT 1
-            ),
-            (SELECT COALESCE(to_json(%I), NULL)::jsonb 
-               FROM %I.%I
-               WHERE audit_id = %L
-            )
-          ) AS value) q
-        ) q',
-        column_name, column_name, tid, aid, column_name,
-        column_name, schema_name, table_name, aid) || v_columns_count;
+    IF template_table IS NULL THEN
+      template_schema := original_schema_name;
+      template_table := original_table_name;
+    ELSE
+      template_schema := 'pgmemento';
+    END IF;
+	
+    -- start building the SQL command
+    restore_query := 'SELECT json_build_object(';
 
-    delimeter := ',';
-  END LOOP;
+    -- get the content of each column that happened to be in the table when the transaction was executed
+    FOR column_name IN 
+      SELECT attname FROM pg_attribute 
+        WHERE attrelid = (template_schema || '.' || template_table)::regclass 
+          AND attstattarget != 0 ORDER BY attnum
+    LOOP
+      v_columns_count := v_columns_count + 1;
+      v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
 
-  -- complete the SQL command
-  restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id;
+      -- first: try to find the value within logged changes in row_log (first occurrence greater than txid will be the correct value)
+      -- second: if not found, query the recent state for information
+      for_each_valid_id := for_each_valid_id || delimiter || format(
+        '(SELECT * FROM (
+            SELECT %L AS key, COALESCE(
+              (SELECT (r.changes -> %L) 
+                 FROM pgmemento.row_log r
+                   JOIN pgmemento.table_event_log e ON r.event_id = e.id
+                   JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+                   WHERE t.txid >= %L
+                     AND r.audit_id = %L
+                     AND (r.changes ? %L)
+                     ORDER BY r.id LIMIT 1
+              ),
+              (SELECT COALESCE(to_json(%I), NULL)::jsonb 
+                 FROM %I.%I
+                 WHERE audit_id = %L
+              )
+            ) AS value) q
+          ) q',
+          column_name, column_name, tid, aid, column_name,
+          column_name, original_schema_name, original_table_name, aid) || v_columns_count;
 
-  -- execute the SQL command
-  EXECUTE restore_query INTO json_result;
+      delimiter := ',';
+    END LOOP;
+
+    -- complete the SQL command
+    restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id;
+
+    -- execute the SQL command
+    EXECUTE restore_query INTO json_result;
+  ELSE
+    RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
+  END IF;
 
   RETURN json_result;
 END;
@@ -127,7 +151,7 @@ DECLARE
   v_columns TEXT := '';
   v_columns_count NUMERIC := 0;
   for_each_valid_id TEXT := '';
-  delimeter VARCHAR(1) := '';
+  delimiter VARCHAR(1) := '';
 BEGIN
   -- test if target schema already exist
   SELECT 1 INTO is_set_schema 
@@ -211,11 +235,11 @@ BEGIN
                      USING template_schema || '.' || template_table LOOP
 
           v_columns_count := v_columns_count + 1;
-          v_columns := v_columns || delimeter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
+          v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
 
           -- first: try to find the value within logged changes in row_log (first occurrence greater than txid will be the correct value)
           -- second: if not found, query the recent state for information
-          for_each_valid_id := for_each_valid_id || delimeter || format(
+          for_each_valid_id := for_each_valid_id || delimiter || format(
             '(SELECT * FROM (
                 SELECT %L AS key, COALESCE(
                   (SELECT (r.changes -> %L) 
@@ -236,7 +260,7 @@ BEGIN
               column_name, column_name, end_at_tid, column_name,
               column_name, original_schema_name, original_table_name) || v_columns_count;
 
-          delimeter := ',';
+          delimiter := ',';
         END LOOP;
 
         restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) ORDER BY f.audit_id)' ||
