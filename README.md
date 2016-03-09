@@ -145,12 +145,16 @@ For each row in the audited tables another row will be written to the
 timestamp the procedure has been executed.
 
 These two steps - `create_schema_state` and `log_schema_state` - can be
-coupled by when using the `ACTIVATE_PGMEMENTO.sql` script. When running
+coupled by when using the `INIT.sql` script. When running
 this script the user is prompted for specifying the database schema which
 shall be audited and the tables that shall be excluded from auditing
 (simply separated by comma). Depending on the number of tables to alter
 and on the amount if data that assigned as INSERTed in the log tables
 this process can take a while.
+
+Logging can be stopped and restarted by running the `STOP_AUDITING.sql`
+and `START_AUDITING.sql` scripts. Note that theses scripts do not affect
+the audit_id column in the logged tables.
 
 
 ### 5.3. Have a look at the logged information
@@ -487,6 +491,12 @@ the recent constraints defined in the certain schema (e.g. 'public').
 If table and/or database structures have changed fundamentally over time 
 it might not be possible to recreate constraints and indexes as their
 metadata is not logged by pgMemento. 
+
+
+### 5.6. Unistall pgMemento
+
+In order to stop and remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
+script.
 
 
 6. Future Plans
