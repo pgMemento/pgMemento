@@ -458,7 +458,7 @@ BEGIN
   BEGIN
     -- try to log corresponding transaction
     INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
-      VALUES (txid_current(), statement_timestamp()::timestamp, current_user, inet_client_addr());
+      VALUES (txid_current(), statement_timestamp(), current_user, inet_client_addr());
 
     EXCEPTION
       WHEN unique_violation THEN
@@ -647,7 +647,7 @@ BEGIN
     BEGIN
       -- fill transaction_log table 
       INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
-        VALUES (txid_current(), statement_timestamp()::timestamp, current_user, inet_client_addr());
+        VALUES (txid_current(), statement_timestamp(), current_user, inet_client_addr());
 
       EXCEPTION
         WHEN unique_violation THEN
