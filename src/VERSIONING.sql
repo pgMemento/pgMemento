@@ -57,7 +57,7 @@ BEGIN
   IF logged IS NOT NULL THEN
     -- if the table structure has changed over time we need to use a template table
     -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
-    SELECT name INTO template_table FROM pgmemento.table_templates
+    SELECT template_name INTO template_table FROM pgmemento.table_templates
       WHERE original_schema = original_schema_name AND original_table = original_table_name
         AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = tid)
         ORDER BY creation_date DESC LIMIT 1;
@@ -187,7 +187,7 @@ BEGIN
     IF logged IS NOT NULL THEN
       -- if the table structure has changed over time we need to use a template table
       -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
-      SELECT name INTO template_table FROM pgmemento.table_templates
+      SELECT template_name INTO template_table FROM pgmemento.table_templates
         WHERE original_schema = original_schema_name AND original_table = original_table_name
           AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = start_from_tid)
           AND creation_date <= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = end_at_tid)
