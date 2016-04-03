@@ -140,8 +140,7 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN 
-    SELECT s.audit_id, s.op_id, s.changes, s.schema_name, s.table_name, 
-      rank() OVER (PARTITION BY s.event_id ORDER BY s.audit_order) AS revert_order
+    SELECT s.audit_id, s.op_id, s.changes, s.schema_name, s.table_name, s.audit_order
     FROM (
       SELECT DISTINCT ON (r.audit_id)
         r.audit_id, r.changes, r.event_id,
@@ -157,7 +156,7 @@ BEGIN
         WHERE t.txid = tid
         ORDER BY r.audit_id, e.id
     ) s
-    ORDER BY s.event_id DESC, revert_order ASC 
+    ORDER BY s.event_id DESC, s.audit_order ASC 
   LOOP
     -- INSERT case
     IF rec.op_id = 1 THEN
