@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.2.4     2016-04-05   more constraints on log tables (+ new ID column)    FKun
 -- 0.2.3     2016-03-17   work with time zones and renamed column in          FKun
 --                        table_templates table
 -- 0.2.2     2016-03-09   fallbacks for adding columns and triggers           FKun 
@@ -82,26 +83,28 @@ CREATE TABLES
 DROP TABLE IF EXISTS pgmemento.transaction_log CASCADE;
 CREATE TABLE pgmemento.transaction_log
 (
-  txid BIGINT,
-  stmt_date TIMESTAMP WITH TIME ZONE,
+  id SERIAL,
+  txid BIGINT NOT NULL,
+  stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
   user_name TEXT,
   client_name TEXT
 );
 
 ALTER TABLE pgmemento.transaction_log
-ADD CONSTRAINT transaction_log_pk PRIMARY KEY (txid);
+ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
+ADD CONSTRAINT transaction_log_unique UNIQUE (txid);
 
 -- eventy on tables are logged into the table_event_log table
 DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
 CREATE TABLE pgmemento.table_event_log
 (
   id SERIAL,
-  transaction_id BIGINT,
-  op_id SMALLINT,
+  transaction_id BIGINT NOT NULL,
+  op_id SMALLINT NOT NULL,
   table_operation VARCHAR(8),
-  schema_name TEXT,
-  table_name TEXT,
-  table_relid OID
+  schema_name TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  table_relid OID NOT NULL
 );
 
 ALTER TABLE pgmemento.table_event_log
@@ -112,9 +115,9 @@ DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
 CREATE TABLE pgmemento.row_log
 (
   id BIGSERIAL,
-  event_id INTEGER,
-  audit_id BIGINT,
-  changes JSONB
+  event_id INTEGER NOT NULL,
+  audit_id BIGINT NOT NULL,
+  changes JSONB NOT NULL
 );
 
 ALTER TABLE pgmemento.row_log
@@ -125,11 +128,11 @@ DROP TABLE IF EXISTS pgmemento.table_templates CASCADE;
 CREATE TABLE pgmemento.table_templates
 (
   id SERIAL,
-  template_name TEXT,
-  original_schema TEXT,
-  original_table TEXT,
-  original_relid OID,
-  creation_date TIMESTAMP WITH TIME ZONE
+  template_name TEXT NOT NULL,
+  original_schema TEXT NOT NULL,
+  original_table TEXT NOT NULL,
+  original_relid OID NOT NULL,
+  creation_date TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 ALTER TABLE pgmemento.table_templates
@@ -720,7 +723,7 @@ BEGIN
 
   -- saving metadata of the template
   INSERT INTO pgmemento.table_templates 
-    (id, template_name, name, original_schema, original_table, original_relid, creation_date)
+    (id, template_name, original_schema, original_table, original_relid, creation_date)
   VALUES 
     (template_count, temp_name, original_schema_name, original_table_name,
        (original_schema_name || '.' || original_table_name)::regclass::oid, current_timestamp);
