@@ -639,6 +639,7 @@ $$
 DECLARE
   is_empty INTEGER := 0;
   e_id INTEGER;
+  pkey_columns TEXT := '';
 BEGIN
   -- first, check if table is not empty
   EXECUTE format(
@@ -673,9 +674,22 @@ BEGIN
 
     -- fill row_log table
     IF e_id IS NOT NULL THEN
-      EXECUTE format('INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-                        SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I',
-                        original_schema_name, original_table_name) USING e_id;
+      -- get the primary key columns
+      SELECT array_to_string(array_agg(pga.attname),',') INTO pkey_columns
+        FROM pg_index pgi, pg_class pgc, pg_attribute pga 
+          WHERE pgc.oid = (original_schema_name || '.' || original_table_name)::regclass 
+            AND pgi.indrelid = pgc.oid 
+            AND pga.attrelid = pgc.oid 
+            AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary;
+
+      IF pkey_columns IS NOT NULL THEN
+        pkey_columns := ' ORDER BY ' || pkey_columns;
+      END IF;
+
+      EXECUTE format(
+        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+           SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I' || pkey_columns,
+           original_schema_name, original_table_name) USING e_id;
     END IF;
   END IF;
 END;
