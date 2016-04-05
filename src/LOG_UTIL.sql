@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
+-- 0.2.1     2016-04-05   additional column in audited_tables view      FKun
 -- 0.2.0     2016-02-15   get txids done right                          FKun
 -- 0.1.0     2015-06-20   initial commit                                FKun
 --
@@ -128,15 +129,19 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT
-    t.schemaname, t.tablename, b.txid_min, b.txid_max 
-  FROM pg_class c, pg_namespace n, pg_tables t, pg_attribute a
+    t.schemaname, t.tablename, b.txid_min, b.txid_max, 
+    CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN TRUE ELSE FALSE END
+    AS tg_is_active
+  FROM pg_class c
+  JOIN pg_namespace n ON c.relnamespace = n.oid
+  JOIN pg_tables t ON c.relname = t.tablename
+  JOIN pg_attribute a ON c.oid = a.attrelid
+  LEFT JOIN pg_trigger tg ON c.oid = tg.tgrelid
     JOIN LATERAL (
       SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
     ) b ON (true)
-  WHERE c.relname = t.tablename
-    AND n.oid = c.relnamespace 
-    AND n.nspname = t.schemaname 
-    AND a.attrelid = c.oid
+  WHERE n.nspname = t.schemaname 
     AND t.schemaname != 'pgmemento'
-    AND a.attname = 'audit_id' 
+    AND a.attname = 'audit_id'
+    AND (tg.tgname = 'log_transaction_trigger' OR tg.tgname IS NULL)
     ORDER BY schemaname, tablename;
