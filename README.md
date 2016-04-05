@@ -50,7 +50,7 @@ database schema incl. constraints and indexes. This state can be used for histri
 reasons or as a planning alternative to play around with.
 
 pgMemento is not designed for write-instensive databases. You will certainly run
-out of disk space pretty soon. Nevertheless, transactions and data can simply be
+out of disk space pretty soon. Nevertheless, obsolete content can simply be
 removed from the logs at any time without affecting the versioning mechanism.
 
 pgMemento is written in plain PL/pgSQL. Thus, it can be set up on every machine 
@@ -71,9 +71,9 @@ newest version of pgMemento.
 
 The auditing approach of pgMemento is nothing new. Define triggers to log
 changes in your database is a well known practice. There are other tools
-out there which can also be used I guess. When I started the development
-for pgMemento I wasn't aware of that there are so many solutions out there
-(and new ones popping up every once in while).
+out there which can also be used. When I started the development for pgMemento 
+I wasn't aware of that there are so many solutions out there (and new ones 
+popping up every once in while).
 
 If you want a clearer table structure for logged data, say a history table
 for each audited table, have a look at [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum.
@@ -93,7 +93,7 @@ If you want to use a tool, that's proven to run in production for several
 years take a closer look at [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen.
 Logs are structured on columnar level, so auditing can also be switched off
 for certain columns. DDL changes on tables are caught by an event trigger.
-Rollbacks of transactions for single tables are possible. 
+Rollbacks of transactions are possible for single tables. 
 
 If you think the days for using triggers for auditing are numbered because 
 of the new logical decoding feature of PostgreSQL you are probably right.
@@ -226,11 +226,10 @@ The procedure is called `revert_transaction`.
 The procedure loops over each row that was affected by the given transaction.
 What is important here are the orders of events and audit_ids. The youngest
 table events need to be reverted first (`ORDER BY event_id DESC`). For each
-event dropped rows need to processed in ascending order because the oldest 
-row (the one with the lowest audit_id) needs to be inserted first. Updated
-and inserted rows need to be processed in descending order (so the biggest
-audit_id comes first) like the table events in order to not violate foreign
-key constraints.
+event dropped rows must be processed in ascending order because the oldest 
+row (the one with the lowest audit_id) has to be inserted first. Updated
+and inserted rows must be processed in descending order (so the biggest
+audit_id comes first) in order to not violate foreign key constraints.
 
 The query looks like this:
 
@@ -241,9 +240,11 @@ SELECT r.audit_order, r.audit_id, r.changes,
   JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
   JOIN LATERAL (
     SELECT 
-      CASE WHEN e.op_id > 2 THEN -- DELETE or TRUNCATE
+      -- DELETE or TRUNCATE
+      CASE WHEN e.op_id > 2 THEN 
         rank() OVER (ORDER BY audit_id ASC)
-      ELSE -- INSERT or UPDATE
+      -- INSERT or UPDATE
+      ELSE 
         rank() OVER (ORDER BY audit_id DESC)
       END AS audit_order,
       audit_id, changes 
@@ -254,8 +255,8 @@ SELECT r.audit_order, r.audit_id, r.changes,
   ORDER BY e.id DESC, audit_order ASC;
 </pre>
 
-Not that the LATERAL JOIN can also be replaced by a window query using
-`rank() OVER (PARTITION BY event_id ORDER BY audit_id)`. In my test the
+Note that the LATERAL JOIN can also be replaced by a window function using
+`rank() OVER (PARTITION BY event_id ORDER BY audit_id)`. In my tests the
 LATERAL query was slightly faster.
 
 Multiple transactions can be reverted by calling:
@@ -263,17 +264,18 @@ Multiple transactions can be reverted by calling:
 <pre>
 SELECT pgmemento.revert_transaction(txid) 
   FROM pgmemento.transaction_log
-  WHERE ... -- narrow down number of transactions to be reverted
+  WHERE ... -- narrow down the number of transactions to be reverted
   ORDER BY id DESC;
 </pre>
 
-This query could again be reverted. This raises another question:
-When reverting a couple of table events e.g. several UPDATEs on the same
-row wouldn't it be clever to just perform the oldest event? This can be
-realized by using a ascending order for tables event with a DISTINCT ON
-on the audit_id column. The query is part of the second revert procedure
-called `revert_transactions`. It can be used for each revert task, but
-it will perform worse for simple rollbacks compared to the other procedure.
+The resulting transaction could again be reverted. This raises another 
+question: When reverting a couple of table events e.g. several UPDATEs 
+on the same row wouldn't it be clever to just perform the oldest event? 
+This can be realized by using a ascending order for tables event with a 
+DISTINCT ON on the audit_id column. The query is part of the second revert 
+procedure called `revert_transactions`. It can be used for each revert 
+task, but it will perform worse for simple rollbacks compared to the other 
+procedure.
 
 
 ### 5.5. Restore a past state of your database
