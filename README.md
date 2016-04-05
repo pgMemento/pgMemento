@@ -33,42 +33,31 @@ Public License Version 3.0. See the file LICENSE for more details.
 2. About
 --------
 
-Memento. Isn't there a movie called like this? About losing memories?
-And the plot is presented in reverse order, right? With pgMemento it is similar.
-Databases have no memories of what happened in the past unless it is written
-down somewhere. From these notes it can figure out, how a past state might have
-looked like.
+pgMemento logs DML changes inside a PostgreSQL database. These logs are bound
+to events and transactions and not validity intervals. Because of that it is 
+also possible to rollback certain changes of the past and keeping the database
+consistent.
 
-pgMemento is a bunch of PL/pgSQL scripts that enable auditing of a PostgreSQL 
-database. I take extensive use of JSON/JSONB functions to log my data. 
-Thus, version 9.4 or higher is needed.
-
-As I'm on schemaless side with JSONB one audit table is enough to save 
-all changes of all my tables. I do not need to care a lot about the 
-structure of my tables.
+pgMemento uses triggers to log the changes. Only deltas between OLD and NEW are
+stored in order to save disk space. Having only fragments of rows makes things a
+bit more complicated but you will see that it can work quiet well using the
+JSONB data type. One log table is used to store the changes of all audited tables.
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
 
-For me, the main advantage using JSONB is the ability to convert table rows
-to one column and populate them back to sets of records without losing 
-information on the data types. This is very handy when creating a past
-table state. I think the same applies to the PostgreSQL extension hstore
-so pgMemento could also be realized using hstore except JSONB.
+pgMemento provides functions to recreate a former database state in a separate
+database schema incl. constraints and indexes. This state can be used for histrical
+reasons or as a planning alternative to play around with.
 
-But taking a look into the past of the database is not the only motivation.
-In the future everybody will use logical decoding for that, I guess. With 
-pgMemento the user shall be able to also roll back certain transactions happened 
-in the past. I want to design a logic that checks if a transactions can be reverted 
-in order that it fits to following transactions, e.g. a DELETE is simple, but 
-what about reverting an UPDATE on data that has been deleted later anyway? 
+pgMemento is not designed for write-instensive databases. You will certainly run
+out of disk space pretty soon. Nevertheless, transactions and data can simply be
+removed from the logs at any time without affecting the versioning mechanism.
 
-For further reading please consider that pgMemento has neither been tested nor
-benchmarked a lot by myself. It is still work-in-progress. 
-
-I tagged a first version of pgMemento (v0.1) that uses the JSON data type 
-and can be used along with PostgreSQL 9.3, but it is slower and can not 
-handle very big data as JSON strings. I recommend to always use the newest
-version of pgMemento.
+pgMemento is written in plain PL/pgSQL. Thus, it can be set up on every machine 
+with PostgreSQL 9.4 or higher. I tagged a first version of pgMemento (v0.1) that 
+uses the JSON data type and can be used along with PostgreSQL 9.3, but it is slower
+and can not handle very big data as JSON strings. I recommend to always use the 
+newest version of pgMemento.
 
 
 3. System requirements
@@ -84,17 +73,35 @@ The auditing approach of pgMemento is nothing new. Define triggers to log
 changes in your database is a well known practice. There are other tools
 out there which can also be used I guess. When I started the development
 for pgMemento I wasn't aware of that there are so many solutions out there
-(and new ones popping up every once in while). I haven't tested any of 
-them and can not tell you exactly how they differ from pgMemento.
+(and new ones popping up every once in while).
 
-I might have directly copied some elements of these tools, therefore I'm
-now referencing tools where I looked up details:
+If you want a clearer table structure for logged data, say a history table
+for each audited table, have a look at [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum.
+It's easy to query different versions of a row. Restoring former states is
+also possible. It writes all the data twice, though. Runs only on Linux.
 
-* [audit trigger 91plus](http://wiki.postgresql.org/wiki/audit_trigger_91plus) by ringerc
-* [tablelog](http://pgfoundry.org/projects/tablelog/) by Andreas Scherbaum
-* [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen
-* [wingspan-auditing] (https://github.com/wingspan/wingspan-auditing) by Gary Sieling
-* [pgaudit](https://github.com/2ndQuadrant/pgaudit) by 2ndQuadrant
+If you prefer to work with validity intervals for each row try out the
+[temporal_tables](http://pgxn.org/dist/temporal_tables/) extension by Vlad Arkhipov.
+[This talk](http://pgday.ru/files/papers/9/pgday.2015.magnus.hagander.tardis_orm.pdf) by Magnus Hagander goes in a similar direction.
+
+If you like the idea of generic logging, but you prefer hstore over JSONB
+check out [audit trigger 91plus](http://wiki.postgresql.org/wiki/audit_trigger_91plus) by Craig Ringer.
+It does not provide functions to restore previous database state or to 
+rollback certain transactions.
+
+If you want to use a tool, that's proven to run in production for several 
+years take a closer look at [Cyan Audit](http://pgxn.org/dist/cyanaudit/) by Moshe Jacobsen.
+Logs are structured on columnar level, so auditing can also be switched off
+for certain columns. DDL changes on tables are caught by an event trigger.
+Rollbacks of transactions for single tables are possible. 
+
+If you think the days for using triggers for auditing are numbered because 
+of the new logical decoding feature of PostgreSQL you are probably right.
+But this technology is still young and there are not many tools out there
+that provide the same functionality like pgMemento. A notable implementation
+is [Logicaldecoding](https://github.com/sebastian-r-schmidt/logicaldecoding) by Sebastian R. Schmidt.
+[pgaudit](https://github.com/2ndQuadrant/pgaudit) by 2ndQuadrant and its [fork](https://github.com/pgaudit/pgaudit) by David Steele
+are only logging transaction metadata at the moment and not the data itself.
 
 
 5. How To
@@ -164,15 +171,15 @@ rows of 'column_B' to 'new_value' will appear in the log tables like this:
 
 TRANSACTION_LOG
 
-| txid_id  | stmt_date                | user_name  | client address  |
-| -------- |:------------------------:|:----------:|:---------------:|
-| 1        | 2015-02-22 15:00:00.100  | felix      | ::1/128         |
+| ID  | txid_id  | stmt_date                | user_name  | client address  |
+| --- |:-------- |:------------------------:|:----------:|:---------------:|
+| 1   | 1000000  | 2015-02-22 15:00:00.100  | felix      | ::1/128         |
 
 TABLE_EVENT_LOG
 
 | ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid |
 | --- |:--------------:|:-----:|:---------------:|:-----------:|:-----------:|:-----------:|
-| 1   | 1              | 2     | UPDATE          | public      | table_A     | 44444444    |
+| 1   | 1000000        | 2     | UPDATE          | public      | table_A     | 44444444    |
 
 
 ROW_LOG
@@ -213,45 +220,60 @@ SELECT DISTINCT audit_id
 ### 5.4. Revert certain transactions
 
 The logged information can be used to revert certain transactions that
-happened in the past. The procedure is simply called `revert_transaction`.
+happened in the past. Reinsert deleted rows, remove imported data etc.
+The procedure is called `revert_transaction`.
 
-The procedure loops over each row that was affected by the transaction.
-Deleted rows are processed first as they are going to be inserted. The rows
-are sorted by their audit_id in ascending order because the oldest row
-(which have a lower audit_id) need to be inserted first. Next come updated
-rows. They are again sorted by their audit_id but in descending order.
-Finally, inserted rows are looked up (`ORDER BY audit_id DESC`) and deleted.
+The procedure loops over each row that was affected by the given transaction.
+What is important here are the orders of events and audit_ids. The youngest
+table events need to be reverted first (`ORDER BY event_id DESC`). For each
+event dropped rows need to processed in ascending order because the oldest 
+row (the one with the lowest audit_id) needs to be inserted first. Updated
+and inserted rows need to be processed in descending order (so the biggest
+audit_id comes first) like the table events in order to not violate foreign
+key constraints.
 
-Regarding referential integrity it is important that INSERTs are done before
-UPDATEs and UPDATEs are done before DELETEs. The order of the audit_ids is
-not only important for references between tables but also for self-references
-when dealing with tree-structures in one table.
-
-Note that newly inserted buildings will always get a new audit_id and not
-keep their old one (even though it would still be a unique ID). Otherwise
-the restoring part would get too complicated.
-
-The query looks like this (in extracts):
+The query looks like this:
 
 <pre>
-SELECT * FROM (
-  (SELECT r.audit_id, r.changes, e.schema_name, e.table_name, e.op_id
-     FROM pgmemento.row_log r
-     JOIN pgmemento.table_event_log e ON r.event_id = e.id
-     JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-     WHERE t.txid = $1 AND e.op_id > 2 -- DELETE oder TRUNCATE
-       ORDER BY r.audit_id ASC) -- oldest tuples are inserted first
-  UNION ALL
-  (SELECT ...
-     WHERE t.txid = $1 AND e.op_id = 2 -- UPDATE
-       ORDER BY r.audit_id DESC) -- youngest tuples are updated first
-  UNION ALL
-  (SELECT ...
-     WHERE t.txid = $1 AND e.op_id = 1 -- INSERT
-       ORDER BY r.audit_id DESC) -- youngest tuples are deleted first
-) txid_content
-ORDER BY op_id DESC -- first process the DELETEs, then the UPDATEs and finally the INSERTs
+SELECT r.audit_order, r.audit_id, r.changes, 
+       e.schema_name, e.table_name, e.op_id
+  FROM pgmemento.table_event_log e
+  JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+  JOIN LATERAL (
+    SELECT 
+      CASE WHEN e.op_id > 2 THEN -- DELETE or TRUNCATE
+        rank() OVER (ORDER BY audit_id ASC)
+      ELSE -- INSERT or UPDATE
+        rank() OVER (ORDER BY audit_id DESC)
+      END AS audit_order,
+      audit_id, changes 
+    FROM pgmemento.row_log 
+      WHERE event_id = e.id
+  ) r ON (true)
+  WHERE t.txid = tid
+  ORDER BY e.id DESC, audit_order ASC;
 </pre>
+
+Not that the LATERAL JOIN can also be replaced by a window query using
+`rank() OVER (PARTITION BY event_id ORDER BY audit_id)`. In my test the
+LATERAL query was slightly faster.
+
+Multiple transactions can be reverted by calling:
+
+<pre>
+SELECT pgmemento.revert_transaction(txid) 
+  FROM pgmemento.transaction_log
+  WHERE ... -- narrow down number of transactions to be reverted
+  ORDER BY id DESC;
+</pre>
+
+This query could again be reverted. This raises another question:
+When reverting a couple of table events e.g. several UPDATEs on the same
+row wouldn't it be clever to just perform the oldest event? This can be
+realized by using a ascending order for tables event with a DISTINCT ON
+on the audit_id column. The query is part of the second revert procedure
+called `revert_transactions`. It can be used for each revert task, but
+it will perform worse for simple rollbacks compared to the other procedure.
 
 
 ### 5.5. Restore a past state of your database
@@ -512,17 +534,16 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
-* Separate script functions from API functions
+* Adopt the newest JSONB features
 * Do more benchmarking
-* Catch changes on DDL level (ALTER TABLE) by using Event Triggers and have a
+* Table partitioning strategy for row_log table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
+* Catch changes on DDL level (ALTER TABLE) by using event triggers and have a
   better way to manage table templates (e.g. by using metadata tables for
   pkeys, fkeys, indexes, sequences, columns)
 * Have a view to store metadata of additional created schemas
   for former table / database states.
-* Take more consideration in reverting transaction because it's very simple 
-  at the moment
 * Better protection for log tables?
-* Table partitioning strategy for row_log table
+* Build a pgMemento PostgreSQL extension
 
 
 7. Media
