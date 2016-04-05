@@ -39,7 +39,6 @@ CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   ) RETURNS jsonb AS
 $$
 DECLARE
-  logged INTEGER := 0;
   template_schema TEXT;
   template_table TEXT;
   restore_query TEXT;
@@ -51,10 +50,12 @@ DECLARE
   json_result JSONB := '{}'::jsonb;
 BEGIN
   -- check if logging entries exist in the audit_log table
-  SELECT 1 INTO logged FROM pgmemento.table_event_log 
+  PERFORM 1 FROM pgmemento.table_event_log 
 	WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
 
-  IF logged IS NOT NULL THEN
+  IF NOT FOUND THEN
+    RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
+  ELSE
     -- if the table structure has changed over time we need to use a template table
     -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
     SELECT template_name INTO template_table FROM pgmemento.table_templates
@@ -112,8 +113,6 @@ BEGIN
 
     -- execute the SQL command
     EXECUTE restore_query INTO json_result;
-  ELSE
-    RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
   END IF;
 
   RETURN json_result;
@@ -140,9 +139,6 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  is_set_schema INTEGER := 0;
-  is_set_table INTEGER := 0;
-  logged INTEGER := 0;
   template_schema TEXT;
   template_table TEXT;
   replace_view TEXT := '';
@@ -154,21 +150,20 @@ DECLARE
   delimiter VARCHAR(1) := '';
 BEGIN
   -- test if target schema already exist
-  SELECT 1 INTO is_set_schema 
-    FROM information_schema.schemata 
+  PERFORM 1 FROM information_schema.schemata 
       WHERE schema_name = target_schema_name;
 
-  IF is_set_schema IS NULL THEN
+  IF NOT FOUND THEN
     EXECUTE format('CREATE SCHEMA %I', target_schema_name);
   END IF;
 
   -- test if table or view already exist in target schema
-  SELECT 1 INTO is_set_table FROM information_schema.tables 
+  PERFORM 1 FROM information_schema.tables 
     WHERE table_name = original_table_name 
       AND table_schema = target_schema_name 
       AND (table_type = 'BASE TABLE' OR table_type = 'VIEW');
 
-  IF is_set_table IS NOT NULL THEN
+  IF FOUND THEN
     IF update_state = 1 THEN
       IF target_table_type = 'TABLE' THEN
         RAISE EXCEPTION 'Only VIEWs are updatable.' USING HINT = 'Create another target schema when using TABLE as target table type.'; 
@@ -181,10 +176,10 @@ BEGIN
     END IF;
   ELSE
     -- check if logging entries exist in the audit_log table
-    SELECT 1 INTO logged FROM pgmemento.table_event_log 
+    PERFORM 1 FROM pgmemento.table_event_log 
 	  WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
 
-    IF logged IS NOT NULL THEN
+    IF FOUND THEN
       -- if the table structure has changed over time we need to use a template table
       -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
       SELECT template_name INTO template_table FROM pgmemento.table_templates
