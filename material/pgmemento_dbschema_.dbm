@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+CAUTION: Do not modify this file unless you know what you are doing.
+         Unexpected results may occur if the code is changed deliberately.
+-->
+<dbmodel pgmodeler-ver="0.8.0" last-position="0,0" last-zoom="1"
+	 default-owner="postgres">
+<database name="new_database">
+</database>
+
+<schema name="public" protected="true" fill-color="#e1e1e1" sql-disabled="true">
+</schema>
+
+<schema name="pgmemento" rect-visible="true" fill-color="#e1e1e1">
+	<role name="postgres"/>
+</schema>
+
+<table name="transaction_log">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+	<position x="979" y="242"/>
+	<column name="id" not-null="true">
+		<type name="integer"/>
+	</column>
+	<column name="txid" not-null="true">
+		<type name="bigint"/>
+	</column>
+	<column name="stmt_date" not-null="true">
+		<type name="timestamptz"/>
+	</column>
+	<column name="user_name">
+		<type name="text"/>
+	</column>
+	<column name="client_name">
+		<type name="text"/>
+	</column>
+	<constraint name="transaction_log_pk" type="pk-constr" table="pgmemento.transaction_log">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="table_event_log">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+	<position x="980" y="534.4"/>
+	<column name="id" not-null="true">
+		<type name="serial"/>
+	</column>
+	<column name="transaction_id">
+		<type name="bigint"/>
+	</column>
+	<column name="op_id" not-null="true">
+		<type name="smallint"/>
+	</column>
+	<column name="table_operation" not-null="true">
+		<type name="varchar" length="8"/>
+	</column>
+	<column name="table_relid" not-null="true">
+		<type name="oid"/>
+	</column>
+	<constraint name="table_event_log_pk" type="pk-constr" table="pgmemento.table_event_log">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="row_log">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+	<position x="1360" y="400"/>
+	<column name="id" not-null="true">
+		<type name="bigserial"/>
+	</column>
+	<column name="event_id" not-null="true">
+		<type name="integer"/>
+	</column>
+	<column name="audit_id" not-null="true">
+		<type name="bigint"/>
+	</column>
+	<column name="changes">
+		<type name="jsonb"/>
+	</column>
+	<constraint name="row_log_pk" type="pk-constr" table="pgmemento.row_log">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<sequence name="audit_id_seq"
+	 start="1" increment="1"
+	 min-value="0" max-value="2147483647"
+	 cache="1" cycle="false">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+</sequence>
+
+<index name="transaction_log_txid_idx" table="pgmemento.transaction_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="txid"/>
+		</idxelement>
+</index>
+
+<index name="table_event_log_txid_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="transaction_id"/>
+		</idxelement>
+</index>
+
+<index name="table_event_log_op_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="op_id"/>
+		</idxelement>
+</index>
+
+<index name="table_event_table_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="table_relid"/>
+		</idxelement>
+</index>
+
+<index name="row_log_event_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="event_id"/>
+		</idxelement>
+</index>
+
+<index name="row_log_audit_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="audit_id"/>
+		</idxelement>
+</index>
+
+<index name="row_log_changes_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gin" factor="0">
+		<idxelement use-sorting="false">
+			<column name="changes"/>
+		</idxelement>
+</index>
+
+<table name="audit_table_log">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+	<position x="473" y="258"/>
+	<column name="relid" not-null="true">
+		<type name="oid"/>
+	</column>
+	<column name="schema_name" not-null="true">
+		<type name="text"/>
+	</column>
+	<column name="table_name" not-null="true">
+		<type name="text"/>
+	</column>
+	<column name="txid_range">
+		<type name="numrange"/>
+	</column>
+	<constraint name="audit_table_log_pk" type="pk-constr" table="pgmemento.audit_table_log">
+		<columns names="relid" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="audit_column_log">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+	<position x="471" y="406"/>
+	<column name="id" not-null="true">
+		<type name="serial"/>
+	</column>
+	<column name="table_relid" not-null="true">
+		<type name="oid"/>
+	</column>
+	<column name="column_name" not-null="true">
+		<type name="text"/>
+	</column>
+	<column name="ordinal_position">
+		<type name="integer"/>
+	</column>
+	<column name="column_default">
+		<type name="text"/>
+	</column>
+	<column name="is_nullable">
+		<type name="varchar" length="3"/>
+	</column>
+	<column name="data_type">
+		<type name="text"/>
+	</column>
+	<column name="data_type_name">
+		<type name="text"/>
+	</column>
+	<column name="char_max_length">
+		<type name="integer"/>
+	</column>
+	<column name="numeric_precision">
+		<type name="integer"/>
+	</column>
+	<column name="numeric_precision_radix">
+		<type name="integer"/>
+	</column>
+	<column name="datetime_precision">
+		<type name="integer"/>
+	</column>
+	<column name="interval_type">
+		<type name="text"/>
+	</column>
+	<column name="txid_range">
+		<type name="numrange"/>
+	</column>
+	<constraint name="audit_column_log_pk" type="pk-constr" table="pgmemento.audit_column_log">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<index name="transaction_log_date_idx" table="pgmemento.transaction_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="stmt_date"/>
+		</idxelement>
+</index>
+
+<index name="table_log_idx" table="pgmemento.audit_table_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="table_name"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="schema_name"/>
+		</idxelement>
+</index>
+
+<index name="table_log_range_idx" table="pgmemento.audit_table_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gist" factor="0">
+		<idxelement use-sorting="false">
+			<column name="txid_range"/>
+		</idxelement>
+</index>
+
+<index name="column_log_relid_idx" table="pgmemento.audit_column_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="table_relid"/>
+		</idxelement>
+</index>
+
+<index name="column_log_column_idx" table="pgmemento.audit_column_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="column_name"/>
+		</idxelement>
+</index>
+
+<index name="column_log_range_idx" table="pgmemento.audit_column_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gist" factor="0">
+		<idxelement use-sorting="false">
+			<column name="txid_range"/>
+		</idxelement>
+</index>
+
+<constraint name="table_event_log_txid_fk" type="fk-constr" comparison-type="MATCH FULL"
+	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.transaction_log" table="pgmemento.table_event_log">
+	<columns names="transaction_id" ref-type="src-columns"/>
+	<columns names="txid" ref-type="dst-columns"/>
+</constraint>
+
+<constraint name="row_log_table_fk" type="fk-constr" comparison-type="MATCH FULL"
+	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.table_event_log" table="pgmemento.row_log">
+	<columns names="event_id" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
+</constraint>
+
+<relationship name="rel_table_event_log_transaction_log" type="relfk"
+	 src-table="pgmemento.table_event_log"
+	 dst-table="pgmemento.transaction_log"
+	 src-required="false" dst-required="false">
+	<line>
+		<position x="879.5" y="576"/>
+	<position x="879.5" y="285.6"/>
+	</line>
+</relationship>
+
+<relationship name="rel_row_log_table_event_log" type="relfk"
+	 src-table="pgmemento.row_log"
+	 dst-table="pgmemento.table_event_log"
+	 src-required="false" dst-required="false">
+	<line>
+		<position x="1284.85" y="442.6"/>
+	<position x="1284.85" y="563"/>
+	</line>
+</relationship>
+
+</dbmodel>
