@@ -23,6 +23,7 @@ SET client_min_messages TO WARNING;
 
 \echo
 \echo 'Removing triggers and audit_id columns from audited tables ...'
+SELECT pgmemento.drop_schema_event_trigger();
 SELECT pgmemento.drop_table_audit(tablename, schemaname) FROM pgmemento.audit_tables;
 
 \echo

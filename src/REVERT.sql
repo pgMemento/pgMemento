@@ -93,8 +93,9 @@ DECLARE
 BEGIN
   FOR rec IN 
     SELECT r.audit_order, r.audit_id, r.changes, 
-           e.schema_name, e.table_name, e.op_id
+           a.schema_name, a.table_name, e.op_id
       FROM pgmemento.table_event_log e
+      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
       JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
       JOIN LATERAL (
         SELECT 
@@ -107,7 +108,8 @@ BEGIN
         FROM pgmemento.row_log 
           WHERE event_id = e.id
       ) r ON (true)
-      WHERE t.txid = tid
+      WHERE upper(a.txid_range) IS NULL
+        AND t.txid = tid
         ORDER BY e.id DESC, audit_order ASC
   LOOP
     -- INSERT case
@@ -144,7 +146,7 @@ BEGIN
     FROM (
       SELECT DISTINCT ON (r.audit_id)
         r.audit_id, r.changes, r.event_id,
-        e.schema_name, e.table_name, e.op_id,
+        a.schema_name, a.table_name, e.op_id,
         CASE WHEN e.op_id > 2 THEN
           rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC)
         ELSE
@@ -152,9 +154,11 @@ BEGIN
         END AS audit_order
       FROM pgmemento.row_log r
       JOIN pgmemento.table_event_log e ON e.id = r.event_id
+      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
       JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-        WHERE t.txid = tid
-        ORDER BY r.audit_id, e.id
+        WHERE upper(a.txid_range) IS NULL
+          AND t.txid = tid
+          ORDER BY r.audit_id, e.id
     ) s
     ORDER BY s.event_id DESC, s.audit_order ASC 
   LOOP

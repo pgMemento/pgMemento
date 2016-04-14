@@ -110,58 +110,79 @@ are only logging transaction metadata at the moment and not the data itself.
 ### 5.1. Add pgMemento to a database
 
 A brief introduction about the different SQL files:
+* `DDL_LOG.sql` enables logging of schema changes (DDL statements)
+* `LOG_UTIL.sql` provides some helpe functions for handling the audited information
+* `REVERT.sql` contains procedures to rollback changes of a certain transaction and
+* `SCHEMA_MANAGEMENT.sql` includes functions to define constraints in the schema where tables have been restored
 * `SETUP.sql` contains DDL scripts for tables and basic setup functions
 * `VERSIONING.sql` is necessary to restore past table states
-* `SCHEMA_MANAGEMENT.sql` includes functions to define constraints in the schema where tables have been restored
-* `REVERT.sql` contains a procedure to rollback changes of a certain transaction and
-* `LOG_UTIL.sql` provides some helpe functions for handling the audited information
 
 Run the `INSTALL_PGMEMENTO.sql` script with the psql client of PostgreSQL.
-Now a new schema will appear in your database called `pgmemento`. 
+Now a new schema will appear in your database called `pgmemento`. As of
+version 0.3 the `pgmemento` consist of 5 log tables:
+
+* `audit_column_log`: Stores information about columns of audited tables (DDL log target)
+* `audit_table_log`: Stores information about audited tables (DDL log target)
+* `row_log`: Table for data log (DML log target)
+* `table_event_log`: Stores metadata about table events related to transactions (DML log target)
+* `transaction_log`: Stores metadata about transactions (DML log target)
+
+The following figure shows how the log tables are referenced with each
+other:
+
+![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/log_tables.png "Log tables of pgMemento")
 
 
 ### 5.2. Start pgMemento
 
-The functions can be used to initialize auditing for single tables or a 
-complete schema e.g.
+To enable auditing for an entire database schema simply run the `INIT.sql`
+script. First, you are requested to specify the target schema. For the
+second parameter you can define a set of tables you want to exclude from
+auditing (comma-separated list). As for the third parameter you can choose
+if newly created tables shall automatically be enabled for auditing.
+`INIT.sql` also creates event triggers for the database to track schema
+changes of audited tables.
+
+Auditing can also be enabled manually for single tables using the following
+function, which adds an additional audit_id column to the table and creates
+triggers that are fired during DML changes.
 
 <pre>
-SELECT pgmemento.create_schema_audit(
-  'public', 
-  ARRAY['not_this_table'], ['not_that_table']
+SELECT pgmemento.create_table_audit(
+  'table_A',
+  'public'
 );
 </pre>
 
-This function creates triggers and an additional column named audit_id
-for all tables in the 'public' schema except for tables 'not_this_table' 
-and 'not_that_table'. Now changes on the audited tables write information
-to the tables 'pgmemento.transaction_log', 'pgmemento.table_event_log' 
-and 'pgmemento.row_log'.
+If `INIT.sql` has not been used event triggers can be created by calling
+the following procedure:
 
-When setting up a new database I would recommend to start pgMemento after
-bulk imports. Otherwise the import will be slower and several different 
-timestamps might appear in the transaction_log table.
+<pre>
+SELECT pgmemento.create_schema_event_trigger(1);
+</pre>
 
-ATTENTION: It is important to generate a proper baseline on which a
+By passing a 1 to the procedure an additional event trigger for 
+`CREATE TABLE` events is created.
+
+**ATTENTION:** It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you begin or continue
 to work with the database and change contents, define the present state
 as the initial versioning state by executing the procedure
 `pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
 For each row in the audited tables another row will be written to the 
 'row_log' table telling the system that it has been 'inserted' at the 
-timestamp the procedure has been executed.
+timestamp the procedure has been executed. Depending on the number of 
+tables to alter and on the amount of data that assigned as INSERTed
+this process can take a while. The procedure is also called when using
+the `INIT.sql` script.
 
-These two steps - `create_schema_state` and `log_schema_state` - can be
-coupled by when using the `INIT.sql` script. When running
-this script the user is prompted for specifying the database schema which
-shall be audited and the tables that shall be excluded from auditing
-(simply separated by comma). Depending on the number of tables to alter
-and on the amount if data that assigned as INSERTed in the log tables
-this process can take a while.
+**HINT:** When setting up a new database I would recommend to start 
+pgMemento after bulk imports. Otherwise the import will be slower and 
+several different timestamps might appear in the transaction_log table.
 
 Logging can be stopped and restarted by running the `STOP_AUDITING.sql`
 and `START_AUDITING.sql` scripts. Note that theses scripts do not affect
-the audit_id column in the logged tables.
+(remove) the audit_id column in the logged tables.
 
 
 ### 5.3. Have a look at the logged information
@@ -180,7 +201,6 @@ TABLE_EVENT_LOG
 | ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid |
 | --- |:--------------:|:-----:|:---------------:|:-----------:|:-----------:|:-----------:|
 | 1   | 1000000        | 2     | UPDATE          | public      | table_A     | 44444444    |
-
 
 ROW_LOG
 
@@ -483,38 +503,36 @@ SELECT p.* FROM restore rq
   ) p ON (true)
 </pre>
 
+This is also the moment when the DDL log tables are becoming relevant.
+In order to produce a correct historic replica of a table, the table 
+schema for the requested time (transaction) window has to be known.
+Note, that tables might also change their structure during the requested
+period. This is not handled at the moment. Only the upper boundary is
+used to query the `audit_column_log` table to reconstruct an historic
+template. 
 
-#### 5.5.5. Table templates
-
-If I would use 'table_A' as the template for `json_populate_recordset` 
-I would receive the correct order and the correct data types of columns but 
-could not exclude columns that did not exist at date x. I need to know the 
-structure of 'table_A' at the requested date, too.
-
-Unfortunately pgMemento can yet not perform logging of DDL commands, like
-`ALTER TABLE [...]`. It forces the user to do a manual column backup. 
-By executing the procedure `pgmemento.create_table_template` an empty copy
-of the audited table is created in the pgmemento schema (concatenated with
-an internal ID). Every created table is documented (with timestamp) in 
-`pgmemento.table_templates` which is queried when restoring former table 
-states.
-
-IMPORTANT: A table template has to be created before the audited table
-is altered.
+The template tables are created as temporary tables. This means when 
+restoring the audited tables as VIEWs they only exist as long as the
+current sessions lasts (ON COMMIT PRESERVE ROWS). When creating a new
+session the restore procedure has to be called again. It doesn't matter
+if the target schema already exist. When restoring the audited tables
+as BASE TABLEs, they will of course remain in the target schema but
+requiring extra disk space.
 
 
-#### 5.5.6. Work with the past state
+#### 5.5.5. Work with the past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
 If the user wants to work on the restored table or database state - 
-like he would do with the recent state - he can use the procedures
+like he would do with the production state - he can use the procedures
 `pgmemento.pkey_table_state`, `pgmemento.fkey_table_state` and `pgmemento.index_table_state`. 
 These procedures create primary keys, foreign keys and indexes on behalf of 
-the recent constraints defined in the certain schema (e.g. 'public'). 
-If table and/or database structures have changed fundamentally over time 
-it might not be possible to recreate constraints and indexes as their
-metadata is not logged by pgMemento. 
+the recent constraints defined in the production schema. 
+
+Note that if table and/or database structures have changed fundamentally 
+over time it might not be possible to recreate constraints and indexes as 
+their metadata is not yet logged by pgMemento. 
 
 
 ### 5.6. Unistall pgMemento
@@ -536,12 +554,10 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
-* Adopt the newest JSONB features
+* Adopt the newest JSONB features introduced in PostgreSQL v9.5
 * Do more benchmarking
 * Table partitioning strategy for row_log table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
-* Catch changes on DDL level (ALTER TABLE) by using event triggers and have a
-  better way to manage table templates (e.g. by using metadata tables for
-  pkeys, fkeys, indexes, sequences, columns)
+* Have log tables for primary keys, constraints, indexes etc.
 * Have a view to store metadata of additional created schemas
   for former table / database states.
 * Better protection for log tables?

@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.3.0     2016-04-10   new log tables for ddl changes                      FKun
 -- 0.2.4     2016-04-05   more constraints on log tables (+ new ID column)    FKun
 -- 0.2.3     2016-03-17   work with time zones and renamed column in          FKun
 --                        table_templates table
@@ -32,21 +33,26 @@
 *   all functions to enable versioning of the database.
 *
 * TABLES:
+*   audit_column_log
+*   audit_table_log
 *   row_log
 *   table_event_log
-*   table_templates
 *   transaction_log
 *
 * INDEXES:
-*   transaction_log_date_idx;
-*   table_event_log_txid_idx;
-*   table_event_log_op_idx;
-*   table_event_table_idx;
-*   row_log_event_idx;
-*   row_log_audit_idx;
-*   row_log_changes_idx;
-*   templates_table_idx;
-*   templates_date_idx;
+*   column_log_column_idx
+*   column_log_range_idx
+*   column_log_relid_idx
+*   row_log_audit_idx
+*   row_log_changes_idx
+*   row_log_event_idx
+*   table_event_log_op_idx
+*   table_event_log_txid_idx
+*   table_event_table_idx
+*   table_log_idx
+*   table_log_range_idx
+*   transaction_log_date_idx
+*   transaction_log_txid_idx
 *
 * FUNCTIONS:
 *   create_schema_audit(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -55,14 +61,14 @@
 *   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   log_schema_state(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_schema_audit(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_audit_id(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   log_schema_state(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *
 * TRIGGER FUNCTIONS
 *   log_delete() RETURNS trigger
@@ -94,7 +100,7 @@ ALTER TABLE pgmemento.transaction_log
 ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
 ADD CONSTRAINT transaction_log_unique UNIQUE (txid);
 
--- eventy on tables are logged into the table_event_log table
+-- event on tables are logged into the table_event_log table
 DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
 CREATE TABLE pgmemento.table_event_log
 (
@@ -102,8 +108,6 @@ CREATE TABLE pgmemento.table_event_log
   transaction_id BIGINT NOT NULL,
   op_id SMALLINT NOT NULL,
   table_operation VARCHAR(8),
-  schema_name TEXT NOT NULL,
-  table_name TEXT NOT NULL,
   table_relid OID NOT NULL
 );
 
@@ -117,26 +121,44 @@ CREATE TABLE pgmemento.row_log
   id BIGSERIAL,
   event_id INTEGER NOT NULL,
   audit_id BIGINT NOT NULL,
-  changes JSONB NOT NULL
+  changes JSONB
 );
 
 ALTER TABLE pgmemento.row_log
 ADD CONSTRAINT row_log_pk PRIMARY KEY (id);
 
--- need to somehow log the structure of a table
-DROP TABLE IF EXISTS pgmemento.table_templates CASCADE;
-CREATE TABLE pgmemento.table_templates
-(
-  id SERIAL,
-  template_name TEXT NOT NULL,
-  original_schema TEXT NOT NULL,
-  original_table TEXT NOT NULL,
-  original_relid OID NOT NULL,
-  creation_date TIMESTAMP WITH TIME ZONE NOT NULL
+-- liftime of audited tables is logged in the audit_table_log table
+CREATE TABLE pgmemento.audit_table_log (
+  relid OID,
+  schema_name TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  txid_range numrange  
 );
 
-ALTER TABLE pgmemento.table_templates
-ADD CONSTRAINT table_templates_pk PRIMARY KEY (id);
+ALTER TABLE pgmemento.audit_table_log
+ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (relid);
+
+-- lifetime of columns of audited tables is logged in the audit_column_log table
+CREATE TABLE pgmemento.audit_column_log (
+  id SERIAL,
+  table_relid OID NOT NULL,
+  column_name TEXT NOT NULL,
+  ordinal_position INTEGER,
+  column_default TEXT,
+  is_nullable VARCHAR(3),
+  data_type TEXT,
+  data_type_name TEXT,
+  char_max_length INTEGER,
+  numeric_precision INTEGER,
+  numeric_precision_radix INTEGER,
+  numeric_scale INTEGER,
+  datetime_precision INTEGER,
+  interval_type TEXT,
+  txid_range numrange
+);  
+
+ALTER TABLE pgmemento.audit_column_log
+ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
 
 -- create constraints
 ALTER TABLE pgmemento.table_event_log
@@ -151,6 +173,7 @@ ALTER TABLE pgmemento.row_log
     ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later
+DROP INDEX IF EXISTS transaction_log_txid_idx;
 DROP INDEX IF EXISTS transaction_log_date_idx;
 DROP INDEX IF EXISTS table_event_log_txid_idx;
 DROP INDEX IF EXISTS table_event_log_op_idx;
@@ -158,9 +181,14 @@ DROP INDEX IF EXISTS table_event_table_idx;
 DROP INDEX IF EXISTS row_log_event_idx;
 DROP INDEX IF EXISTS row_log_audit_idx;
 DROP INDEX IF EXISTS row_log_changes_idx;
-DROP INDEX IF EXISTS templates_table_idx;
-DROP INDEX IF EXISTS templates_date_idx;
+DROP INDEX IF EXISTS table_log_idx;
+DROP INDEX IF EXISTS table_log_range_idx;
+DROP INDEX IF EXISTS column_log_relid_idx;
+DROP INDEX IF EXISTS column_log_column_idx;
+DROP INDEX IF EXISTS column_log_range_idx;
 
+
+CREATE INDEX transaction_log_txid_idx ON pgmemento.transaction_log USING BTREE (txid);
 CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
 CREATE INDEX table_event_log_txid_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
 CREATE INDEX table_event_log_op_idx ON pgmemento.table_event_log USING BTREE (op_id);
@@ -168,8 +196,11 @@ CREATE INDEX table_event_table_idx ON pgmemento.table_event_log USING BTREE (tab
 CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
-CREATE INDEX templates_table_idx ON pgmemento.table_templates USING BTREE (original_schema, original_table);
-CREATE INDEX templates_date_idx ON pgmemento.table_templates USING BTREE (creation_date);
+CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
+CREATE INDEX table_log_range_idx ON pgmemento.audit_table_log USING GIST (txid_range);
+CREATE INDEX column_log_relid_idx ON pgmemento.audit_column_log USING BTREE (table_relid);
+CREATE INDEX column_log_column_idx ON pgmemento.audit_column_log USING BTREE (column_name);
+CREATE INDEX column_log_range_idx ON pgmemento.audit_column_log USING GIST (txid_range);
 
 
 /***********************************************************
@@ -264,7 +295,7 @@ $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_trigger
-      WHERE tgrelid = (schema_name || '.' || table_name)::regclass
+      WHERE tgrelid = (schema_name || '.' || table_name)::regclass::oid
         AND tgname = 'log_transaction_trigger'
     ) THEN
     RETURN;
@@ -420,7 +451,7 @@ BEGIN
   -- drop 'audit_id' column if it exists
   IF EXISTS (
     SELECT 1 FROM pg_attribute
-      WHERE attrelid = (schema_name || '.' || table_name)::regclass
+      WHERE attrelid = (schema_name || '.' || table_name)::regclass::oid
         AND attname = 'audit_id'
         AND attislocal = 't'
         AND NOT attisdropped
@@ -479,9 +510,9 @@ BEGIN
   BEGIN
     -- try to log corresponding table event
     INSERT INTO pgmemento.table_event_log
-      (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+      (transaction_id, op_id, table_operation, table_relid) 
     VALUES
-      (txid_current(), operation_id, TG_OP, TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_RELID);
+      (txid_current(), operation_id, TG_OP, TG_RELID);
 
     EXCEPTION
       WHEN unique_violation THEN
@@ -661,10 +692,9 @@ BEGIN
     BEGIN
       -- fill table_event_log table  
       INSERT INTO pgmemento.table_event_log
-        (transaction_id, op_id, table_operation, schema_name, table_name, table_relid) 
+        (transaction_id, op_id, table_operation, table_relid) 
       VALUES
-        (txid_current(), 1, 'INSERT', original_schema_name, original_table_name, 
-           (original_schema_name || '.' || original_table_name)::regclass::oid)
+        (txid_current(), 1, 'INSERT', (original_schema_name || '.' || original_table_name)::regclass::oid)
       RETURNING id INTO e_id;
 
       EXCEPTION
@@ -677,7 +707,7 @@ BEGIN
       -- get the primary key columns
       SELECT array_to_string(array_agg(pga.attname),',') INTO pkey_columns
         FROM pg_index pgi, pg_class pgc, pg_attribute pga 
-          WHERE pgc.oid = (original_schema_name || '.' || original_table_name)::regclass 
+          WHERE pgc.oid = (original_schema_name || '.' || original_table_name)::regclass::oid
             AND pgi.indrelid = pgc.oid 
             AND pga.attrelid = pgc.oid 
             AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary;
@@ -706,47 +736,3 @@ $$
     WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
 $$
 LANGUAGE sql;
-
-
-/**********************************************************
-* CREATE TABLE TEMPLATE
-*
-* To reproduce past tables from the JSON logs a table template
-* is necessary. This is usually the audited table itself but
-* if its structure has been changed the previous version of the
-* table has to be recorded somehow.
-*
-* As for now this has to be done manually with create_table_template.
-* The functions creates an empty copy of the table that will be
-* changed (which means it has to be executed before the change).
-* Every created copy is documented (with timestamp) in the 
-* table_templates table within the pgmemento schema.
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.create_table_template(
-  original_table_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
-  ) RETURNS SETOF VOID AS
-$$
-DECLARE
-  template_count INTEGER;
-  temp_name TEXT;
-BEGIN
-  -- use sequence to generate unique template names
-  template_count := nextval('pgmemento.TABLE_TEMPLATES_ID_SEQ');
-  temp_name := original_table_name || '_' || template_count;
-
-  -- saving metadata of the template
-  INSERT INTO pgmemento.table_templates 
-    (id, template_name, original_schema, original_table, original_relid, creation_date)
-  VALUES 
-    (template_count, temp_name, original_schema_name, original_table_name,
-       (original_schema_name || '.' || original_table_name)::regclass::oid, current_timestamp);
-
-  -- creating the template
-  EXECUTE format(
-    'CREATE UNLOGGED TABLE pgmemento.%I AS
-       SELECT * FROM %I.%I WHERE false',
-    temp_name, original_schema_name, original_table_name);
-END;
-$$
-LANGUAGE plpgsql;

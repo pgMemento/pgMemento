@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.3.0     2016-04-10   a new template mechanism for restoring              FKun
 -- 0.2.2     2016-03-08   minor change to generate_log_entry function         FKun
 -- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
 -- 0.2.0     2015-05-26   more efficient queries                              FKun
@@ -39,45 +40,31 @@ CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   ) RETURNS jsonb AS
 $$
 DECLARE
-  template_schema TEXT;
-  template_table TEXT;
+  table_oid OID;
   restore_query TEXT;
-  column_name TEXT;
+  v_column TEXT;
   v_columns TEXT := '';
   v_columns_count NUMERIC := 0;
-  for_each_valid_id TEXT := '';
   delimiter VARCHAR(1) := '';
+  for_each_valid_id TEXT := '';
   json_result JSONB := '{}'::jsonb;
 BEGIN
-  -- check if logging entries exist in the audit_log table
-  PERFORM 1 FROM pgmemento.table_event_log 
-	WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
+  -- check if the table existed when tid happened
+  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
+    WHERE schema_name = original_schema_name AND table_name = original_table_name
+      AND txid_range @> tid::numeric;
 
   IF NOT FOUND THEN
     RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
   ELSE
-    -- if the table structure has changed over time we need to use a template table
-    -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
-    SELECT template_name INTO template_table FROM pgmemento.table_templates
-      WHERE original_schema = original_schema_name AND original_table = original_table_name
-        AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = tid)
-        ORDER BY creation_date DESC LIMIT 1;
-
-    IF template_table IS NULL THEN
-      template_schema := original_schema_name;
-      template_table := original_table_name;
-    ELSE
-      template_schema := 'pgmemento';
-    END IF;
-	
     -- start building the SQL command
     restore_query := 'SELECT json_build_object(';
 
     -- get the content of each column that happened to be in the table when the transaction was executed
-    FOR column_name IN 
-      SELECT attname FROM pg_attribute 
-        WHERE attrelid = (template_schema || '.' || template_table)::regclass 
-          AND attstattarget != 0 ORDER BY attnum
+    FOR v_column IN 
+      SELECT column_name FROM pgmemento.audit_column_log 
+        WHERE table_relid = table_oid
+          AND txid_range @> tid::numeric
     LOOP
       v_columns_count := v_columns_count + 1;
       v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
@@ -102,8 +89,8 @@ BEGIN
               )
             ) AS value) q
           ) q',
-          column_name, column_name, tid, aid, column_name,
-          column_name, original_schema_name, original_table_name, aid) || v_columns_count;
+          v_column, v_column, tid, aid, v_column,
+          v_column, original_schema_name, original_table_name, aid) || v_columns_count;
 
       delimiter := ',';
     END LOOP;
@@ -139,15 +126,17 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  template_schema TEXT;
-  template_table TEXT;
   replace_view TEXT := '';
+  table_oid OID;
+  template_name TEXT;
+  ddl_command TEXT := 'CREATE TEMPORARY TABLE ';
+  log_column RECORD;
+  delimiter VARCHAR(1) := '';
   restore_query TEXT;
-  column_name TEXT;
+  v_column TEXT;
   v_columns TEXT := '';
   v_columns_count NUMERIC := 0;
   for_each_valid_id TEXT := '';
-  delimiter VARCHAR(1) := '';
 BEGIN
   -- test if target schema already exist
   PERFORM 1 FROM information_schema.schemata 
@@ -158,9 +147,9 @@ BEGIN
   END IF;
 
   -- test if table or view already exist in target schema
-  PERFORM 1 FROM information_schema.tables 
-    WHERE table_name = original_table_name 
-      AND table_schema = target_schema_name 
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_name = original_table_name
+      AND table_schema = target_schema_name
       AND (table_type = 'BASE TABLE' OR table_type = 'VIEW');
 
   IF FOUND THEN
@@ -171,30 +160,67 @@ BEGIN
         replace_view := 'OR REPLACE ';
       END IF;
     ELSE
-      RAISE NOTICE 'Entity ''%'' in schema ''%'' does already exist. Either delete the table or choose another name or target schema.',
-                      original_table_name, target_schema_name;
+      RAISE EXCEPTION 'Entity ''%'' in schema ''%'' does already exist. Either delete the table or choose another name or target schema.',
+                         original_table_name, target_schema_name;
     END IF;
-  ELSE
-    -- check if logging entries exist in the audit_log table
+  END IF;
+
+  -- check if the table existed when end_at_tid happened
+  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
+    WHERE schema_name = original_schema_name AND table_name = original_table_name
+      AND txid_range @> end_at_tid::numeric;
+
+  IF FOUND THEN
+    -- disable schema_create_trigger when creating temporary tables
+    ALTER EVENT TRIGGER schema_create_trigger DISABLE;
+
+    -- create a temporary table used as template for jsonb_populate_record
+    template_name := original_table_name || '_tmp' || trunc(random() * 99999 + 1);
+    ddl_command := ddl_command || template_name || '(';
+
+    -- get columns that exist at transaction with id end_at_tid
+    FOR log_column IN SELECT column_name, column_default, is_nullable, data_type_name, char_max_length, 
+                             numeric_precision, numeric_scale, datetime_precision, interval_type
+                        FROM pgmemento.audit_column_log
+                          WHERE table_relid = table_oid
+                            AND txid_range @> end_at_tid::numeric
+                        ORDER BY ordinal_position
+    LOOP
+      ddl_command := ddl_command || delimiter || log_column.column_name || ' ' || log_column.data_type_name ||
+      CASE WHEN log_column.char_max_length IS NOT NULL
+        THEN '('||log_column.char_max_length||')' ELSE '' END ||
+      CASE WHEN log_column.numeric_precision IS NOT NULL 
+        AND log_column.data_type_name = 'numeric' 
+        THEN '('||log_column.numeric_precision||','||log_column.numeric_scale||')' ELSE '' END ||
+      CASE WHEN log_column.datetime_precision IS NOT NULL 
+        AND NOT log_column.data_type_name = 'date' 
+        AND log_column.interval_type IS NULL 
+        THEN '('||log_column.datetime_precision||')' ELSE '' END ||
+      CASE WHEN log_column.interval_type IS NOT NULL 
+        THEN ' ' || log_column.interval_type ELSE '' END ||
+      CASE WHEN log_column.is_nullable IS NOT NULL 
+        THEN ' NOT NULL' ELSE '' END ||
+      CASE WHEN log_column.column_default IS NOT NULL 
+        THEN ' DEFAULT ' || log_column.column_default ELSE '' END;
+      delimiter := ',';
+    END LOOP;
+
+    -- create temp table
+    IF delimiter = ',' THEN
+      ddl_command := ddl_command || ') ' ||
+      CASE WHEN target_table_type = 'TABLE' THEN 'ON COMMIT DROP' ELSE 'ON COMMIT PRESERVE ROWS' END;
+      EXECUTE ddl_command;
+    ELSE
+      RETURN;
+    END IF;
+
+    delimiter := '';
+
+        -- check if logging entries exist in the audit_log table
     PERFORM 1 FROM pgmemento.table_event_log 
-	  WHERE schema_name = original_schema_name AND table_name = original_table_name LIMIT 1;
+	  WHERE table_relid = table_oid;
 
     IF FOUND THEN
-      -- if the table structure has changed over time we need to use a template table
-      -- that we hopefully created with 'pgmemento.create_table_template' before altering the table
-      SELECT template_name INTO template_table FROM pgmemento.table_templates
-        WHERE original_schema = original_schema_name AND original_table = original_table_name
-          AND creation_date >= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = start_from_tid)
-          AND creation_date <= (SELECT stmt_date FROM pgmemento.transaction_log WHERE txid = end_at_tid)
-          ORDER BY creation_date DESC LIMIT 1;
-
-      IF template_table IS NULL THEN
-        template_schema := original_schema_name;
-        template_table := original_table_name;
-      ELSE
-        template_schema := 'pgmemento';
-      END IF;
-
       -- let's go back in time - restore a table state at a given date
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
         restore_query := format('CREATE ' || replace_view || target_table_type || ' %I.%I AS
@@ -205,7 +231,7 @@ BEGIN
                 JOIN pgmemento.table_event_log e ON r.event_id = e.id
                 JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
                 WHERE t.txid >= %L AND t.txid < %L
-                  AND e.table_relid = %L::regclass::oid 
+                  AND e.table_relid = %L
                   AND e.op_id > 2), 
             valid_ids AS (
               SELECT DISTINCT y.audit_id
@@ -214,21 +240,22 @@ BEGIN
                 JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
                 LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
                 WHERE t.txid >= %L AND t.txid < %L
-                  AND e.table_relid = %L::regclass::oid 
+                  AND e.table_relid = %L
                   AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
             )
             SELECT v.log_entry FROM valid_ids f
             JOIN LATERAL (
               SELECT json_build_object(',
               target_schema_name, original_table_name,
-              start_from_tid, end_at_tid, original_schema_name || '.' || original_table_name,
-              start_from_tid, end_at_tid, original_schema_name || '.' || original_table_name);
+              start_from_tid, end_at_tid, table_oid,
+              start_from_tid, end_at_tid, table_oid);
 
         -- get the content of each column that happened to be in the table when the transaction was executed
-        FOR column_name IN 
-          EXECUTE 'SELECT attname FROM pg_attribute WHERE attrelid = $1::regclass and attstattarget != 0 ORDER BY attnum' 
-                     USING template_schema || '.' || template_table LOOP
-
+        FOR v_column IN 
+          SELECT column_name FROM pgmemento.audit_column_log 
+            WHERE table_relid = table_oid
+              AND txid_range @> end_at_tid::numeric 
+        LOOP
           v_columns_count := v_columns_count + 1;
           v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
 
@@ -246,14 +273,14 @@ BEGIN
                        AND (r.changes ? %L)
                        ORDER BY r.id LIMIT 1
                   ),
-                (SELECT COALESCE(to_json(%I), NULL)::jsonb 
-                   FROM %I.%I
-                   WHERE audit_id = f.audit_id
-                )
+                  (SELECT COALESCE(to_json(%I), NULL)::jsonb 
+                     FROM %I.%I
+                     WHERE audit_id = f.audit_id
+                  )
                 ) AS value) q
               ) q',
-              column_name, column_name, end_at_tid, column_name,
-              column_name, original_schema_name, original_table_name) || v_columns_count;
+              v_column, v_column, end_at_tid, v_column,
+              v_column, original_schema_name, original_table_name) || v_columns_count;
 
           delimiter := ',';
         END LOOP;
@@ -261,23 +288,28 @@ BEGIN
         restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) ORDER BY f.audit_id)' ||
           format('SELECT p.* FROM restore rq
                     JOIN LATERAL (
-                      SELECT * FROM jsonb_populate_record(null::%I.%I, rq.log_entry)
+                      SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)
                     ) p ON (true)',
-                    template_schema, template_table);
+                    template_name);
 
         EXECUTE restore_query;
       ELSE
         RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', target_table_type;
       END IF;
     ELSE
-      -- no entries found in log table - recent state of table will be transferred to the requested state
+      -- no entries found in log table - table is regarded empty
       RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
-      IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
-        EXECUTE format('CREATE ' || target_table_type || ' %I.%I AS SELECT * FROM %I.%I', target_schema_name, original_table_name, original_schema_name, original_table_name);
+      IF upper(target_table_type) = 'TABLE' THEN
+        EXECUTE format('CREATE TABLE %I.%I (LIKE %I)', target_schema_name, original_table_name, template_name);
+      ELSIF upper(target_table_type) = 'VIEW' THEN
+        EXECUTE format('CREATE ' || replace_view || 'VIEW %I.%I AS SELECT * FROM %I.%I LIMIT 0', target_schema_name, original_table_name, original_schema_name, original_table_name);        
       ELSE
         RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', target_table_type;
       END IF;
     END IF;
+
+    -- enable schema_create_trigger
+    ALTER EVENT TRIGGER schema_create_trigger ENABLE;
   END IF;
 END;
 $$
@@ -290,13 +322,13 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
   original_schema_name TEXT,
   target_schema_name TEXT, 
   target_table_type TEXT DEFAULT 'VIEW',
-  except_tables TEXT[] DEFAULT '{}',
   update_state INTEGER DEFAULT '0'
   ) RETURNS SETOF VOID AS
 $$
   SELECT pgmemento.restore_table_state(
-    start_from_tid, end_at_tid, tablename, schemaname, target_schema_name, target_table_type, update_state
-  ) FROM pg_tables 
-    WHERE schemaname = original_schema_name AND tablename <> ALL (except_tables);
+    start_from_tid, end_at_tid, table_name, schema_name, target_schema_name, target_table_type, update_state
+  ) FROM pgmemento.audit_table_log 
+    WHERE schema_name = original_schema_name
+      AND txid_range @> end_at_tid::numeric;
 $$
 LANGUAGE sql;

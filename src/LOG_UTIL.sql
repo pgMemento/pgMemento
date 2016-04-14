@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
+-- 0.3.0     2016-04-13   reflected changes in log tables               FKun
 -- 0.2.1     2016-04-05   additional column in audit_tables view        FKun
 -- 0.2.0     2016-02-15   get txids done right                          FKun
 -- 0.1.0     2015-06-20   initial commit                                FKun
@@ -109,12 +110,19 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   s_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
+DECLARE
+  table_oid OID;
 BEGIN
+  -- check if the table existed when t_id happened
+  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
+    WHERE schema_name = s_name AND table_name = t_name
+      AND txid_range @> t_id::numeric;
+
   RETURN QUERY
     DELETE FROM pgmemento.table_event_log 
       WHERE transaction_id = t_id
-        AND schema_name = s_name
-        AND table_name = t_name RETURNING id;
+        AND table_relid = table_oid
+        RETURNING id;
 END;
 $$
 LANGUAGE plpgsql;
@@ -136,12 +144,14 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   JOIN pg_namespace n ON c.relnamespace = n.oid
   JOIN pg_tables t ON c.relname = t.tablename
   JOIN pg_attribute a ON c.oid = a.attrelid
-  LEFT JOIN pg_trigger tg ON c.oid = tg.tgrelid
-    JOIN LATERAL (
-      SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
-    ) b ON (true)
+  LEFT JOIN (
+    SELECT tgrelid, tgenabled FROM pg_trigger WHERE tgname = 'log_transaction_trigger'::name
+  ) AS tg
+  ON c.oid = tg.tgrelid
+  JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
+  ) b ON (true)
   WHERE n.nspname = t.schemaname 
     AND t.schemaname != 'pgmemento'
     AND a.attname = 'audit_id'
-    AND (tg.tgname = 'log_transaction_trigger' OR tg.tgname IS NULL)
     ORDER BY schemaname, tablename;

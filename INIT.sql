@@ -24,6 +24,15 @@ SET client_min_messages TO WARNING;
 \echo
 \prompt 'Please enter the name of the schema to be used along with pgMemento: ' schema_name
 \prompt 'Specify tables to be excluded from logging processes (seperated by comma): ' except_tables
+\prompt 'Trigger CREATE TABLE statements? 0 (zero) for no, 1 for yes: ' trigger_create_table
+
+\echo
+\echo 'Create event trigger to log schema changes ...'
+SELECT pgmemento.create_schema_event_trigger(:trigger_create_table);
+
+\echo
+\echo 'Creating triggers for tables in ':schema_name' schema ...'
+SELECT pgmemento.create_schema_log_trigger(:'schema_name', string_to_array(:'except_tables',','));
 
 \echo
 \echo 'Creating audit_id columns for tables in ':schema_name' schema ...'
@@ -35,5 +44,3 @@ SELECT pgmemento.log_schema_state(:'schema_name', string_to_array(:'except_table
 
 \echo
 \echo 'pgMemento is now initialized on ':schema_name' schema.'
-
-\i ctl/START.sql

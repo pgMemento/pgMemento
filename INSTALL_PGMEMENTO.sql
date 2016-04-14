@@ -25,6 +25,7 @@ SET client_min_messages TO WARNING;
 \echo 'Creating pgMemento schema, tables and functions ...'
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
+\i src/DDL_LOG.sql
 \i src/VERSIONING.sql
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
