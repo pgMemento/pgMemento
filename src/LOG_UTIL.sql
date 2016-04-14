@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
--- 0.3.0     2016-04-13   reflected changes in log tables               FKun
+-- 0.3.0     2016-04-14   reflected changes in log tables               FKun
 -- 0.2.1     2016-04-05   additional column in audit_tables view        FKun
 -- 0.2.0     2016-02-15   get txids done right                          FKun
 -- 0.1.0     2015-06-20   initial commit                                FKun

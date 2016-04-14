@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.3.0     2016-04-10   a new template mechanism for restoring              FKun
+-- 0.3.0     2016-04-14   a new template mechanism for restoring              FKun
 -- 0.2.2     2016-03-08   minor change to generate_log_entry function         FKun
 -- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
 -- 0.2.0     2015-05-26   more efficient queries                              FKun

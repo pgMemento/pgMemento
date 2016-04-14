@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
--- 0.1.0     2016-04-13   initial commit                                FKun
+-- 0.1.0     2016-04-14   initial commit                                FKun
 --
 
 /**********************************************************
@@ -24,11 +24,15 @@
 * FUNCTIONS:
 *   create_schema_event_trigger(trigger_create_table INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
+*   log_create_event() RETURNS SETOF VOID
+*   log_drop_event(table_oid OID) RETURNS SETOF VOID
 *   modify_audit_column_log() RETURNS SETOF VOID
 *   modify_audit_table_log() RETURNS SETOF VOID
 *
 * TRIGGER FUNCTIONS:
-*   schema_event_trigger() RETURNS event_trigger
+*   schema_change_trigger() RETURNS event_trigger
+*   schema_create_trigger() RETURNS event_trigger
+*   schema_drop_trigger() RETURNS event_trigger
 *
 ***********************************************************/
 
@@ -92,24 +96,12 @@ CREATE OR REPLACE FUNCTION pgmemento.log_drop_event(
 $$
 BEGIN
   -- EVENT: Table dropped
-  -- update txid_range for removed tables in audit_table_log table
-  /*WITH dropped_tables AS (
-    SELECT atl.relid FROM pgmemento.audit_table_log atl
-      LEFT JOIN pg_tables pgt
-             ON pgt.schemaname = atl.schema_name
-            AND pgt.tablename = atl.table_name
-      WHERE pgt.tablename IS NULL
-        AND upper(atl.txid_range) IS NULL
-  )
-  UPDATE pgmemento.audit_table_log atab
-    SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
-    FROM dropped_tables dtab
-    WHERE atab.relid = dtab.relid;*/
-
+  -- update txid_range for removed table in audit_table_log table
   UPDATE pgmemento.audit_table_log
     SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
     WHERE relid = table_oid;
 
+  -- update txid_range for removed columns in audit_column_log table
   UPDATE pgmemento.audit_column_log
     SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
     WHERE table_relid = table_oid;

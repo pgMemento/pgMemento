@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.3.0     2016-04-10   new log tables for ddl changes                      FKun
+-- 0.3.0     2016-04-14   new log tables for ddl changes                      FKun
 -- 0.2.4     2016-04-05   more constraints on log tables (+ new ID column)    FKun
 -- 0.2.3     2016-03-17   work with time zones and renamed column in          FKun
 --                        table_templates table
@@ -186,7 +186,6 @@ DROP INDEX IF EXISTS table_log_range_idx;
 DROP INDEX IF EXISTS column_log_relid_idx;
 DROP INDEX IF EXISTS column_log_column_idx;
 DROP INDEX IF EXISTS column_log_range_idx;
-
 
 CREATE INDEX transaction_log_txid_idx ON pgmemento.transaction_log USING BTREE (txid);
 CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
