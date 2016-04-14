@@ -117,7 +117,7 @@ CREATE TABLE pgmemento.row_log
   id BIGSERIAL,
   event_id INTEGER NOT NULL,
   audit_id BIGINT NOT NULL,
-  changes JSONB NOT NULL
+  changes JSONB
 );
 
 ALTER TABLE pgmemento.row_log
