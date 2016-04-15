@@ -162,7 +162,6 @@ ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
 
 -- create constraints
 ALTER TABLE pgmemento.table_event_log
-  ADD CONSTRAINT table_event_constraint UNIQUE (transaction_id, table_relid, op_id),
   ADD CONSTRAINT table_event_log_txid_fk FOREIGN KEY (transaction_id)
     REFERENCES pgmemento.transaction_log (txid) MATCH FULL
     ON DELETE CASCADE ON UPDATE CASCADE;
@@ -506,17 +505,11 @@ BEGIN
 	WHEN 'TRUNCATE' THEN operation_id := 4;
   END CASE;
 
-  BEGIN
-    -- try to log corresponding table event
-    INSERT INTO pgmemento.table_event_log
-      (transaction_id, op_id, table_operation, table_relid) 
-    VALUES
-      (txid_current(), operation_id, TG_OP, TG_RELID);
-
-    EXCEPTION
-      WHEN unique_violation THEN
-	    NULL;
-  END;
+  -- try to log corresponding table event
+  INSERT INTO pgmemento.table_event_log
+    (transaction_id, op_id, table_operation, table_relid) 
+  VALUES
+    (txid_current(), operation_id, TG_OP, TG_RELID);
 
   RETURN NULL;
 END;
@@ -541,7 +534,8 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 4;
+        AND op_id = 4
+    ORDER BY id DESC LIMIT 1;
 
   -- log the whole content of the truncated table in the row_log table
   EXECUTE format(
@@ -573,7 +567,8 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 1;
+        AND op_id = 1
+    ORDER BY id LIMIT 1;
 
   -- log inserted row ('changes' column can be left blank)
   INSERT INTO pgmemento.row_log (event_id, audit_id)
@@ -600,10 +595,12 @@ DECLARE
 BEGIN
   -- get corresponding table event as it has already been logged
   -- by the log_transaction_trigger in advance
-  SELECT id INTO e_id FROM pgmemento.table_event_log 
-    WHERE transaction_id = txid_current() 
-      AND table_relid = TG_RELID
-      AND op_id = 2;
+  SELECT id INTO e_id 
+    FROM pgmemento.table_event_log 
+      WHERE transaction_id = txid_current() 
+        AND table_relid = TG_RELID
+        AND op_id = 2
+    ORDER BY id LIMIT 1;
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
@@ -643,7 +640,8 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 3;
+        AND op_id = 3
+    ORDER BY id DESC LIMIT 1;
 
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
