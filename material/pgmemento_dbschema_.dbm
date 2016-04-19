@@ -3,9 +3,9 @@
 CAUTION: Do not modify this file unless you know what you are doing.
          Unexpected results may occur if the code is changed deliberately.
 -->
-<dbmodel pgmodeler-ver="0.8.0" last-position="0,0" last-zoom="1"
+<dbmodel pgmodeler-ver="0.8.0" author="Felix Kunde" last-position="0,0" last-zoom="1"
 	 default-owner="postgres">
-<database name="new_database">
+<database name="pgMemento_DB_schema">
 </database>
 
 <schema name="public" protected="true" fill-color="#e1e1e1" sql-disabled="true">
@@ -18,7 +18,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="transaction_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="979" y="242"/>
+	<position x="982" y="241"/>
 	<column name="id" not-null="true">
 		<type name="integer"/>
 	</column>
@@ -42,7 +42,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="980" y="534.4"/>
+	<position x="983" y="533.4"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -66,7 +66,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="row_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1360" y="400"/>
+	<position x="1363" y="399"/>
 	<column name="id" not-null="true">
 		<type name="bigserial"/>
 	</column>
@@ -151,7 +151,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="473" y="258"/>
+	<position x="442" y="264"/>
 	<column name="relid" not-null="true">
 		<type name="oid"/>
 	</column>
@@ -172,7 +172,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="471" y="406"/>
+	<position x="363" y="411"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -283,13 +283,19 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
+<constraint name="audt_column_log_fk" type="fk-constr" comparison-type="MATCH FULL"
+	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.audit_table_log" table="pgmemento.audit_column_log">
+	<columns names="table_relid" ref-type="src-columns"/>
+	<columns names="relid" ref-type="dst-columns"/>
+</constraint>
+
 <relationship name="rel_table_event_log_transaction_log" type="relfk"
 	 src-table="pgmemento.table_event_log"
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="879.5" y="576"/>
-	<position x="879.5" y="285.6"/>
+		<position x="882.5" y="575"/>
+	<position x="882.5" y="284.6"/>
 	</line>
 </relationship>
 
@@ -298,9 +304,25 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="1284.85" y="442.6"/>
-	<position x="1284.85" y="563"/>
+		<position x="1287.85" y="441.6"/>
+	<position x="1287.85" y="562"/>
 	</line>
+</relationship>
+
+<relationship name="rel_audit_column_log_audit_table_log" type="relfk"
+	 src-table="pgmemento.audit_column_log"
+	 dst-table="pgmemento.audit_table_log"
+	 src-required="false" dst-required="false">
+	<line>
+		<position x="750" y="453"/>
+	<position x="751" y="292"/>
+	</line>
+	<label ref-type="src-label">
+		<position x="195.64" y="6.79999"/>
+	</label>
+	<label ref-type="dst-label">
+		<position x="9.53998" y="-19.2"/>
+	</label>
 </relationship>
 
 </dbmodel>
