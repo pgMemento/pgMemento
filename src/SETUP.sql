@@ -97,8 +97,8 @@ CREATE TABLE pgmemento.transaction_log
 );
 
 ALTER TABLE pgmemento.transaction_log
-ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
-ADD CONSTRAINT transaction_log_unique UNIQUE (txid);
+  ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
+  ADD CONSTRAINT transaction_log_unique_txid UNIQUE (txid);
 
 -- event on tables are logged into the table_event_log table
 DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
@@ -112,7 +112,7 @@ CREATE TABLE pgmemento.table_event_log
 );
 
 ALTER TABLE pgmemento.table_event_log
-ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
+  ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
 
 -- all row changes are logged into the row_log table
 DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
@@ -125,7 +125,7 @@ CREATE TABLE pgmemento.row_log
 );
 
 ALTER TABLE pgmemento.row_log
-ADD CONSTRAINT row_log_pk PRIMARY KEY (id);
+  ADD CONSTRAINT row_log_pk PRIMARY KEY (id);
 
 -- liftime of audited tables is logged in the audit_table_log table
 CREATE TABLE pgmemento.audit_table_log (
@@ -136,7 +136,7 @@ CREATE TABLE pgmemento.audit_table_log (
 );
 
 ALTER TABLE pgmemento.audit_table_log
-ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (relid);
+  ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (relid);
 
 -- lifetime of columns of audited tables is logged in the audit_column_log table
 CREATE TABLE pgmemento.audit_column_log (
@@ -158,9 +158,9 @@ CREATE TABLE pgmemento.audit_column_log (
 );  
 
 ALTER TABLE pgmemento.audit_column_log
-ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
+  ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
 
--- create constraints
+-- create foreign key constraints
 ALTER TABLE pgmemento.table_event_log
   ADD CONSTRAINT table_event_log_txid_fk FOREIGN KEY (transaction_id)
     REFERENCES pgmemento.transaction_log (txid) MATCH FULL
@@ -169,6 +169,11 @@ ALTER TABLE pgmemento.table_event_log
 ALTER TABLE pgmemento.row_log
   ADD CONSTRAINT row_log_table_fk FOREIGN KEY (event_id)
     REFERENCES pgmemento.table_event_log (id) MATCH FULL
+    ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE pgmemento.audit_column_log
+  ADD CONSTRAINT audit_column_log_fk FOREIGN KEY (table_relid)
+    REFERENCES pgmemento.audit_table_log (relid) MATCH FULL
     ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later

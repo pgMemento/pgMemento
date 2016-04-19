@@ -25,6 +25,7 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
+*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_table_event_log(t_id BIGINT, t_name TEXT, s_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(t_id BIGINT) RETURNS BIGINT
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
@@ -95,7 +96,8 @@ LANGUAGE plpgsql;
 /**********************************************************
 * DELETE LOGS
 *
-* Delete log information of a given transaction  
+* Delete log information of a given transaction, event or
+* audited tables / columns
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(t_id BIGINT) RETURNS BIGINT AS
 $$
@@ -123,6 +125,33 @@ BEGIN
       WHERE transaction_id = t_id
         AND table_relid = table_oid
         RETURNING id;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
+  table_oid INTEGER
+  ) RETURNS SETOF OID AS
+$$
+BEGIN
+  -- only allow delete if table has already been dropped
+  PERFORM 1 FROM pgmemento.audit_table_log 
+    WHERE relid = table_oid
+      AND upper(txid_range) IS NOT NULL;
+
+  IF FOUND THEN
+    DELETE FROM pgmemento.table_event_log 
+      WHERE table_relid = table_oid;
+
+    RETURN QUERY
+      DELETE FROM pgmemento.audit_table_log 
+        WHERE relid = table_oid
+          AND upper(txid_range) IS NOT NULL
+          RETURNING relid;
+  ELSE
+    RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', table_oid; 
+  END IF;
 END;
 $$
 LANGUAGE plpgsql;
