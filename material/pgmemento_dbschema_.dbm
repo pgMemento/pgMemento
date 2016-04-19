@@ -18,7 +18,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="transaction_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="982" y="241"/>
+	<position x="982" y="240"/>
 	<column name="id" not-null="true">
 		<type name="integer"/>
 	</column>
@@ -37,12 +37,15 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<constraint name="transaction_log_pk" type="pk-constr" table="pgmemento.transaction_log">
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
+	<constraint name="transaction_log_unique_txid" type="uq-constr" table="pgmemento.transaction_log">
+		<columns names="txid" ref-type="src-columns"/>
+	</constraint>
 </table>
 
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="983" y="533.4"/>
+	<position x="992" y="530.4"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -66,7 +69,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="row_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1363" y="399"/>
+	<position x="1363" y="398"/>
 	<column name="id" not-null="true">
 		<type name="bigserial"/>
 	</column>
@@ -151,7 +154,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="442" y="264"/>
+	<position x="442" y="263"/>
 	<column name="relid" not-null="true">
 		<type name="oid"/>
 	</column>
@@ -172,7 +175,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="363" y="411"/>
+	<position x="363" y="410"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -294,9 +297,15 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="882.5" y="575"/>
-	<position x="882.5" y="284.6"/>
+		<position x="899" y="572"/>
+	<position x="900" y="283"/>
 	</line>
+	<label ref-type="src-label">
+		<position x="-4.35999" y="-0.600037"/>
+	</label>
+	<label ref-type="dst-label">
+		<position x="-2.35999" y="0.799988"/>
+	</label>
 </relationship>
 
 <relationship name="rel_row_log_table_event_log" type="relfk"
@@ -304,8 +313,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="1287.85" y="441.6"/>
-	<position x="1287.85" y="562"/>
+		<position x="1287.85" y="440.6"/>
+	<position x="1287.85" y="561"/>
 	</line>
 </relationship>
 
@@ -314,14 +323,14 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.audit_table_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="750" y="453"/>
-	<position x="751" y="292"/>
+		<position x="750" y="452"/>
+	<position x="751" y="291"/>
 	</line>
 	<label ref-type="src-label">
-		<position x="195.64" y="6.79999"/>
+		<position x="0.539978" y="-0.200012"/>
 	</label>
 	<label ref-type="dst-label">
-		<position x="9.53998" y="-19.2"/>
+		<position x="1.53998" y="-0.200012"/>
 	</label>
 </relationship>
 
