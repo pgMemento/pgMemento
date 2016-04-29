@@ -275,27 +275,28 @@ SELECT r.audit_order, r.audit_id, r.changes,
   ORDER BY e.id DESC, audit_order ASC;
 </pre>
 
-Note that the LATERAL JOIN can also be replaced by a window function using
-`rank() OVER (PARTITION BY event_id ORDER BY audit_id)`. In my tests the
-LATERAL query was slightly faster.
-
-Multiple transactions can be reverted by calling:
+A range of transactions can be reverted by calling:
 
 <pre>
-SELECT pgmemento.revert_transaction(txid) 
-  FROM pgmemento.transaction_log
-  WHERE ... -- narrow down the number of transactions to be reverted
-  ORDER BY id DESC;
+SELECT pgmemento.revert_transactions(lower_txid, upper_txid);
 </pre>
 
-The resulting transaction could again be reverted. This raises another 
-question: When reverting a couple of table events e.g. several UPDATEs 
-on the same row wouldn't it be clever to just perform the oldest event? 
-This can be realized by using a ascending order for tables event with a 
-DISTINCT ON on the audit_id column. The query is part of the second revert 
-procedure called `revert_transactions`. It can be used for each revert 
-task, but it will perform worse for simple rollbacks compared to the other 
-procedure.
+It uses nearly the same query but addionally ordered by transaction ids
+(DESC). The resulting transaction could again be reverted. You should not
+use the `revert_transaction` procedure within a query to revert several
+transactions that manipulated multiple tables referenced by foreign keys.
+This would possibly violate them. Moreover, if your foreign keys are set 
+to ON UPDATE CASCADE or ON DELETE CASCADE it produces an order of table
+events that pgMemento is unable to revert!
+
+When reverting transactions on tables without any references an alternative
+procedure can be used called `revert_distinct_transaction`. For each 
+distinct audit_it only the oldest table operation is applied to make the
+revert process faster. It is also provided for transaction ranges.
+
+<pre>
+SELECT pgmemento.revert_distinct_transactions(lower_txid, upper_txid);
+</pre>
 
 
 ### 5.5. Restore a past state of your database
