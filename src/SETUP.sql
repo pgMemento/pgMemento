@@ -609,7 +609,6 @@ BEGIN
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
-  -- in PostgreSQL 9.5 this can be solved with merge_json function
   WITH json_diff AS (
     SELECT COALESCE(
       (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 

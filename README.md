@@ -81,7 +81,8 @@ It's easy to query different versions of a row. Restoring former states is
 also possible. It writes all the data twice, though. Runs only on Linux.
 
 If you prefer to work with validity intervals for each row try out the
-[temporal_tables](http://pgxn.org/dist/temporal_tables/) extension by Vlad Arkhipov.
+[temporal_tables](http://pgxn.org/dist/temporal_tables/) extension by Vlad Arkhipov or the
+[table_version](http://pgxn.org/dist/table_version) extension by Jeremy Palmer.
 [This talk](http://pgday.ru/files/papers/9/pgday.2015.magnus.hagander.tardis_orm.pdf) by Magnus Hagander goes in a similar direction.
 
 If you like the idea of generic logging, but you prefer hstore over JSONB
