@@ -172,7 +172,12 @@ BEGIN
 
   IF FOUND THEN
     -- disable schema_create_trigger when creating temporary tables
-    ALTER EVENT TRIGGER schema_create_trigger DISABLE;
+    PERFORM 1 FROM pg_event_trigger
+      WHERE evtname = 'schema_change_trigger';
+
+    IF FOUND THEN
+      ALTER EVENT TRIGGER schema_create_trigger DISABLE;
+    END IF;
 
     -- create a temporary table used as template for jsonb_populate_record
     template_name := original_table_name || '_tmp' || trunc(random() * 99999 + 1);
@@ -225,25 +230,16 @@ BEGIN
       IF upper(target_table_type) = 'VIEW' OR upper(target_table_type) = 'TABLE' THEN
         restore_query := format('CREATE ' || replace_view || target_table_type || ' %I.%I AS
           WITH restore AS (
-            WITH excluded_ids AS (
-              SELECT DISTINCT r.audit_id
+            WITH fetch_audit_ids AS (
+              SELECT DISTINCT ON (r.audit_id) r.audit_id, e.op_id
                 FROM pgmemento.row_log r
                 JOIN pgmemento.table_event_log e ON r.event_id = e.id
                 JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
                 WHERE t.txid >= %L AND t.txid < %L
                   AND e.table_relid = %L
-                  AND e.op_id > 2), 
-            valid_ids AS (
-              SELECT DISTINCT y.audit_id
-                FROM pgmemento.row_log y
-                JOIN pgmemento.table_event_log e ON y.event_id = e.id
-                JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                LEFT OUTER JOIN excluded_ids n ON n.audit_id = y.audit_id
-                WHERE t.txid >= %L AND t.txid < %L
-                  AND e.table_relid = %L
-                  AND (n.audit_id IS NULL OR y.audit_id != n.audit_id)
+                  ORDER BY r.audit_id, e.id DESC
             )
-            SELECT v.log_entry FROM valid_ids f
+            SELECT v.log_entry FROM fetch_audit_ids f
             JOIN LATERAL (
               SELECT json_build_object(',
               target_schema_name, original_table_name,
@@ -285,7 +281,8 @@ BEGIN
           delimiter := ',';
         END LOOP;
 
-        restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) ORDER BY f.audit_id)' ||
+        restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) '
+                         || ' WHERE f.op_id < 3 ORDER BY f.audit_id)' ||
           format('SELECT p.* FROM restore rq
                     JOIN LATERAL (
                       SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)
@@ -309,7 +306,12 @@ BEGIN
     END IF;
 
     -- enable schema_create_trigger
-    ALTER EVENT TRIGGER schema_create_trigger ENABLE;
+    PERFORM 1 FROM pg_event_trigger
+      WHERE evtname = 'schema_change_trigger';
+
+    IF FOUND THEN
+      ALTER EVENT TRIGGER schema_create_trigger ENABLE;
+    END IF;
   END IF;
 END;
 $$
