@@ -39,8 +39,4 @@ SELECT pgmemento.create_schema_log_trigger(:'schema_name', string_to_array(:'exc
 SELECT pgmemento.create_schema_audit_id(:'schema_name', string_to_array(:'except_tables',','));
 
 \echo
-\echo 'Log already existent content as part of an ''INSERT'' event ...'
-SELECT pgmemento.log_schema_state(:'schema_name', string_to_array(:'except_tables',','));
-
-\echo
 \echo 'pgMemento is now initialized on ':schema_name' schema.'

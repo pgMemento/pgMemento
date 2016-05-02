@@ -61,8 +61,6 @@
 *   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   log_schema_state(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_schema_audit(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_audit_id(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -655,85 +653,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-
-/**********************************************************
-* LOG TABLE STATE
-*
-* Log table content in the audit_log table (as inserted values)
-* to have a baseline for table versioning.
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
-  original_table_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
-  ) RETURNS SETOF VOID AS
-$$
-DECLARE
-  is_empty INTEGER := 0;
-  e_id INTEGER;
-  pkey_columns TEXT := '';
-BEGIN
-  -- first, check if table is not empty
-  EXECUTE format(
-    'SELECT 1 FROM %I.%I LIMIT 1',
-    original_schema_name, original_table_name)
-    INTO is_empty;
-
-  IF is_empty <> 0 THEN
-    BEGIN
-      -- fill transaction_log table 
-      INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
-        VALUES (txid_current(), statement_timestamp(), current_user, inet_client_addr());
-
-      EXCEPTION
-        WHEN unique_violation THEN
-	      NULL;
-    END;
-
-    BEGIN
-      -- fill table_event_log table  
-      INSERT INTO pgmemento.table_event_log
-        (transaction_id, op_id, table_operation, table_relid) 
-      VALUES
-        (txid_current(), 1, 'INSERT', (original_schema_name || '.' || original_table_name)::regclass::oid)
-      RETURNING id INTO e_id;
-
-      EXCEPTION
-        WHEN unique_violation THEN
-	      NULL;
-    END;
-
-    -- fill row_log table
-    IF e_id IS NOT NULL THEN
-      -- get the primary key columns
-      SELECT array_to_string(array_agg(pga.attname),',') INTO pkey_columns
-        FROM pg_index pgi, pg_class pgc, pg_attribute pga 
-          WHERE pgc.oid = (original_schema_name || '.' || original_table_name)::regclass::oid
-            AND pgi.indrelid = pgc.oid 
-            AND pga.attrelid = pgc.oid 
-            AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary;
-
-      IF pkey_columns IS NOT NULL THEN
-        pkey_columns := ' ORDER BY ' || pkey_columns;
-      END IF;
-
-      EXECUTE format(
-        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-           SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I' || pkey_columns,
-           original_schema_name, original_table_name) USING e_id;
-    END IF;
-  END IF;
-END;
-$$
-LANGUAGE plpgsql;
-
--- perform log_table_state on multiple tables in one schema
-CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
-  schema_name TEXT DEFAULT 'public',
-  except_tables TEXT[] DEFAULT '{}'
-  ) RETURNS SETOF VOID AS
-$$
-  SELECT pgmemento.log_table_state(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
-$$
-LANGUAGE sql;

@@ -167,15 +167,16 @@ By passing a 1 to the procedure an additional event trigger for
 
 **ATTENTION:** It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you begin or continue
-to work with the database and change contents, define the present state
+to work with the database and change content, define the present state
 as the initial versioning state by executing the procedure
 `pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
 For each row in the audited tables another row will be written to the 
 'row_log' table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed. Depending on the number of 
-tables to alter and on the amount of data that assigned as INSERTed
-this process can take a while. The procedure is also called when using
-the `INIT.sql` script.
+tables to alter and on the amount of data that has to be defined as 
+INSERTed this process can take a while. If the tables are referenced by
+foreign keys do not use `pgmemento.log_schema_state`, instead use
+`pgmemento.log_table_state` for each table but in the right order.
 
 **HINT:** When setting up a new database I would recommend to start 
 pgMemento after bulk imports. Otherwise the import will be slower and 
