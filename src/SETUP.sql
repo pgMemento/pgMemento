@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.3.0     2016-04-14   new log tables for ddl changes                      FKun
+-- 0.3.0     2016-04-14   new log tables for ddl changes (removed             FKun
+--                        table_templates table)
 -- 0.2.4     2016-04-05   more constraints on log tables (+ new ID column)    FKun
 -- 0.2.3     2016-03-17   work with time zones and renamed column in          FKun
 --                        table_templates table
