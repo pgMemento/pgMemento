@@ -175,7 +175,7 @@ BEGIN
   IF FOUND THEN
     -- disable schema_create_trigger when creating temporary tables
     PERFORM 1 FROM pg_event_trigger
-      WHERE evtname = 'schema_change_trigger';
+      WHERE evtname = 'schema_create_trigger';
 
     IF FOUND THEN
       ALTER EVENT TRIGGER schema_create_trigger DISABLE;
@@ -309,7 +309,7 @@ BEGIN
 
     -- enable schema_create_trigger
     PERFORM 1 FROM pg_event_trigger
-      WHERE evtname = 'schema_change_trigger';
+      WHERE evtname = 'schema_create_trigger';
 
     IF FOUND THEN
       ALTER EVENT TRIGGER schema_create_trigger ENABLE;
