@@ -538,7 +538,7 @@ over time it might not be possible to recreate constraints and indexes as
 their metadata is not yet logged by pgMemento. 
 
 
-### 5.6. Unistall pgMemento
+### 5.6. Uninstall pgMemento
 
 In order to stop and remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
 script.
