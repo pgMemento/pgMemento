@@ -121,7 +121,7 @@ BEGIN
   -- EVENT: New table or new column created
   -- insert columns that do not exist in audit_column_log table
   INSERT INTO pgmemento.audit_column_log
-    SELECT nextval('audit_column_log_id_seq'),
+    SELECT nextval('pgmemento.audit_column_log_id_seq'),
       (col.table_schema || '.' || col.table_name)::regclass::oid, col.column_name,
       col.ordinal_position, col.column_default, col.is_nullable,
       col.data_type, col.udt_name, col.character_maximum_length,
@@ -186,7 +186,7 @@ BEGIN
           OR col.interval_type <> acl.interval_type)
   ), insert_new_versions AS (
     INSERT INTO pgmemento.audit_column_log
-      SELECT nextval('audit_column_log_id_seq'), 
+      SELECT nextval('pgmemento.audit_column_log_id_seq'), 
         table_relid, column_name,
         ordinal_position, column_default, is_nullable,
         data_type, udt_name, character_maximum_length,
