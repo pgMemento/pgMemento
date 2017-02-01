@@ -38,7 +38,7 @@ CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   tid BIGINT,
   aid BIGINT,
   original_table_name TEXT,
-  original_schema_name TEXT DEFAULT 'citydb'
+  original_schema_name TEXT DEFAULT 'public'
   ) RETURNS jsonb AS
 $$
 DECLARE
