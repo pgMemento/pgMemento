@@ -54,16 +54,17 @@ out of disk space pretty soon. Nevertheless, obsolete content can simply be
 removed from the logs at any time without affecting the versioning mechanism.
 
 pgMemento is written in plain PL/pgSQL. Thus, it can be set up on every machine 
-with PostgreSQL 9.4 or higher. I tagged a first version of pgMemento (v0.1) that 
+with PostgreSQL 9.5 or higher. I tagged a first version of pgMemento (v0.1) that 
 uses the JSON data type and can be used along with PostgreSQL 9.3, but it is slower
-and can not handle very big data as JSON strings. I recommend to always use the 
-newest version of pgMemento.
+and can not handle very big data as JSON strings. Releases v0.2 and v0.3 require 
+at least PostgreSQL 9.4. The master uses JSONB functions introduced in PostgreSQL 9.5. 
+I recommend to always use the newest version of pgMemento.
 
 
 3. System requirements
 ----------------------
 
-* PostgreSQL 9.4
+* PostgreSQL 9.5
 
 
 4. Background & References
@@ -288,8 +289,9 @@ It uses nearly the same query but addionally ordered by transaction ids
 use the `revert_transaction` procedure within a query to revert several
 transactions that manipulated multiple tables referenced by foreign keys.
 This would possibly violate them. Moreover, if your foreign keys are set 
-to ON UPDATE CASCADE or ON DELETE CASCADE it produces an order of table
-events that pgMemento is unable to revert!
+to ON UPDATE CASCADE or ON DELETE CASCADE it produces another order of table
+events. pgMemento only offers one fallback where events are processed in
+ascending order (per transaction) to reverted cascading UPDATES and DELETES.
 
 When reverting transactions on tables without any references an alternative
 procedure can be used called `revert_distinct_transaction`. For each 
@@ -433,7 +435,7 @@ SELECT
          AND (r.changes ? 'column_B')
          ORDER BY r.id LIMIT 1
     ),
-    (SELECT COALESCE(to_json(column_B), NULL)::jsonb 
+    (SELECT COALESCE(to_json(column_B), NULL)::jsonb
        FROM schema_Z.table_A
        WHERE audit_id = f.audit_id
     )
@@ -447,7 +449,7 @@ By the end I would have a series of keys and values, like for example:
 * '{"audit_id":555}' (--> first entry found in 'row_log' for column 'ID' has ID 99)
 
 These fragments can be put in alternating order and passed to the 
-`json_build_object` function to generate a complete replica of the 
+`jsonb_build_object` function to generate a complete replica of the 
 row as JSONB.
 
 <pre>
@@ -455,11 +457,11 @@ row as JSONB.
 )
 SELECT v.log_entry FROM valid_ids f 
 JOIN LATERAL ( <font color='lightgreen'>-- for each audit_id do:</font>
-  SELECT json_build_object( 
+  SELECT jsonb_build_object( 
     q1.key, q1.value, 
     q2.key, q2.value,
     ...
-    )::jsonb AS log_entry 
+    ) AS log_entry 
   FROM ( <font color='lightgreen'>-- query for values</font>
     SELECT q.key, q.value FROM ( 
       SELECT 'id' AS key, r.changes -> 'id' 
@@ -523,7 +525,28 @@ as BASE TABLEs, they will of course remain in the target schema but
 requiring extra disk space.
 
 
-#### 5.5.5. Work with the past state
+#### 5.5.5. Restore revisions of a certain tuple
+
+It is also possible to restore only revisions of a certain tuple with the
+function `pgmemento.get_log_entry`. It requires a txid ID, the audit_id of
+the tuple and the corresponding table and schema name.
+
+<pre>
+WITH get_log_entries AS (
+  SELECT pgmemento.generate_log_entry(e.transaction_id,r.audit_id,'my_table','public') AS entry
+  FROM pgmemento.row_log r
+  JOIN pgmemento.table_event_log e ON e.id = r.event_id
+    WHERE r.audit_id = 12345
+      ORDER BY t.txid DESC
+)
+SELECT j.* FROM get_log_entries i
+JOIN LATERAL ( 
+  SELECT * FROM jsonb_populate_record(null::public.my-table, i.entry)
+) j ON (true); 
+</pre>
+
+
+#### 5.5.6. Work with the past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
@@ -573,8 +596,8 @@ However, here are some plans I have for the near future:
 I gave a presentation in german at FOSSGIS 2015:
 https://www.youtube.com/watch?v=EqLkLNyI6Yk
 
-Slides can be found here:
-http://slides.com/fxku/pgmemento_en#/
+I gave another presentation in FOSSGIS-NA 2016:
+http://slides.com/fxku/pgmemento_foss4gna16
 
 
 8. Developers

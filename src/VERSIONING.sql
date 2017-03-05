@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.0     2017-03-05   updated JSONB functions                             FKun
 -- 0.3.0     2016-04-14   a new template mechanism for restoring              FKun
 -- 0.2.2     2016-03-08   minor change to generate_log_entry function         FKun
 -- 0.2.1     2016-02-14   removed unnecessary plpgsql and dynamic sql code    FKun
@@ -49,7 +50,7 @@ DECLARE
   v_columns_count NUMERIC := 0;
   delimiter VARCHAR(1) := '';
   for_each_valid_id TEXT := '';
-  json_result JSONB := '{}'::jsonb;
+  jsonb_result JSONB := '{}'::jsonb;
 BEGIN
   -- check if the table existed when tid happened
   SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
@@ -60,7 +61,7 @@ BEGIN
     RAISE NOTICE 'Did not found entries in log table for table ''%''.', original_table_name;
   ELSE
     -- start building the SQL command
-    restore_query := 'SELECT json_build_object(';
+    restore_query := 'SELECT jsonb_build_object(';
 
     -- get the content of each column that happened to be in the table when the transaction was executed
     FOR v_column IN 
@@ -98,13 +99,13 @@ BEGIN
     END LOOP;
 
     -- complete the SQL command
-    restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id;
+    restore_query := restore_query || v_columns || ') AS log_entry FROM ' || for_each_valid_id;
 
     -- execute the SQL command
-    EXECUTE restore_query INTO json_result;
+    EXECUTE restore_query INTO jsonb_result;
   END IF;
 
-  RETURN json_result;
+  RETURN jsonb_result;
 END;
 $$
 LANGUAGE plpgsql;
@@ -243,7 +244,7 @@ BEGIN
             )
             SELECT v.log_entry FROM fetch_audit_ids f
             JOIN LATERAL (
-              SELECT json_build_object(',
+              SELECT jsonb_build_object(',
               target_schema_name, original_table_name,
               start_from_tid, end_at_tid, table_oid,
               start_from_tid, end_at_tid, table_oid);

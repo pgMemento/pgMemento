@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.0     2017-03-05   updated JSONB functions                             FKun
 -- 0.3.0     2016-04-14   new log tables for ddl changes (removed             FKun
 --                        table_templates table)
 -- 0.2.4     2016-04-05   more constraints on log tables (+ new ID column)    FKun
@@ -544,8 +545,8 @@ BEGIN
   -- log the whole content of the truncated table in the row_log table
   EXECUTE format(
     'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-       SELECT $1, audit_id, row_to_json(%I)::jsonb AS content FROM %I.%I',
-    TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME) USING e_id;
+       SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
+       TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME) USING e_id;
 
   RETURN NULL;
 END;
@@ -595,7 +596,6 @@ CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
 $$
 DECLARE
   e_id INTEGER;
-  json_diff JSONB;
 BEGIN
   -- get corresponding table event as it has already been logged
   -- by the log_transaction_trigger in advance
@@ -608,16 +608,16 @@ BEGIN
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
-  WITH json_diff AS (
+  WITH jsonb_diff AS (
     SELECT COALESCE(
       (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
-         FROM jsonb_each(row_to_json(OLD)::jsonb)
-           WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ row_to_json(NEW)::jsonb
+         FROM jsonb_each(to_jsonb(OLD))
+           WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
       ),
       '{}')::jsonb AS delta
     )
     INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-      SELECT e_id, NEW.audit_id, delta FROM json_diff;
+      SELECT e_id, NEW.audit_id, delta FROM jsonb_diff;
 
   RETURN NULL;
 END;
@@ -648,7 +648,7 @@ BEGIN
 
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-    VALUES (e_id, OLD.audit_id, row_to_json(OLD)::jsonb);
+    VALUES (e_id, OLD.audit_id, to_jsonb(OLD));
 
   RETURN NULL;
 END;

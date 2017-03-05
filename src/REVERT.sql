@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.4.0     2017-03-05   updated JSONB functions and added fallback      FKun
 -- 0.3.0     2016-04-29   splitting up the functions to match the new     FKun
 --                        logging behavior for table events
 -- 0.2.2     2016-03-08   added another revert procedure                  FKun
@@ -78,8 +79,8 @@ BEGIN
 
       -- get recent version of that row
       EXECUTE format(
-        'SELECT row_to_json(*)::jsonb FROM %I.%I WHERE audit_id = $1',
-        schema_name, table_name)
+        'SELECT to_jsonb(%I) FROM %I.%I WHERE audit_id = $1',
+        table_name, schema_name, table_name)
         INTO table_version USING aid;
 
       -- create diff between the two versions
@@ -136,7 +137,7 @@ LANGUAGE plpgsql;
 *
 * Procedures to revert a single transaction or a range of
 * transactions. All table operations are processed in 
-* reversed order so no foreign keys should be violated. 
+* reversed order so no foreign keys should be violated.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid BIGINT) RETURNS SETOF VOID AS
 $$
@@ -166,6 +167,35 @@ BEGIN
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;
+
+  EXCEPTION
+    WHEN foreign_key_violation THEN
+      -- Fkey violation happens when cascading updates or deletes were used
+      -- So, try to revert events in ascending order
+      -- If non-cascading and cascading queries were mixed, there is no chance for proper reverts
+      FOR rec IN 
+        SELECT r.audit_order, r.audit_id, r.changes, 
+               a.schema_name, a.table_name, e.op_id
+          FROM pgmemento.table_event_log e
+          JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
+          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+          JOIN LATERAL (
+            SELECT 
+              CASE WHEN e.op_id > 2 THEN
+                rank() OVER (ORDER BY audit_id ASC)
+              ELSE
+                rank() OVER (ORDER BY audit_id DESC)
+              END AS audit_order,
+              audit_id, changes 
+            FROM pgmemento.row_log 
+              WHERE event_id = e.id
+          ) r ON (true)
+          WHERE upper(a.txid_range) IS NULL
+            AND t.txid = tid
+            ORDER BY e.id ASC, audit_order ASC
+        LOOP
+          PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
+        END LOOP;
 END;
 $$ 
 LANGUAGE plpgsql;
@@ -201,6 +231,35 @@ BEGIN
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;
+
+  EXCEPTION
+    WHEN foreign_key_violation THEN
+      -- Fkey violation happens when cascading updates or deletes were used
+      -- So, try to revert events in ascending order per transaction
+      -- If non-cascading and cascading queries were mixed, there is no chance for proper reverts
+      FOR rec IN 
+        SELECT r.audit_order, r.audit_id, r.changes, 
+               a.schema_name, a.table_name, e.op_id
+          FROM pgmemento.table_event_log e
+          JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
+          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+          JOIN LATERAL (
+            SELECT 
+              CASE WHEN e.op_id > 2 THEN
+                rank() OVER (ORDER BY audit_id ASC)
+              ELSE
+                rank() OVER (ORDER BY audit_id DESC)
+              END AS audit_order,
+              audit_id, changes 
+            FROM pgmemento.row_log 
+              WHERE event_id = e.id
+          ) r ON (true)
+          WHERE upper(a.txid_range) IS NULL
+            AND t.txid BETWEEN start_from_tid AND end_at_tid
+            ORDER BY t.id DESC, e.id ASC, audit_order ASC
+      LOOP
+        PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
+      END LOOP;
 END;
 $$ 
 LANGUAGE plpgsql;
@@ -212,7 +271,7 @@ LANGUAGE plpgsql;
 * Procedures to revert a single transaction or a range of
 * transactions. For each distinct audit_it only the oldest 
 * operation is applied to make the revert process faster.
-* This will very likely not work for transaction affecting
+* This will very likely not work for transactions affecting
 * multiple tables referenced by foreign keys. Execute only 
 * for transactions done on tables without any references. 
 ***********************************************************/
