@@ -224,7 +224,7 @@ BEGIN
 
     delimiter := '';
 
-        -- check if logging entries exist in the audit_log table
+    -- check if logging entries exist in the audit_log table
     PERFORM 1 FROM pgmemento.table_event_log 
 	  WHERE table_relid = table_oid;
 
@@ -362,28 +362,22 @@ BEGIN
     INTO is_empty;
 
   IF is_empty <> 0 THEN
-    BEGIN
-      -- fill transaction_log table 
-      INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
-        VALUES (txid_current(), statement_timestamp(), current_user, inet_client_addr());
+    -- fill transaction_log table 
+    INSERT INTO pgmemento.transaction_log
+      (txid, stmt_date, user_name, client_name)
+    VALUES 
+      (txid_current(), statement_timestamp(), current_user, inet_client_addr())
+    ON CONFLICT (txid)
+      DO NOTHING;
 
-      EXCEPTION
-        WHEN unique_violation THEN
-	      NULL;
-    END;
-
-    BEGIN
-      -- fill table_event_log table  
-      INSERT INTO pgmemento.table_event_log
-        (transaction_id, op_id, table_operation, table_relid) 
-      VALUES
-        (txid_current(), 1, 'INSERT', (original_schema_name || '.' || original_table_name)::regclass::oid)
+    -- fill table_event_log table  
+    INSERT INTO pgmemento.table_event_log
+      (transaction_id, op_id, table_operation, table_relid) 
+    VALUES
+      (txid_current(), 1, 'INSERT', (original_schema_name || '.' || original_table_name)::regclass::oid)
+    ON CONFLICT (transaction_id, table_relid, op_id)
+      DO NOTHING
       RETURNING id INTO e_id;
-
-      EXCEPTION
-        WHEN unique_violation THEN
-	      NULL;
-    END;
 
     -- fill row_log table
     IF e_id IS NOT NULL THEN
