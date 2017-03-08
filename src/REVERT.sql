@@ -16,7 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.4.0     2017-03-05   updated JSONB functions and added fallback      FKun
+-- 0.4.0     2017-03-08   integrated table dependencies                   FKun
+--                        recover_audit_version takes txid as first arg
 -- 0.3.0     2016-04-29   splitting up the functions to match the new     FKun
 --                        logging behavior for table events
 -- 0.2.2     2016-03-08   added another revert procedure                  FKun
@@ -29,7 +30,7 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   recover_audit_version(aid BIGINT, changes JSONB, table_op INTEGER, table_name TEXT, 
+*   recover_audit_version(tid BIGINT, aid BIGINT, changes JSONB, table_op INTEGER, table_name TEXT, 
 *     schema_name TEXT DEFAULT 'public', merge_with_table_version INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   revert_distinct_transaction(tid BIGINT) RETURNS SETOF VOID
 *   revert_disticnt_transactions(start_from_tid BIGINT, end_at_tid BIGINT) RETURNS SETOF VOID
@@ -43,6 +44,7 @@
 * Procedure to apply DML operations recovered from the logs
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
+  tid BIGINT,
   aid BIGINT, 
   changes JSONB,
   table_op INTEGER,
@@ -124,7 +126,7 @@ BEGIN
       EXCEPTION
         WHEN unique_violation THEN
           -- merge changes with recent version of table record and update row
-          PERFORM pgmemento.recover_audit_version(aid, changes, 2, table_name, schema_name, 1);
+          PERFORM pgmemento.recover_audit_version(tid, aid, changes, 2, table_name, schema_name, 1);
     END;
   END IF;
 END;
@@ -137,65 +139,48 @@ LANGUAGE plpgsql;
 *
 * Procedures to revert a single transaction or a range of
 * transactions. All table operations are processed in 
-* reversed order so no foreign keys should be violated.
+* order of table dependencies so no foreign keys should be 
+* violated.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid BIGINT) RETURNS SETOF VOID AS
 $$
 DECLARE
   rec RECORD;
 BEGIN
-  FOR rec IN 
-    SELECT r.audit_order, r.audit_id, r.changes, 
-           a.schema_name, a.table_name, e.op_id
-      FROM pgmemento.table_event_log e
-      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-      JOIN LATERAL (
-        SELECT 
-          CASE WHEN e.op_id > 2 THEN
-            rank() OVER (ORDER BY audit_id ASC)
-          ELSE
-            rank() OVER (ORDER BY audit_id DESC)
-          END AS audit_order,
-          audit_id, changes 
-        FROM pgmemento.row_log 
-          WHERE event_id = e.id
-      ) r ON (true)
-      WHERE upper(a.txid_range) IS NULL
-        AND t.txid = tid
-        ORDER BY e.id DESC, audit_order ASC
+  FOR rec IN
+    SELECT 
+      t.txid,
+      r.audit_id, 
+      r.changes, 
+      a.schema_name, 
+      a.table_name, 
+      e.op_id,
+      CASE WHEN e.op_id > 2 THEN
+        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC)
+      ELSE
+        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC)
+      END AS audit_order,
+      CASE WHEN e.op_id > 2 THEN
+        rank() OVER (ORDER BY d.depth ASC)
+      ELSE
+        rank() OVER (ORDER BY d.depth DESC)
+      END AS dependency_order
+    FROM pgmemento.transaction_log t 
+    JOIN pgmemento.table_event_log e
+      ON e.transaction_id = t.txid
+    JOIN pgmemento.row_log r
+      ON r.event_id = e.id
+    JOIN pgmemento.audit_table_log a 
+      ON a.relid = e.table_relid
+    JOIN pgmemento.audit_tables_dependency d
+      ON d.tablename = a.table_name
+     AND d.schemaname = a.schema_name
+     WHERE upper(a.txid_range) IS NULL
+       AND t.txid = $1
+       ORDER BY dependency_order, audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
+    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;
-
-  EXCEPTION
-    WHEN foreign_key_violation THEN
-      -- Fkey violation happens when cascading updates or deletes were used
-      -- So, try to revert events in ascending order
-      -- If non-cascading and cascading queries were mixed, there is no chance for proper reverts
-      FOR rec IN 
-        SELECT r.audit_order, r.audit_id, r.changes, 
-               a.schema_name, a.table_name, e.op_id
-          FROM pgmemento.table_event_log e
-          JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-          JOIN LATERAL (
-            SELECT 
-              CASE WHEN e.op_id > 2 THEN
-                rank() OVER (ORDER BY audit_id ASC)
-              ELSE
-                rank() OVER (ORDER BY audit_id DESC)
-              END AS audit_order,
-              audit_id, changes 
-            FROM pgmemento.row_log 
-              WHERE event_id = e.id
-          ) r ON (true)
-          WHERE upper(a.txid_range) IS NULL
-            AND t.txid = tid
-            ORDER BY e.id ASC, audit_order ASC
-        LOOP
-          PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
-        END LOOP;
 END;
 $$ 
 LANGUAGE plpgsql;
@@ -209,57 +194,39 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN
-    SELECT r.audit_order, r.audit_id, r.changes, 
-           a.schema_name, a.table_name, e.op_id
-      FROM pgmemento.table_event_log e
-      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-      JOIN LATERAL (
-        SELECT 
-          CASE WHEN e.op_id > 2 THEN
-            rank() OVER (ORDER BY audit_id ASC)
-          ELSE
-            rank() OVER (ORDER BY audit_id DESC)
-          END AS audit_order,
-          audit_id, changes 
-        FROM pgmemento.row_log 
-          WHERE event_id = e.id
-      ) r ON (true)
+    SELECT
+      t.txid,
+      r.audit_id, 
+      r.changes, 
+      a.schema_name, 
+      a.table_name, 
+      e.op_id,
+      CASE WHEN e.op_id > 2 THEN
+        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC)
+      ELSE
+        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC)
+      END AS audit_order,
+      CASE WHEN e.op_id > 2 THEN
+        rank() OVER (ORDER BY d.depth ASC)
+      ELSE
+        rank() OVER (ORDER BY d.depth DESC)
+      END AS dependency_order
+    FROM pgmemento.transaction_log t 
+    JOIN pgmemento.table_event_log e
+      ON e.transaction_id = t.txid
+    JOIN pgmemento.row_log r
+      ON r.event_id = e.id
+    JOIN pgmemento.audit_table_log a 
+      ON a.relid = e.table_relid
+    JOIN pgmemento.audit_tables_dependency d
+      ON d.tablename = a.table_name
+     AND d.schemaname = a.schema_name
       WHERE upper(a.txid_range) IS NULL
-        AND t.txid BETWEEN start_from_tid AND end_at_tid
-        ORDER BY t.id DESC, e.id DESC, audit_order ASC
+        AND t.txid BETWEEN $1 AND $2
+        ORDER BY t.id DESC, dependency_order, audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
+    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;
-
-  EXCEPTION
-    WHEN foreign_key_violation THEN
-      -- Fkey violation happens when cascading updates or deletes were used
-      -- So, try to revert events in ascending order per transaction
-      -- If non-cascading and cascading queries were mixed, there is no chance for proper reverts
-      FOR rec IN 
-        SELECT r.audit_order, r.audit_id, r.changes, 
-               a.schema_name, a.table_name, e.op_id
-          FROM pgmemento.table_event_log e
-          JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-          JOIN LATERAL (
-            SELECT 
-              CASE WHEN e.op_id > 2 THEN
-                rank() OVER (ORDER BY audit_id ASC)
-              ELSE
-                rank() OVER (ORDER BY audit_id DESC)
-              END AS audit_order,
-              audit_id, changes 
-            FROM pgmemento.row_log 
-              WHERE event_id = e.id
-          ) r ON (true)
-          WHERE upper(a.txid_range) IS NULL
-            AND t.txid BETWEEN start_from_tid AND end_at_tid
-            ORDER BY t.id DESC, e.id ASC, audit_order ASC
-      LOOP
-        PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
-      END LOOP;
 END;
 $$ 
 LANGUAGE plpgsql;
@@ -271,9 +238,8 @@ LANGUAGE plpgsql;
 * Procedures to revert a single transaction or a range of
 * transactions. For each distinct audit_it only the oldest 
 * operation is applied to make the revert process faster.
-* This will very likely not work for transactions affecting
-* multiple tables referenced by foreign keys. Execute only 
-* for transactions done on tables without any references. 
+* This can be a fallback method for revert_transaction if
+* foreign key violations are occurring.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transaction(tid BIGINT) RETURNS SETOF VOID AS
 $$
@@ -281,27 +247,51 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN 
-    SELECT s.audit_id, s.op_id, s.changes, s.schema_name, s.table_name, s.audit_order
+    SELECT
+      s.txid,
+      s.audit_id,
+      s.op_id, 
+      s.changes, 
+      s.schema_name,
+      s.table_name,
+      s.audit_order,
+      CASE WHEN s.op_id > 2 THEN
+        rank() OVER (ORDER BY d.depth ASC)
+      ELSE
+        rank() OVER (ORDER BY d.depth DESC)
+      END AS dependency_order
     FROM (
-      SELECT DISTINCT ON (r.audit_id)
-        r.audit_id, r.changes, r.event_id,
-        a.schema_name, a.table_name, e.op_id,
+      SELECT 
+        DISTINCT ON (r.audit_id)
+        t.txid,
+        r.audit_id,
+        r.changes,
+        r.event_id,
+        a.schema_name, 
+        a.table_name, 
+        e.op_id,
         CASE WHEN e.op_id > 2 THEN
           rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC)
         ELSE
           rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC)
         END AS audit_order
       FROM pgmemento.row_log r
-      JOIN pgmemento.table_event_log e ON e.id = r.event_id
-      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+      JOIN pgmemento.table_event_log e
+        ON e.id = r.event_id
+      JOIN pgmemento.audit_table_log a
+        ON a.relid = e.table_relid
+      JOIN pgmemento.transaction_log t
+        ON t.txid = e.transaction_id
         WHERE upper(a.txid_range) IS NULL
-          AND t.txid = tid
+          AND t.txid = $1
           ORDER BY r.audit_id, e.id
     ) s
-    ORDER BY s.event_id DESC, s.audit_order ASC 
+    JOIN pgmemento.audit_tables_dependency d
+      ON d.tablename = s.table_name
+      AND d.schemaname = s.schema_name
+      ORDER BY dependency_order, s.event_id DESC, s.audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 1);
+    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 1);
   END LOOP;
 END;
 $$ 
@@ -316,27 +306,52 @@ DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN 
-    SELECT s.audit_id, s.op_id, s.changes, s.schema_name, s.table_name, s.audit_order
+    SELECT
+      s.txid,
+      s.audit_id,
+      s.op_id, 
+      s.changes, 
+      s.schema_name,
+      s.table_name,
+      s.audit_order,
+      CASE WHEN s.op_id > 2 THEN
+        rank() OVER (ORDER BY d.depth ASC)
+      ELSE
+        rank() OVER (ORDER BY d.depth DESC)
+      END AS dependency_order
     FROM (
-      SELECT DISTINCT ON (r.audit_id)
-        r.audit_id, r.changes, r.event_id,
-        a.schema_name, a.table_name, e.op_id, t.id,
+      SELECT 
+        DISTINCT ON (r.audit_id)
+        t.txid,
+        r.audit_id,
+        r.changes,
+        r.event_id,
+        a.schema_name, 
+        a.table_name, 
+        e.op_id,
+        t.id AS tx_id,
         CASE WHEN e.op_id > 2 THEN
           rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC)
         ELSE
           rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC)
         END AS audit_order
       FROM pgmemento.row_log r
-      JOIN pgmemento.table_event_log e ON e.id = r.event_id
-      JOIN pgmemento.audit_table_log a ON a.relid = e.table_relid
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
+      JOIN pgmemento.table_event_log e
+        ON e.id = r.event_id
+      JOIN pgmemento.audit_table_log a
+        ON a.relid = e.table_relid
+      JOIN pgmemento.transaction_log t
+        ON t.txid = e.transaction_id
         WHERE upper(a.txid_range) IS NULL
-          AND t.txid BETWEEN start_from_tid AND end_at_tid
+          AND t.txid BETWEEN $1 AND $2
           ORDER BY r.audit_id, t.id, e.id
     ) s
-    ORDER BY s.id DESC, s.event_id DESC, s.audit_order ASC 
+    JOIN pgmemento.audit_tables_dependency d
+      ON d.tablename = s.table_name
+      AND d.schemaname = s.schema_name
+      ORDER BY s.tx_id DESC, dependency_order, s.event_id DESC, s.audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 1);
+    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 1);
   END LOOP;
 END;
 $$ 
