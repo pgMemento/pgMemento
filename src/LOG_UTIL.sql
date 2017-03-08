@@ -8,13 +8,15 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script provides functions to set up pgMemento for a schema in an 
--- PostgreSQL 9.4+ database.
+-- This script provides utility functions for pgMemento and creates VIEWs
+-- for document auditing and table dependencies
+--
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
+-- 0.4.0     2017-03-06   new view for table dependencies               FKun
 -- 0.3.0     2016-04-14   reflected changes in log tables               FKun
 -- 0.2.1     2016-04-05   additional column in audit_tables view        FKun
 -- 0.2.0     2016-02-15   get txids done right                          FKun
@@ -35,6 +37,7 @@
 *
 * VIEW:
 *   audit_tables
+*   audit_tables_dependency
 *
 ***********************************************************/
 
@@ -46,28 +49,28 @@
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT AS
 $$
-  SELECT t.txid FROM pgmemento.transaction_log t
-    JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-    JOIN pgmemento.row_log r ON r.event_id = e.id
-      WHERE r.audit_id = aid;
+SELECT t.txid FROM pgmemento.transaction_log t
+  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
+  JOIN pgmemento.row_log r ON r.event_id = e.id
+    WHERE r.audit_id = aid;
 $$
 LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-  SELECT min(t.txid) FROM pgmemento.transaction_log t
-    JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-    JOIN pgmemento.row_log r ON r.event_id = e.id
-      WHERE r.audit_id = aid;
+SELECT min(t.txid) FROM pgmemento.transaction_log t
+  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
+  JOIN pgmemento.row_log r ON r.event_id = e.id
+    WHERE r.audit_id = aid;
 $$
 LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-  SELECT max(t.txid) FROM pgmemento.transaction_log t
-    JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-    JOIN pgmemento.row_log r ON r.event_id = e.id
-      WHERE r.audit_id = aid;
+SELECT max(t.txid) FROM pgmemento.transaction_log t
+  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
+  JOIN pgmemento.row_log r ON r.event_id = e.id
+    WHERE r.audit_id = aid;
 $$
 LANGUAGE sql;
 
@@ -78,19 +81,11 @@ CREATE OR REPLACE FUNCTION pgmemento.get_txid_bounds_to_table(
   OUT txid_max BIGINT
   ) RETURNS RECORD AS
 $$
-BEGIN
-  EXECUTE format(
-    'SELECT pgmemento.get_min_txid_to_audit_id(min(audit_id)) AS tmin, 
-            pgmemento.get_max_txid_to_audit_id(max(audit_id)) AS tmax 
-     FROM %I.%I', schema_name, table_name) INTO txid_min, txid_max;
-  RETURN;
-  
-  EXCEPTION
-    WHEN OTHERS THEN
-	  NULL;
-END;
+SELECT min(transaction_id), max(transaction_id) 
+  FROM pgmemento.table_event_log e 
+    WHERE e.table_relid = (schema_name || '.' || table_name)::regclass::oid;
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 /**********************************************************
@@ -101,7 +96,7 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(t_id BIGINT) RETURNS BIGINT AS
 $$
-  DELETE FROM pgmemento.transaction_log WHERE txid = t_id RETURNING txid;
+DELETE FROM pgmemento.transaction_log WHERE txid = t_id RETURNING txid;
 $$
 LANGUAGE sql;
 
@@ -158,10 +153,10 @@ LANGUAGE plpgsql;
 
 
 /***********************************************************
-* CREATE VIEW
+* AUDIT_TABLES VIEW
 *
 * A view that shows the user at which transaction auditing
-* has been started. This will be useful when switch the
+* has been started. This will be useful when switching the
 * production schema. (more functions to come in the near future)
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables AS
@@ -184,3 +179,51 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
     AND t.schemaname != 'pgmemento'
     AND a.attname = 'audit_id'
     ORDER BY schemaname, tablename;
+
+
+/***********************************************************
+* AUDIT_TABLES_DEPENDENCY VIEW
+*
+* This view is essential for reverting transactions.
+* pgMemento can only log one INSERT/UPDATE/DELETE event per
+* table per transaction which maps all changed rows to this
+* one event even though it belongs to a subsequent one. 
+* Therefore, knowledge about table dependencies is required
+* to not violate foreign keys.
+***********************************************************/
+CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
+  WITH RECURSIVE table_dependency(parent, child, schemaname, depth) AS (
+    SELECT DISTINCT ON (tc.table_name) ccu.table_name AS parent, tc.table_name AS child, tc.table_schema AS schemaname, 1 AS depth 
+      FROM information_schema.table_constraints AS tc 
+      JOIN information_schema.key_column_usage AS kcu 
+        ON tc.constraint_name = kcu.constraint_name
+      JOIN information_schema.constraint_column_usage AS ccu 
+        ON ccu.constraint_name = tc.constraint_name
+      JOIN pgmemento.audit_table_log atl 
+        ON atl.table_name = tc.table_name  
+        WHERE constraint_type = 'FOREIGN KEY' 
+          AND tc.table_name <> ccu.table_name
+    UNION ALL
+      SELECT DISTINCT ON (tc.table_name) ccu.table_name AS parent, tc.table_name AS child, tc.table_schema AS schemaname, t.depth + 1 AS depth
+        FROM information_schema.table_constraints AS tc 
+        JOIN information_schema.key_column_usage AS kcu 
+          ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage AS ccu 
+          ON ccu.constraint_name = tc.constraint_name
+        JOIN table_dependency t 
+          ON t.child = ccu.table_name
+        WHERE constraint_type = 'FOREIGN KEY' 
+          AND t.child <> tc.table_name
+  )
+  SELECT schemaname, tablename, depth FROM (
+    SELECT schemaname, child AS tablename, max(depth) AS depth
+      FROM table_dependency
+      GROUP BY schemaname, child
+    UNION ALL
+      SELECT at.schemaname, at.tablename, 0 AS depth 
+        FROM pgmemento.audit_tables at
+        LEFT JOIN table_dependency d
+          ON d.child = at.tablename
+          WHERE d.child IS NULL
+  ) t
+  ORDER BY schemaname, depth, tablename;
