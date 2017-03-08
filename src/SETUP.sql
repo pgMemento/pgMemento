@@ -9,7 +9,7 @@
 -------------------------------------------------------------------------------
 -- About:
 -- This script provides functions to set up pgMemento for a schema in an 
--- PostgreSQL 9.4+ database.
+-- PostgreSQL 9.5+ database.
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
@@ -179,9 +179,7 @@ ALTER TABLE pgmemento.audit_column_log
 -- create indexes on all columns that are queried later
 DROP INDEX IF EXISTS transaction_log_txid_idx;
 DROP INDEX IF EXISTS transaction_log_date_idx;
-DROP INDEX IF EXISTS table_event_log_txid_idx;
-DROP INDEX IF EXISTS table_event_log_op_idx;
-DROP INDEX IF EXISTS table_event_table_idx;
+DROP INDEX IF EXISTS table_event_log_unique_idx;
 DROP INDEX IF EXISTS row_log_event_idx;
 DROP INDEX IF EXISTS row_log_audit_idx;
 DROP INDEX IF EXISTS row_log_changes_idx;
@@ -193,9 +191,7 @@ DROP INDEX IF EXISTS column_log_range_idx;
 
 CREATE INDEX transaction_log_txid_idx ON pgmemento.transaction_log USING BTREE (txid);
 CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
-CREATE INDEX table_event_log_txid_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
-CREATE INDEX table_event_log_op_idx ON pgmemento.table_event_log USING BTREE (op_id);
-CREATE INDEX table_event_table_idx ON pgmemento.table_event_log USING BTREE (table_relid);
+CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_relid, op_id);
 CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
@@ -492,15 +488,13 @@ $$
 DECLARE
   operation_id SMALLINT;
 BEGIN
-  BEGIN
-    -- try to log corresponding transaction
-    INSERT INTO pgmemento.transaction_log (txid, stmt_date, user_name, client_name)
-      VALUES (txid_current(), statement_timestamp(), current_user, inet_client_addr());
-
-    EXCEPTION
-      WHEN unique_violation THEN
-	    NULL;
-  END;
+  -- try to log corresponding transaction
+  INSERT INTO pgmemento.transaction_log 
+    (txid, stmt_date, user_name, client_name)
+  VALUES 
+    (txid_current(), statement_timestamp(), current_user, inet_client_addr())
+  ON CONFLICT (txid)
+    DO NOTHING;
 
   -- assign id for operation type
   CASE TG_OP
@@ -511,10 +505,13 @@ BEGIN
   END CASE;
 
   -- try to log corresponding table event
-  INSERT INTO pgmemento.table_event_log
+  -- on conflict do nothing
+  INSERT INTO pgmemento.table_event_log 
     (transaction_id, op_id, table_operation, table_relid) 
   VALUES
-    (txid_current(), operation_id, TG_OP, TG_RELID);
+    (txid_current(), operation_id, TG_OP, TG_RELID)
+  ON CONFLICT (transaction_id, table_relid, op_id)
+    DO NOTHING;
 
   RETURN NULL;
 END;
@@ -539,8 +536,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 4
-    ORDER BY id DESC LIMIT 1;
+        AND op_id = 4;
 
   -- log the whole content of the truncated table in the row_log table
   EXECUTE format(
@@ -572,8 +568,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 1
-    ORDER BY id LIMIT 1;
+        AND op_id = 1;
 
   -- log inserted row ('changes' column can be left blank)
   INSERT INTO pgmemento.row_log (event_id, audit_id)
@@ -603,8 +598,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 2
-    ORDER BY id LIMIT 1;
+        AND op_id = 2;
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
@@ -643,8 +637,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 3
-    ORDER BY id DESC LIMIT 1;
+        AND op_id = 3;
 
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
