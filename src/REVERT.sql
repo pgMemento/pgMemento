@@ -54,6 +54,7 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
+  restore_version JSONB;
   table_version JSONB;
   diff JSONB;
   update_stmt TEXT;
@@ -61,12 +62,12 @@ DECLARE
   column_name TEXT;
 BEGIN
   -- INSERT case
-  IF table_op = 1 THEN
+  IF $4 = 1 THEN
     BEGIN
       EXECUTE format(
         'DELETE FROM %I.%I WHERE audit_id = $1',
-        schema_name, table_name) 
-        USING aid;
+        $6, $5) 
+        USING $2;
 
       -- row is already deleted
       EXCEPTION
@@ -75,43 +76,43 @@ BEGIN
     END;
 
   -- UPDATE case
-  ELSIF table_op = 2 THEN
-	IF merge_with_table_version <> 0 THEN
-      changes := pgmemento.generate_log_entry(tid, aid, table_name, schema_name);
+  ELSIF $4 = 2 THEN
+	IF $7 <> 0 THEN
+      restore_version := pgmemento.generate_log_entry($1, $2, $5, $6);
 
       -- get recent version of that row
       EXECUTE format(
         'SELECT to_jsonb(%I) FROM %I.%I WHERE audit_id = $1',
-        table_name, schema_name, table_name)
-        INTO table_version USING aid;
+        $5, $6, $5)
+        INTO table_version USING $2;
 
       -- create diff between the two versions
       SELECT INTO diff COALESCE(
         (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
            FROM jsonb_each(table_version)
-             WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ changes
+             WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ restore_version
         ),'{}')::jsonb AS delta;
     ELSE
-      diff := changes;
+      diff := $3;
     END IF;
 
     -- update the row with values from diff
     IF diff IS NOT NULL AND diff <> '{}'::jsonb THEN
       -- set variables for update statement
       delimiter := '';
-      update_stmt := format('UPDATE %I.%I SET', schema_name, table_name);
+      update_stmt := format('UPDATE %I.%I SET', $6, $5);
 
       -- loop over found keys
       FOR column_name IN SELECT jsonb_object_keys(diff) LOOP
         update_stmt := update_stmt || delimiter ||
                          format(' %I = (SELECT %I FROM jsonb_populate_record(null::%I.%I, $1))',
-                         column_name, column_name, schema_name, table_name);
+                         column_name, column_name, $6, $5);
         delimiter := ',';
       END LOOP;
 
       -- add condition and execute
       update_stmt := update_stmt || ' WHERE audit_id = $2';
-      EXECUTE update_stmt USING diff, aid;
+      EXECUTE update_stmt USING diff, $2;
     END IF;
 
   -- DELETE and TRUNCATE case
@@ -119,14 +120,16 @@ BEGIN
     BEGIN
       EXECUTE format(
         'INSERT INTO %I.%I SELECT * FROM jsonb_populate_record(null::%I.%I, $1)',
-         schema_name, table_name, schema_name, table_name)
-         USING changes;
+         $6, $5, $6, $5)
+         USING $3;
 
       -- row has already been re-inserted, so update it based on the values of this deleted version
       EXCEPTION
         WHEN unique_violation THEN
-          -- merge changes with recent version of table record and update row
-          PERFORM pgmemento.recover_audit_version(tid, aid, changes, 2, table_name, schema_name, 1);
+          IF $7 = 0 THEN
+            -- merge changes with recent version of table record and update row
+            PERFORM pgmemento.recover_audit_version($1, $2, $3, 2, $5, $6, 1);
+          END IF;
     END;
   END IF;
 END;
@@ -177,7 +180,7 @@ BEGIN
      AND d.schemaname = a.schema_name
      WHERE upper(a.txid_range) IS NULL
        AND t.txid = $1
-       ORDER BY dependency_order, audit_order
+       ORDER BY dependency_order, e.id DESC, audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;
@@ -223,7 +226,7 @@ BEGIN
      AND d.schemaname = a.schema_name
       WHERE upper(a.txid_range) IS NULL
         AND t.txid BETWEEN $1 AND $2
-        ORDER BY t.id DESC, dependency_order, audit_order
+        ORDER BY t.id DESC, dependency_order, e.id DESC, audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 0);
   END LOOP;

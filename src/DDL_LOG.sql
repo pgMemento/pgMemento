@@ -217,7 +217,7 @@ BEGIN
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.object_type = 'table' THEN
+    IF obj.object_type = 'table' AND obj.schema_name <> 'pg_temp' THEN
       PERFORM pgmemento.create_table_audit(obj.objid::regclass::text, obj.schema_name);
     END IF;
   END LOOP;
@@ -375,7 +375,7 @@ BEGIN
   -- second: TRUNCATE tables to log the data
   FOR rec IN 
     SELECT p.schemaname, p.tablename 
-      FROM pg_tables p, pgmemento.table_dependency d
+      FROM pg_tables p, pgmemento.audit_tables_dependency d
       WHERE p.schemaname = d.schemname
         AND p.tablename = d.tablename
         AND p.schemaname = $1
