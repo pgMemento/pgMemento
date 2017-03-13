@@ -265,8 +265,16 @@ Since v0.3 pgMemento supports DDL logging to capture schema changes.
 This is important for restoring former table or database states (see 5.5).
 The two tables `audit_table_log` and `audit_column_log` in the pgMemento
 schema provide information at what range of transactions the audited 
-tables and their columns exist. If a table is altered an event trigger 
-is fired to compare the recent state (at ddl_command_end) with the logs.
+tables and their columns exist. After a table is altered or dropped an
+event trigger is fired to compare the recent state (at ddl_command_end) 
+with the logs.
+
+**ATTENTION:** Up till now pgMemento cannot log data that is removed by
+a DROP COLUMN command, because only old versions of the data are logged.
+The user should make an update on the whole column in advance. A better
+protection is given for DROP TABLE and DROP SCHEMA commands as they are
+simply forbidden by event triggers (at ddl_command_start). To drop a table
+or schema use the bypass functions pointed out in the exception messages.
 
 
 ### 5.4. Revert certain transactions
