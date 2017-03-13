@@ -34,9 +34,9 @@ Public License Version 3.0. See the file LICENSE for more details.
 --------
 
 pgMemento logs DML changes inside a PostgreSQL database. These logs are bound
-to events and transactions and not validity intervals. Because of that it is 
-also possible to rollback certain changes of the past and keeping the database
-consistent.
+to events and transactions and not timestamp-based validity intervals. Because 
+of that it is also possible to rollback certain changes of the past and keeping
+the database consistent.
 
 pgMemento uses triggers to log the changes. Only deltas between OLD and NEW are
 stored in order to save disk space. Having only fragments of rows makes things a
@@ -45,12 +45,13 @@ JSONB data type. One log table is used to store the changes of all audited table
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
 
-pgMemento provides functions to recreate a former database state in a separate
-database schema incl. constraints and indexes. This state can be used for histrical
-reasons or as a planning alternative to play around with.
+pgMemento provides functions to recreate a former table or database state in a 
+separate database schema incl. constraints and indexes. As event triggers are 
+capturing any schema changes, the restored table or database will have the layout
+of the past state.
 
-pgMemento is not designed for write-instensive databases. You will certainly run
-out of disk space pretty soon. Nevertheless, obsolete content can simply be
+pgMemento is not designed for write-instensive databases. It will certainly take
+less time to run out of disk space. Nevertheless, obsolete content can simply be
 removed from the logs at any time without affecting the versioning mechanism.
 
 pgMemento is written in plain PL/pgSQL. Thus, it can be set up on every machine 
@@ -121,13 +122,15 @@ A brief introduction about the different SQL files:
 
 Run the `INSTALL_PGMEMENTO.sql` script with the psql client of PostgreSQL.
 Now a new schema will appear in your database called `pgmemento`. As of
-version 0.3 the `pgmemento` consist of 5 log tables:
+version 0.4 the `pgmemento` consist of 5 log tables and 2 view:
 
-* `audit_column_log`: Stores information about columns of audited tables (DDL log target)
-* `audit_table_log`: Stores information about audited tables (DDL log target)
-* `row_log`: Table for data log (DML log target)
-* `table_event_log`: Stores metadata about table events related to transactions (DML log target)
-* `transaction_log`: Stores metadata about transactions (DML log target)
+* `TABLE audit_column_log`: Stores information about columns of audited tables (DDL log target)
+* `TABLE audit_table_log`: Stores information about audited tables (DDL log target)
+* `TABLE row_log`: Table for data log (DML log target)
+* `TABLE table_event_log`: Stores metadata about table events related to transactions (DML log target)
+* `TABLE transaction_log`: Stores metadata about transactions (DML log target)
+* `VIEW audit_tables`: Displays tables currently audited by pgMemento incl. information about the transaction range
+* `VIEW audit_tables_dependency`: Lists audited tables in order of their dependencies with each other
 
 The following figure shows how the log tables are referenced with each
 other:
@@ -141,7 +144,7 @@ To enable auditing for an entire database schema simply run the `INIT.sql`
 script. First, you are requested to specify the target schema. For the
 second parameter you can define a set of tables you want to exclude from
 auditing (comma-separated list). As for the third parameter you can choose
-if newly created tables shall automatically be enabled for auditing.
+if newly created tables shall be enabled for auditing automatically.
 `INIT.sql` also creates event triggers for the database to track schema
 changes of audited tables.
 
@@ -168,16 +171,14 @@ By passing a 1 to the procedure an additional event trigger for
 
 **ATTENTION:** It is important to generate a proper baseline on which a
 table/database versioning can reflect on. Before you begin or continue
-to work with the database and change content, define the present state
+to work with the database and change its content, define the present state
 as the initial versioning state by executing the procedure
 `pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
 For each row in the audited tables another row will be written to the 
 'row_log' table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed. Depending on the number of 
 tables to alter and on the amount of data that has to be defined as 
-INSERTed this process can take a while. If the tables are referenced by
-foreign keys do not use `pgmemento.log_schema_state`, instead use
-`pgmemento.log_table_state` for each table but in the right order.
+INSERTed this process can take a while.
 
 **HINT:** When setting up a new database I would recommend to start 
 pgMemento after bulk imports. Otherwise the import will be slower and 
@@ -188,7 +189,24 @@ and `START_AUDITING.sql` scripts. Note that theses scripts do not affect
 (remove) the audit_id column in the logged tables.
 
 
-### 5.3. Have a look at the logged information
+### 5.3. Logging behaviour
+
+#### 5.3.1. DML logging
+
+pgMemento uses two logging stages. The first trigger is fired before each
+statement on each audited table. Every transaction is only logged once in
+the `transaction_log` table. Within the trigger procedure the corresponding
+table operations are logged as well in the `table_event_log` table. Only
+one INSERT, UPDATE, DELETE and TRUNCATE event can be logged per table per 
+transaction. So, if two operations of the same kind are applied against one
+table during one transaction the logged data is mapped to the first event
+that has been inserted into `table_event_log`. In the next chapter you will
+see why this won't produce any consistency issues.
+
+The second logging stage is related two the data that has changed. Row-level
+triggers are fired after each operations on the audited tables. Within the 
+trigger procedure the corresponding INSERT, UPDATE, DELETE or TRUNCATE event
+for the current transaction is queried and each row if mapped against it.
 
 For example, an UPDATE command on 'table_A' changing the value of some 
 rows of 'column_B' to 'new_value' will appear in the log tables like this:
@@ -215,7 +233,7 @@ ROW_LOG
 
 As you can see only the changes are logged. DELETE and TRUNCATE commands
 would cause logging of the complete rows while INSERTs would leave a 
-blank field for the 'changes' column. 
+blank field for the 'changes' column. Thus, there is no data redundancy.
 
 The logged information can already be of use, e.g. list all transactions 
 that had an effect on a certain column by using the ? operator:
@@ -240,43 +258,72 @@ SELECT DISTINCT audit_id
     changes @> '{"column_B": "old_value"}'::jsonb;
 </pre>
 
+
+#### 5.3.1. DDL logging
+
+Since v0.3 pgMemento supports DDL logging to capture schema changes.
+This is important for restoring former table or database states (see 5.5).
+The two tables `audit_table_log` and `audit_column_log` in the pgMemento
+schema provide information at what range of transactions the audited 
+tables and their columns exist. If a table is altered an event trigger 
+is fired to compare the recent state (at ddl_command_end) with the logs.
+
+
 ### 5.4. Revert certain transactions
 
 The logged information can be used to revert certain transactions that
 happened in the past. Reinsert deleted rows, remove imported data etc.
 The procedure is called `revert_transaction`.
 
-The procedure loops over each row that was affected by the given transaction.
-What is important here are the orders of events and audit_ids. The youngest
-table events need to be reverted first (`ORDER BY event_id DESC`). For each
-event dropped rows must be processed in ascending order because the oldest 
-row (the one with the lowest audit_id) has to be inserted first. Updated
-and inserted rows must be processed in descending order (so the biggest
-audit_id comes first) in order to not violate foreign key constraints.
-
-The query looks like this:
+The procedure loops over each row that was affected by the given 
+transaction. For data integrity reasons the order of operations and 
+audit_ids is important. Imagine three tables A, B and C, with B and C
+referencing A. Deleting entries in A requires deleting depending rows
+in B and C. The order of events in one transaction can look like this:
 
 <pre>
-SELECT r.audit_order, r.audit_id, r.changes, 
-       e.schema_name, e.table_name, e.op_id
-  FROM pgmemento.table_event_log e
-  JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-  JOIN LATERAL (
-    SELECT 
-      -- DELETE or TRUNCATE
-      CASE WHEN e.op_id > 2 THEN 
-        rank() OVER (ORDER BY audit_id ASC)
-      -- INSERT or UPDATE
-      ELSE 
-        rank() OVER (ORDER BY audit_id DESC)
-      END AS audit_order,
-      audit_id, changes 
-    FROM pgmemento.row_log 
-      WHERE event_id = e.id
-  ) r ON (true)
-  WHERE t.txid = tid
-  ORDER BY e.id DESC, audit_order ASC;
+Txid 1000
+1. DELETE from C
+2. DELETE from A
+3. DELETE from B
+4. DELETE from A
 </pre>
+
+As said, pgMemento can only log one DELETE event on A. So, simply
+reverting the events in reverse order won't work here. An INSERT in B 
+requires exitsing entries in A.
+
+<pre>
+Revert Txid 1000
+1. INSERT into B <-- ERROR: foreign key violation
+2. INSERT into A
+3. INSERT into C
+</pre>
+
+By joining against the `audit_tables_dependency` view we can produce the
+correct revert order without violating foreign key constraints. B and C
+have a higher depth than A. The order will be:
+
+<pre>
+Revert Txid 1000
+1. INSERT into A
+2. INSERT into B
+3. INSERT into C
+</pre>
+
+For INSERTs and UPDATEs the reverse depth order is used. The same
+distinctionis used when resolving self-references on tables. A parent
+element must be inserted before the tuples that are referencing it. 
+Therefore, it has got a lower audit_id value. When reverting INSERTs 
+(younger) tuples with a higher audit_id need to be deleted first. 
+When reverting DELETEs (older) tuples with a lower audit_id need to be
+reinserted first. The ordering of audit_ids is partitioned by the
+diffenrent events.
+
+Reverting also works if foreign keys are set to ON UPDATE CASCADE or
+ON DELETE CASCADE because the `audit_tables_dependency` produces the
+correct order anyway and cross-referencing tuples in one table would
+belong to the same event.
 
 A range of transactions can be reverted by calling:
 
@@ -284,19 +331,11 @@ A range of transactions can be reverted by calling:
 SELECT pgmemento.revert_transactions(lower_txid, upper_txid);
 </pre>
 
-It uses nearly the same query but addionally ordered by transaction ids
-(DESC). The resulting transaction could again be reverted. You should not
-use the `revert_transaction` procedure within a query to revert several
-transactions that manipulated multiple tables referenced by foreign keys.
-This would possibly violate them. Moreover, if your foreign keys are set 
-to ON UPDATE CASCADE or ON DELETE CASCADE it produces another order of table
-events. pgMemento only offers one fallback where events are processed in
-ascending order (per transaction) to reverted cascading UPDATES and DELETES.
-
-When reverting transactions on tables without any references an alternative
-procedure can be used called `revert_distinct_transaction`. For each 
-distinct audit_it only the oldest table operation is applied to make the
-revert process faster. It is also provided for transaction ranges.
+It uses nearly the same query but additionally ordered by transaction ids
+(DESC). When reverting many transactions an alternative procedure can be
+used called `revert_distinct_transaction`. For each distinct audit_it only
+the oldest table operation is applied to make the revert process faster.
+It is also provided for transaction ranges.
 
 <pre>
 SELECT pgmemento.revert_distinct_transactions(lower_txid, upper_txid);
@@ -580,7 +619,6 @@ Together we might create a powerful, easy-to-use versioning approach
 for PostgreSQL.
 
 However, here are some plans I have for the near future:
-* Adopt the newest JSONB features introduced in PostgreSQL v9.5
 * Do more benchmarking
 * Table partitioning strategy for row_log table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
 * Have log tables for primary keys, constraints, indexes etc.
