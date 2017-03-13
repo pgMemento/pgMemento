@@ -28,7 +28,7 @@
 *
 * FUNCTIONS:
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
-*   delete_table_event_log(t_id BIGINT, t_name TEXT, s_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_table_event_log(tid BIGINT, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(t_id BIGINT) RETURNS BIGINT
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
 *   get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
@@ -49,28 +49,31 @@
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT AS
 $$
-SELECT t.txid FROM pgmemento.transaction_log t
+SELECT t.txid
+  FROM pgmemento.transaction_log t
   JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
   JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = aid;
+    WHERE r.audit_id = $1;
 $$
 LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-SELECT min(t.txid) FROM pgmemento.transaction_log t
+SELECT min(t.txid)
+  FROM pgmemento.transaction_log t
   JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
   JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = aid;
+    WHERE r.audit_id = $1;
 $$
 LANGUAGE sql;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-SELECT max(t.txid) FROM pgmemento.transaction_log t
+SELECT max(t.txid)
+  FROM pgmemento.transaction_log t
   JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
   JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = aid;
+    WHERE r.audit_id = $1;
 $$
 LANGUAGE sql;
 
@@ -81,9 +84,9 @@ CREATE OR REPLACE FUNCTION pgmemento.get_txid_bounds_to_table(
   OUT txid_max BIGINT
   ) RETURNS RECORD AS
 $$
-SELECT min(transaction_id), max(transaction_id) 
+SELECT min(transaction_id) AS txid_min, max(transaction_id) AS txid_max
   FROM pgmemento.table_event_log e 
-    WHERE e.table_relid = (schema_name || '.' || table_name)::regclass::oid;
+    WHERE e.table_relid = ($2 || '.' || $1)::regclass::oid;
 $$
 LANGUAGE sql;
 
@@ -96,33 +99,27 @@ LANGUAGE sql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(t_id BIGINT) RETURNS BIGINT AS
 $$
-DELETE FROM pgmemento.transaction_log WHERE txid = t_id RETURNING txid;
+DELETE FROM pgmemento.transaction_log
+  WHERE txid = $1 RETURNING txid;
 $$
 LANGUAGE sql;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
-  t_id BIGINT,
-  t_name TEXT,
-  s_name TEXT DEFAULT 'public'::text
+  tid BIGINT,
+  table_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
-DECLARE
-  table_oid OID;
-BEGIN
-  -- check if the table existed when t_id happened
-  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
-    WHERE schema_name = s_name AND table_name = t_name
-      AND txid_range @> t_id::numeric;
-
-  RETURN QUERY
-    DELETE FROM pgmemento.table_event_log 
-      WHERE transaction_id = t_id
-        AND table_relid = table_oid
-        RETURNING id;
-END;
+DELETE FROM pgmemento.table_event_log e
+  USING pgmemento.audit_table_log a
+  WHERE e.table_relid = a.relid
+    AND e.transaction_id = $1
+    AND a.schema_name = $3 AND a.table_name = $2
+    AND a.txid_range @> $1::numeric
+    RETURNING e.id;
 $$
-LANGUAGE plpgsql;
+LANGUAGE sql;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
@@ -131,21 +128,22 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
 $$
 BEGIN
   -- only allow delete if table has already been dropped
-  PERFORM 1 FROM pgmemento.audit_table_log 
-    WHERE relid = table_oid
-      AND upper(txid_range) IS NOT NULL;
-
-  IF FOUND THEN
+  IF EXISTS (
+    SELECT 1 FROM pgmemento.audit_table_log 
+      WHERE relid = $1
+        AND upper(txid_range) IS NOT NULL
+  ) THEN
+    -- remove corresponding table events from event log
     DELETE FROM pgmemento.table_event_log 
-      WHERE table_relid = table_oid;
+      WHERE table_relid = $1;
 
     RETURN QUERY
       DELETE FROM pgmemento.audit_table_log 
-        WHERE relid = table_oid
+        WHERE relid = $1
           AND upper(txid_range) IS NOT NULL
           RETURNING relid;
   ELSE
-    RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', table_oid; 
+    RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', $1; 
   END IF;
 END;
 $$
@@ -162,8 +160,11 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT
     t.schemaname, t.tablename, b.txid_min, b.txid_max, 
-    CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN TRUE ELSE FALSE END
-    AS tg_is_active
+    CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
+      TRUE
+    ELSE
+      FALSE
+    END AS tg_is_active
   FROM pg_class c
   JOIN pg_namespace n ON c.relnamespace = n.oid
   JOIN pg_tables t ON c.relname = t.tablename
@@ -175,10 +176,10 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   JOIN LATERAL (
     SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
   ) b ON (true)
-  WHERE n.nspname = t.schemaname 
-    AND t.schemaname != 'pgmemento'
-    AND a.attname = 'audit_id'
-    ORDER BY schemaname, tablename;
+    WHERE n.nspname = t.schemaname 
+      AND t.schemaname != 'pgmemento'
+      AND a.attname = 'audit_id'
+      ORDER BY schemaname, tablename;
 
 
 /***********************************************************
@@ -193,25 +194,33 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
   WITH RECURSIVE table_dependency(parent, child, schemaname, depth) AS (
-    SELECT DISTINCT ON (tc.table_name) ccu.table_name AS parent, tc.table_name AS child, tc.table_schema AS schemaname, 1 AS depth 
+    SELECT DISTINCT ON (tc.table_name)
+      ccu.table_name AS parent,
+      tc.table_name AS child,
+      tc.table_schema AS schemaname,
+      1 AS depth 
+    FROM information_schema.table_constraints AS tc 
+    JOIN information_schema.key_column_usage AS kcu 
+      ON tc.constraint_name = kcu.constraint_name
+    JOIN information_schema.constraint_column_usage AS ccu 
+      ON ccu.constraint_name = tc.constraint_name
+    JOIN pgmemento.audit_table_log atl 
+      ON atl.table_name = tc.table_name  
+      WHERE constraint_type = 'FOREIGN KEY' 
+        AND tc.table_name <> ccu.table_name
+    UNION ALL
+      SELECT DISTINCT ON (tc.table_name)
+        ccu.table_name AS parent,
+        tc.table_name AS child,
+        tc.table_schema AS schemaname,
+        t.depth + 1 AS depth
       FROM information_schema.table_constraints AS tc 
       JOIN information_schema.key_column_usage AS kcu 
         ON tc.constraint_name = kcu.constraint_name
       JOIN information_schema.constraint_column_usage AS ccu 
         ON ccu.constraint_name = tc.constraint_name
-      JOIN pgmemento.audit_table_log atl 
-        ON atl.table_name = tc.table_name  
-        WHERE constraint_type = 'FOREIGN KEY' 
-          AND tc.table_name <> ccu.table_name
-    UNION ALL
-      SELECT DISTINCT ON (tc.table_name) ccu.table_name AS parent, tc.table_name AS child, tc.table_schema AS schemaname, t.depth + 1 AS depth
-        FROM information_schema.table_constraints AS tc 
-        JOIN information_schema.key_column_usage AS kcu 
-          ON tc.constraint_name = kcu.constraint_name
-        JOIN information_schema.constraint_column_usage AS ccu 
-          ON ccu.constraint_name = tc.constraint_name
-        JOIN table_dependency t 
-          ON t.child = ccu.table_name
+      JOIN table_dependency t 
+        ON t.child = ccu.table_name
         WHERE constraint_type = 'FOREIGN KEY' 
           AND t.child <> tc.table_name
   )

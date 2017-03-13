@@ -162,19 +162,28 @@ ALTER TABLE pgmemento.audit_column_log
 
 -- create foreign key constraints
 ALTER TABLE pgmemento.table_event_log
-  ADD CONSTRAINT table_event_log_txid_fk FOREIGN KEY (transaction_id)
-    REFERENCES pgmemento.transaction_log (txid) MATCH FULL
-    ON DELETE CASCADE ON UPDATE CASCADE;
+  ADD CONSTRAINT table_event_log_txid_fk
+    FOREIGN KEY (transaction_id)
+    REFERENCES pgmemento.transaction_log (txid)
+    MATCH FULL
+    ON DELETE CASCADE
+    ON UPDATE CASCADE;
 
 ALTER TABLE pgmemento.row_log
-  ADD CONSTRAINT row_log_table_fk FOREIGN KEY (event_id)
-    REFERENCES pgmemento.table_event_log (id) MATCH FULL
-    ON DELETE CASCADE ON UPDATE CASCADE;
+  ADD CONSTRAINT row_log_table_fk 
+    FOREIGN KEY (event_id)
+    REFERENCES pgmemento.table_event_log (id)
+    MATCH FULL
+    ON DELETE CASCADE
+    ON UPDATE CASCADE;
 
 ALTER TABLE pgmemento.audit_column_log
-  ADD CONSTRAINT audit_column_log_fk FOREIGN KEY (table_relid)
-    REFERENCES pgmemento.audit_table_log (relid) MATCH FULL
-    ON DELETE CASCADE ON UPDATE CASCADE;
+  ADD CONSTRAINT audit_column_log_fk
+    FOREIGN KEY (table_relid)
+    REFERENCES pgmemento.audit_table_log (relid)
+    MATCH FULL
+    ON DELETE CASCADE
+    ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later
 DROP INDEX IF EXISTS transaction_log_txid_idx;
@@ -208,13 +217,13 @@ CREATE SEQUENCE
 ***********************************************************/
 DROP SEQUENCE IF EXISTS pgmemento.audit_id_seq;
 CREATE SEQUENCE pgmemento.audit_id_seq
-	INCREMENT BY 1
-	MINVALUE 0
-	MAXVALUE 2147483647
-	START WITH 1
-	CACHE 1
-	NO CYCLE
-	OWNED BY NONE;
+  INCREMENT BY 1
+  MINVALUE 0
+  MAXVALUE 2147483647
+  START WITH 1
+  CACHE 1
+  NO CYCLE
+  OWNED BY NONE;
 
 
 /**********************************************************
@@ -230,10 +239,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
 $$
 BEGIN
   -- create log trigger
-  PERFORM pgmemento.create_table_log_trigger(table_name, schema_name);
+  PERFORM pgmemento.create_table_log_trigger($1, $2);
 
   -- add audit_id column
-  PERFORM pgmemento.create_table_audit_id(table_name, schema_name);
+  PERFORM pgmemento.create_table_audit_id($1, $2);
 END;
 $$
 LANGUAGE plpgsql;
@@ -244,8 +253,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.create_table_audit(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.create_table_audit(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -257,10 +268,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
 $$
 BEGIN
   -- drop audit_id column
-  PERFORM pgmemento.drop_table_audit_id(table_name, schema_name);
+  PERFORM pgmemento.drop_table_audit_id($1, $2);
 
   -- drop log trigger
-  PERFORM pgmemento.drop_table_log_trigger(table_name, schema_name);
+  PERFORM pgmemento.drop_table_log_trigger($1, $2);
 END;
 $$
 LANGUAGE plpgsql;
@@ -271,8 +282,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.drop_table_audit(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.drop_table_audit(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -294,7 +307,7 @@ $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM pg_trigger
-      WHERE tgrelid = (schema_name || '.' || table_name)::regclass::oid
+      WHERE tgrelid = ($2 || '.' || $1)::regclass::oid
         AND tgname = 'log_transaction_trigger'
     ) THEN
     RETURN;
@@ -307,14 +320,14 @@ BEGIN
       'CREATE TRIGGER log_transaction_trigger
          BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_transaction()',
-      schema_name, table_name);
+         $2, $1);
 
     -- second trigger to be fired before truncate events 
     EXECUTE format(
       'CREATE TRIGGER log_truncate_trigger 
          BEFORE TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_truncate()',
-      schema_name, table_name);
+         $2, $1);
 
     /*
       row level triggers
@@ -324,21 +337,21 @@ BEGIN
       'CREATE TRIGGER log_insert_trigger
          AFTER INSERT ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert()',
-      schema_name, table_name);
+         $2, $1);
 
     -- trigger to be fired after update events
     EXECUTE format(
       'CREATE TRIGGER log_update_trigger
          AFTER UPDATE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update()',
-      schema_name, table_name);
+         $2, $1);
 
     -- trigger to be fired after insert events
     EXECUTE format(
       'CREATE TRIGGER log_delete_trigger
          AFTER DELETE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_delete()',
-      schema_name, table_name);
+         $2, $1);
   END IF;
 END;
 $$
@@ -350,8 +363,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.create_table_log_trigger(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.create_table_log_trigger(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -362,11 +377,11 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schema_name, table_name);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schema_name, table_name);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schema_name, table_name);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schema_name, table_name);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schema_name, table_name);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', $2, $1);
 END;
 $$
 LANGUAGE plpgsql;
@@ -377,8 +392,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.drop_table_log_trigger(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.drop_table_log_trigger(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -399,26 +416,26 @@ BEGIN
   -- add 'audit_id' column to table if it does not exist, yet
   IF NOT EXISTS (
     SELECT 1 FROM pg_attribute
-      WHERE attrelid = (schema_name || '.' || table_name)::regclass
+      WHERE attrelid = ($2 || '.' || $1)::regclass
         AND attname = 'audit_id'
         AND NOT attisdropped
     ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass)',
-      schema_name, table_name);
+      $2, $1);
   END IF;
 
   -- add index for 'audit_id' column if it does not exist, yet
   IF NOT EXISTS (
     SELECT 1 FROM pg_index pgi, pg_attribute pga
-      WHERE pgi.indrelid = (schema_name || '.' || table_name)::regclass
+      WHERE pgi.indrelid = ($2 || '.' || $1)::regclass
         AND pga.attrelid = pgi.indrelid
         AND pga.attnum = ANY(pgi.indkey)
         AND pga.attname = 'audit_id'
     ) THEN
     EXECUTE format(
-      'CREATE INDEX %I ON %I.%I (audit_id)', table_name || '_audit_idx',
-      schema_name, table_name);
+      'CREATE INDEX %I ON %I.%I (audit_id)', $1 || '_audit_idx',
+      $2, $1);
   END IF;	
 END;
 $$
@@ -430,8 +447,10 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.create_table_audit_id(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.create_table_audit_id(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -445,19 +464,19 @@ BEGIN
   -- drop index on 'audit_id' column if it exists
   EXECUTE format(
     'DROP INDEX IF EXISTS %I',
-    table_name || '_audit_idx');
+    $1 || '_audit_idx');
 
   -- drop 'audit_id' column if it exists
   IF EXISTS (
     SELECT 1 FROM pg_attribute
-      WHERE attrelid = (schema_name || '.' || table_name)::regclass::oid
+      WHERE attrelid = ($2 || '.' || $1)::regclass::oid
         AND attname = 'audit_id'
         AND attislocal = 't'
         AND NOT attisdropped
     ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP COLUMN audit_id',
-      schema_name, table_name);
+      $2, $1);
   ELSE
     RETURN;
   END IF;
@@ -471,8 +490,10 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-  SELECT pgmemento.drop_table_audit_id(tablename, schemaname) FROM pg_tables 
-    WHERE schemaname = schema_name AND tablename <> ALL (COALESCE(except_tables,'{}'));
+SELECT pgmemento.drop_table_audit_id(tablename, $1)
+  FROM pg_tables 
+    WHERE schemaname = schema_name 
+      AND tablename <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
