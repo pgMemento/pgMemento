@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.1     2017-03-15   reflecting new DDL log table schema                 FKun
 -- 0.4.0     2017-03-05   updated JSONB functions                             FKun
 -- 0.3.0     2016-04-14   a new template mechanism for restoring              FKun
 -- 0.2.2     2016-03-08   minor change to generate_log_entry function         FKun
@@ -43,7 +44,7 @@ CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
   ) RETURNS jsonb AS
 $$
 DECLARE
-  table_oid OID;
+  tab_id INTEGER;
   restore_query TEXT;
   v_column TEXT;
   v_columns TEXT := '';
@@ -53,8 +54,8 @@ DECLARE
   jsonb_result JSONB := '{}'::jsonb;
 BEGIN
   -- check if the table existed when tid happened
-  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
-    WHERE schema_name = $4 AND table_name = $3
+  SELECT id INTO tab_id FROM pgmemento.audit_table_log 
+    WHERE relid = ($4 || ':' || $3)::regclass::oid
       AND txid_range @> $1::numeric;
 
   IF NOT FOUND THEN
@@ -66,7 +67,7 @@ BEGIN
     -- get the content of each column that happened to be in the table when the transaction was executed
     FOR v_column IN 
       SELECT column_name FROM pgmemento.audit_column_log 
-        WHERE table_relid = table_oid
+        WHERE audit_table_id = tab_id
           AND txid_range @> $1::numeric
     LOOP
       v_columns_count := v_columns_count + 1;
@@ -130,7 +131,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
 $$
 DECLARE
   replace_view TEXT := '';
-  table_oid OID;
+  tab_id INTEGER;
   template_name TEXT;
   ddl_command TEXT := 'CREATE TEMPORARY TABLE ';
   log_column RECORD;
@@ -142,23 +143,24 @@ DECLARE
   for_each_valid_id TEXT := '';
 BEGIN
   -- test if target schema already exist
-  PERFORM 1 FROM information_schema.schemata 
-      WHERE schema_name = $5;
-
-  IF NOT FOUND THEN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.schemata 
+      WHERE schema_name = $5
+  ) THEN
     EXECUTE format('CREATE SCHEMA %I', $5);
   END IF;
 
   -- test if table or view already exist in target schema
-  PERFORM 1 FROM information_schema.tables
-    WHERE table_name = $3
-      AND table_schema = $5
-      AND (table_type = 'BASE TABLE' OR table_type = 'VIEW');
-
-  IF FOUND THEN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+      WHERE table_name = $3
+        AND table_schema = $5
+        AND (table_type = 'BASE TABLE' OR table_type = 'VIEW')
+  ) THEN
     IF $7 = 1 THEN
       IF $6 = 'TABLE' THEN
-        RAISE EXCEPTION 'Only VIEWs are updatable.' USING HINT = 'Create another target schema when using TABLE as target table type.'; 
+        RAISE EXCEPTION 'Only VIEWs are updatable.'
+          USING HINT = 'Create another target schema when using TABLE as target table type.'; 
       ELSE
         replace_view := 'OR REPLACE ';
       END IF;
@@ -169,30 +171,23 @@ BEGIN
   END IF;
 
   -- check if the table existed when end_at_tid happened
-  SELECT relid INTO table_oid FROM pgmemento.audit_table_log 
-    WHERE schema_name = $4 AND table_name = $3
+  SELECT id INTO tab_id FROM pgmemento.audit_table_log 
+    WHERE relid = ($4 || ':' || $3)::regclass::oid
       AND txid_range @> $2::numeric;
 
-  IF FOUND THEN
-    -- disable schema_create_trigger when creating temporary tables
-    PERFORM 1 FROM pg_event_trigger
-      WHERE evtname = 'schema_create_trigger';
-
-    IF FOUND THEN
-      ALTER EVENT TRIGGER schema_create_trigger DISABLE;
-    END IF;
-
+  IF tab_id IS NOT NULL THEN
     -- create a temporary table used as template for jsonb_populate_record
     template_name := $3 || '_tmp' || trunc(random() * 99999 + 1);
     ddl_command := ddl_command || template_name || '(';
 
     -- get columns that exist at transaction with id end_at_tid
-    FOR log_column IN SELECT column_name, column_default, is_nullable, data_type_name, char_max_length, 
-                             numeric_precision, numeric_scale, datetime_precision, interval_type
-                        FROM pgmemento.audit_column_log
-                          WHERE table_relid = table_oid
-                            AND txid_range @> $2::numeric
-                        ORDER BY ordinal_position
+    FOR log_column IN
+      SELECT column_name, column_default, is_nullable, data_type_name, char_max_length, 
+             numeric_precision, numeric_scale, datetime_precision, interval_type
+        FROM pgmemento.audit_column_log
+          WHERE audit_table_id = tab_id
+            AND txid_range @> $2::numeric
+            ORDER BY ordinal_position
     LOOP
       ddl_command := ddl_command || delimiter || log_column.column_name || ' ' || log_column.data_type_name ||
       CASE WHEN log_column.char_max_length IS NOT NULL
@@ -225,11 +220,12 @@ BEGIN
     delimiter := '';
 
     -- check if logging entries exist in the audit_log table
-    PERFORM 1 FROM pgmemento.table_event_log 
-	  WHERE table_relid = table_oid;
-
-    IF FOUND THEN
+    IF EXISTS (
+      SELECT 1 FROM pgmemento.table_event_log 
+        WHERE table_relid = ($4 || '.' || $3)::regclass::oid
+    ) THEN
       -- let's go back in time - restore a table state at a given date
+      -- first: fetch audit_ids valid at given txid window
       IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN
         restore_query := format('CREATE ' || replace_view || $6 || ' %I.%I AS
           WITH restore AS (
@@ -241,25 +237,30 @@ BEGIN
                 WHERE t.txid >= %L AND t.txid < %L
                   AND e.table_relid = %L
                   ORDER BY r.audit_id, e.id DESC
-            )
-            SELECT v.log_entry FROM fetch_audit_ids f
-            JOIN LATERAL (
-              SELECT jsonb_build_object(',
-              $5, $3,
-              $1, $2, table_oid,
-              $1, $2, table_oid);
+            )',
+            $5, $3,
+            $1, $2, ($4 || '.' || $3)::regclass::oid,
+            $1, $2, ($4 || '.' || $3)::regclass::oid
+          );
 
-        -- get the content of each column that happened to be in the table when the transaction was executed
+        -- second: get the content of each column that happened to be in the table when the second transaction was executed
+        -- recreate JSONB objects representing the past tuples
+        restore_query := restore_query ||
+          ' SELECT v.log_entry FROM fetch_audit_ids f
+              JOIN LATERAL (
+                SELECT jsonb_build_object(';
+
+        -- third: loop over all columns and query the historic value for each column separately
         FOR v_column IN 
           SELECT column_name FROM pgmemento.audit_column_log 
-            WHERE table_relid = table_oid
+            WHERE audit_table_id = tab_id
               AND txid_range @> $2::numeric 
         LOOP
           v_columns_count := v_columns_count + 1;
           v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
 
-          -- first: try to find the value within logged changes in row_log (first occurrence greater than txid will be the correct value)
-          -- second: if not found, query the recent state for information
+          -- try to find the value within logged changes in row_log
+          -- (first occurrence greater than txid will be the correct value)
           for_each_valid_id := for_each_valid_id || delimiter || format(
             '(SELECT * FROM (
                 SELECT %L AS key, COALESCE(
@@ -271,26 +272,46 @@ BEGIN
                        AND r.audit_id = f.audit_id
                        AND (r.changes ? %L)
                        ORDER BY r.id LIMIT 1
-                  ),
-                  (SELECT COALESCE(to_json(%I), NULL)::jsonb 
-                     FROM %I.%I
-                     WHERE audit_id = f.audit_id
-                  )
-                ) AS value) q
-              ) q',
-              v_column, v_column, $2, v_column,
-              v_column, $4, $3) || v_columns_count;
+                  ),',
+                  v_column, v_column, $2, v_column);
 
+          -- if not found, query the recent state for information if column still exists
+          IF EXISTS (
+            SELECT 1 FROM pgmemento.audit_column_log 
+              WHERE column_name = v_column
+                AND audit_table_id = tab_id
+                AND upper(txid_range) IS NULL
+          ) THEN 
+            for_each_valid_id := for_each_valid_id || format(
+              '(SELECT COALESCE(to_json(%I), NULL)::jsonb 
+                  FROM %I.%I
+                    WHERE audit_id = f.audit_id
+                )',
+                v_column, $4, $3);
+          ELSE
+            -- set is to NULL if nothing was found
+            for_each_valid_id := for_each_valid_id || 'NULL';
+          END IF;
+
+          -- finishing this part of the query
+          for_each_valid_id := for_each_valid_id || ') AS value) q) q' || v_columns_count;
           delimiter := ',';
         END LOOP;
 
-        restore_query := restore_query || v_columns || ')::jsonb AS log_entry FROM ' || for_each_valid_id || ') v ON (true) '
-                         || ' WHERE f.op_id < 3 ORDER BY f.audit_id)' ||
-          format('SELECT p.* FROM restore rq
-                    JOIN LATERAL (
-                      SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)
-                    ) p ON (true)',
-                    template_name);
+        -- fourth: closing the jsonb_build_object function call, opened in second step
+        restore_query := restore_query || v_columns || 
+          ')::jsonb AS log_entry'
+          -- fifth: colsing the 'restore' WITH block
+          || ' FROM ' || for_each_valid_id || ') v ON (true) '
+          || ' WHERE f.op_id < 3 ORDER BY f.audit_id)'
+          -- sixth: coming to the final SELECT which converts the JSONB objects back to relational record sets
+          || format(
+            'SELECT p.* FROM restore rq
+               JOIN LATERAL (
+                 SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)
+               ) p ON (true)',
+               template_name
+             );
 
         EXECUTE restore_query;
       ELSE

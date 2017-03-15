@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.1     2017-03-15   empty JSONB diffs are not logged anymore            FKun
+--                        updated schema for DDL log tables
 -- 0.4.0     2017-03-05   updated JSONB functions                             FKun
 -- 0.3.0     2016-04-14   new log tables for ddl changes (removed             FKun
 --                        table_templates table)
@@ -129,6 +131,7 @@ ALTER TABLE pgmemento.row_log
 
 -- liftime of audited tables is logged in the audit_table_log table
 CREATE TABLE pgmemento.audit_table_log (
+  id SERIAL,
   relid OID,
   schema_name TEXT NOT NULL,
   table_name TEXT NOT NULL,
@@ -136,12 +139,12 @@ CREATE TABLE pgmemento.audit_table_log (
 );
 
 ALTER TABLE pgmemento.audit_table_log
-  ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (relid);
+  ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (id);
 
 -- lifetime of columns of audited tables is logged in the audit_column_log table
 CREATE TABLE pgmemento.audit_column_log (
   id SERIAL,
-  table_relid OID NOT NULL,
+  audit_table_id INTEGER NOT NULL,
   column_name TEXT NOT NULL,
   ordinal_position INTEGER,
   column_default TEXT,
@@ -179,8 +182,8 @@ ALTER TABLE pgmemento.row_log
 
 ALTER TABLE pgmemento.audit_column_log
   ADD CONSTRAINT audit_column_log_fk
-    FOREIGN KEY (table_relid)
-    REFERENCES pgmemento.audit_table_log (relid)
+    FOREIGN KEY (audit_table_id)
+    REFERENCES pgmemento.audit_table_log (id)
     MATCH FULL
     ON DELETE CASCADE
     ON UPDATE CASCADE;
@@ -206,7 +209,7 @@ CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
 CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
 CREATE INDEX table_log_range_idx ON pgmemento.audit_table_log USING GIST (txid_range);
-CREATE INDEX column_log_relid_idx ON pgmemento.audit_column_log USING BTREE (table_relid);
+CREATE INDEX column_log_table_idx ON pgmemento.audit_column_log USING BTREE (audit_table_id);
 CREATE INDEX column_log_column_idx ON pgmemento.audit_column_log USING BTREE (column_name);
 CREATE INDEX column_log_range_idx ON pgmemento.audit_column_log USING GIST (txid_range);
 
@@ -612,6 +615,7 @@ CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
 $$
 DECLARE
   e_id INTEGER;
+  jsonb_diff JSONB;
 BEGIN
   -- get corresponding table event as it has already been logged
   -- by the log_transaction_trigger in advance
@@ -623,16 +627,19 @@ BEGIN
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
-  WITH jsonb_diff AS (
-    SELECT COALESCE(
-      (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
-         FROM jsonb_each(to_jsonb(OLD))
-           WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
-      ),
-      '{}')::jsonb AS delta
-    )
-    INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-      SELECT e_id, NEW.audit_id, delta FROM jsonb_diff;
+  SELECT COALESCE(
+    (SELECT ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
+       FROM jsonb_each(to_jsonb(OLD))
+         WHERE NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
+    ),
+    '{}')::jsonb INTO jsonb_diff;
+
+  IF jsonb_diff <> '{}'::jsonb THEN
+    INSERT INTO pgmemento.row_log
+      (event_id, audit_id, changes)
+    VALUES 
+      (e_id, NEW.audit_id, jsonb_diff);
+  END IF;
 
   RETURN NULL;
 END;

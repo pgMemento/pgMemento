@@ -204,8 +204,9 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       ON tc.constraint_name = kcu.constraint_name
     JOIN information_schema.constraint_column_usage AS ccu 
       ON ccu.constraint_name = tc.constraint_name
-    JOIN pgmemento.audit_table_log atl 
-      ON atl.table_name = tc.table_name  
+    JOIN pgmemento.audit_tables a
+      ON a.tablename = tc.table_name
+     AND a.schemaname = tc.table_schema
       WHERE constraint_type = 'FOREIGN KEY' 
         AND tc.table_name <> ccu.table_name
     UNION ALL
@@ -219,6 +220,9 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         ON tc.constraint_name = kcu.constraint_name
       JOIN information_schema.constraint_column_usage AS ccu 
         ON ccu.constraint_name = tc.constraint_name
+      JOIN pgmemento.audit_tables a
+        ON a.tablename = tc.table_name
+       AND a.schemaname = tc.table_schema
       JOIN table_dependency t 
         ON t.child = ccu.table_name
         WHERE constraint_type = 'FOREIGN KEY' 
