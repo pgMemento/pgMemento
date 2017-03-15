@@ -46,13 +46,11 @@
 * INDEXES:
 *   column_log_column_idx
 *   column_log_range_idx
-*   column_log_relid_idx
+*   column_log_table_idx
 *   row_log_audit_idx
 *   row_log_changes_idx
 *   row_log_event_idx
-*   table_event_log_op_idx
-*   table_event_log_txid_idx
-*   table_event_table_idx
+*   table_event_log_unique_idx
 *   table_log_idx
 *   table_log_range_idx
 *   transaction_log_date_idx
@@ -197,7 +195,7 @@ DROP INDEX IF EXISTS row_log_audit_idx;
 DROP INDEX IF EXISTS row_log_changes_idx;
 DROP INDEX IF EXISTS table_log_idx;
 DROP INDEX IF EXISTS table_log_range_idx;
-DROP INDEX IF EXISTS column_log_relid_idx;
+DROP INDEX IF EXISTS column_log_table_idx;
 DROP INDEX IF EXISTS column_log_column_idx;
 DROP INDEX IF EXISTS column_log_range_idx;
 

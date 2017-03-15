@@ -18,7 +18,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="transaction_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="982" y="240"/>
+	<position x="963" y="242"/>
 	<column name="id" not-null="true">
 		<type name="integer"/>
 	</column>
@@ -45,7 +45,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="992" y="530.4"/>
+	<position x="937" y="536.4"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -69,7 +69,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="row_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1363" y="398"/>
+	<position x="1455" y="391"/>
 	<column name="id" not-null="true">
 		<type name="bigserial"/>
 	</column>
@@ -103,30 +103,6 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
-<index name="table_event_log_txid_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="transaction_id"/>
-		</idxelement>
-</index>
-
-<index name="table_event_log_op_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="op_id"/>
-		</idxelement>
-</index>
-
-<index name="table_event_table_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="table_relid"/>
-		</idxelement>
-</index>
-
 <index name="row_log_event_idx" table="pgmemento.row_log"
 	 concurrent="false" unique="false" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
@@ -154,8 +130,11 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="442" y="263"/>
-	<column name="relid" not-null="true">
+	<position x="338" y="240"/>
+	<column name="id" not-null="true">
+		<type name="serial"/>
+	</column>
+	<column name="relid">
 		<type name="oid"/>
 	</column>
 	<column name="schema_name" not-null="true">
@@ -168,19 +147,19 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<type name="numrange"/>
 	</column>
 	<constraint name="audit_table_log_pk" type="pk-constr" table="pgmemento.audit_table_log">
-		<columns names="relid" ref-type="src-columns"/>
+		<columns names="id" ref-type="src-columns"/>
 	</constraint>
 </table>
 
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="363" y="410"/>
+	<position x="248" y="444"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
-	<column name="table_relid" not-null="true">
-		<type name="oid"/>
+	<column name="audit_table_id" not-null="true">
+		<type name="integer"/>
 	</column>
 	<column name="column_name" not-null="true">
 		<type name="text"/>
@@ -250,11 +229,11 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
-<index name="column_log_relid_idx" table="pgmemento.audit_column_log"
+<index name="column_log_table_idx" table="pgmemento.audit_column_log"
 	 concurrent="false" unique="false" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="table_relid"/>
+			<column name="audit_table_id"/>
 		</idxelement>
 </index>
 
@@ -274,6 +253,20 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
+<index name="table_event_log_unique_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="true" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="transaction_id"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="table_relid"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="op_id"/>
+		</idxelement>
+</index>
+
 <constraint name="table_event_log_txid_fk" type="fk-constr" comparison-type="MATCH FULL"
 	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.transaction_log" table="pgmemento.table_event_log">
 	<columns names="transaction_id" ref-type="src-columns"/>
@@ -288,8 +281,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 
 <constraint name="audt_column_log_fk" type="fk-constr" comparison-type="MATCH FULL"
 	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.audit_table_log" table="pgmemento.audit_column_log">
-	<columns names="table_relid" ref-type="src-columns"/>
-	<columns names="relid" ref-type="dst-columns"/>
+	<columns names="audit_table_id" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
 <relationship name="rel_table_event_log_transaction_log" type="relfk"
@@ -297,14 +290,17 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="899" y="572"/>
-	<position x="900" y="283"/>
+		<position x="839" y="587"/>
+	<position x="841" y="294"/>
 	</line>
 	<label ref-type="src-label">
 		<position x="-4.35999" y="-0.600037"/>
 	</label>
 	<label ref-type="dst-label">
 		<position x="-2.35999" y="0.799988"/>
+	</label>
+	<label ref-type="name-label">
+		<position x="153.976" y="-16.8485"/>
 	</label>
 </relationship>
 
@@ -313,9 +309,12 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="1287.85" y="440.6"/>
-	<position x="1287.85" y="561"/>
+		<position x="1372" y="443"/>
+	<position x="1373" y="569"/>
 	</line>
+	<label ref-type="name-label">
+		<position x="-120.024" y="-38.3485"/>
+	</label>
 </relationship>
 
 <relationship name="rel_audit_column_log_audit_table_log" type="relfk"
@@ -323,14 +322,17 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.audit_table_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="750" y="452"/>
-	<position x="751" y="291"/>
+		<position x="734" y="497"/>
+	<position x="734" y="274"/>
 	</line>
 	<label ref-type="src-label">
 		<position x="0.539978" y="-0.200012"/>
 	</label>
 	<label ref-type="dst-label">
 		<position x="1.53998" y="-0.200012"/>
+	</label>
+	<label ref-type="name-label">
+		<position x="42.9757" y="-55.8485"/>
 	</label>
 </relationship>
 
