@@ -1,5 +1,4 @@
-pgMemento
-=====
+# pgMemento
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
 
@@ -7,8 +6,7 @@ pgMemento is a versioning approach for PostgreSQL using triggers and server-side
 functions in PL/pgSQL.
 
 
-0. Index
---------
+## Index
 
 1. License
 2. About
@@ -23,15 +21,13 @@ functions in PL/pgSQL.
 11. Disclaimer
 
 
-1. License
-----------
+## 1. License
 
 The scripts for pgMemento are open source under GNU Lesser General 
 Public License Version 3.0. See the file LICENSE for more details. 
 
 
-2. About
---------
+## 2. About
 
 pgMemento logs DML changes inside a PostgreSQL database. These logs are bound
 to events and transactions and not timestamp-based validity intervals. Because 
@@ -62,14 +58,12 @@ at least PostgreSQL 9.4. The master uses JSONB functions introduced in PostgreSQ
 I recommend to always use the newest version of pgMemento.
 
 
-3. System requirements
-----------------------
+## 3. System requirements
 
 * PostgreSQL 9.5
 
 
-4. Background & References
---------------------------
+## 4. Background & References
 
 The auditing approach of pgMemento is nothing new. Define triggers to log
 changes in your database is a well known practice. There are other tools
@@ -107,8 +101,7 @@ is [Logicaldecoding](https://github.com/sebastian-r-schmidt/logicaldecoding) by 
 are only logging transaction metadata at the moment and not the data itself.
 
 
-5. How To
------------------
+## 5. How To
 
 ### 5.1. Add pgMemento to a database
 
@@ -616,8 +609,7 @@ In order to stop and remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
 script.
 
 
-6. Future Plans
---------------------------------------
+## 6. Future Plans
 
 First of all I want to to share my idea with the PostgreSQL community
 and discuss the scripts in order to improve them. Let me know what you
@@ -638,8 +630,7 @@ However, here are some plans I have for the near future:
 * Build a pgMemento PostgreSQL extension
 
 
-7. Media
---------------------------------------
+## 7. Media
 
 I gave a presentation in german at FOSSGIS 2015:
 https://www.youtube.com/watch?v=EqLkLNyI6Yk
@@ -648,20 +639,17 @@ I gave another presentation in FOSSGIS-NA 2016:
 http://slides.com/fxku/pgmemento_foss4gna16
 
 
-8. Developers
--------------
+## 8. Developers
 
 Felix Kunde
 
 
-9. Contact
-----------
+## 9. Contact
 
 felix-kunde@gmx.de
 
 
-10. Special Thanks
------------------
+## 10. Special Thanks
 
 * Adam Brusselback --> benchmarking and bugfixing
 * Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
@@ -672,8 +660,7 @@ felix-kunde@gmx.de
 * Ugur Yilmaz --> feedback and suggestions
 
 
-11. Disclaimer
---------------
+## 11. Disclaimer
 
 pgMemento IS PROVIDED "AS IS" AND "WITH ALL FAULTS." 
 I MAKE NO REPRESENTATIONS OR WARRANTIES OF ANY KIND CONCERNING THE 
