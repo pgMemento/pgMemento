@@ -269,12 +269,14 @@ tables and their columns exist. After a table is altered or dropped an
 event trigger is fired to compare the recent state (at ddl_command_end) 
 with the logs.
 
-**ATTENTION:** Up till now pgMemento cannot log data that is removed by
-a DROP COLUMN command, because only old versions of the data are logged.
-The user should make an update on the whole column in advance. A better
-protection is given for DROP TABLE and DROP SCHEMA commands as they are
-simply forbidden by event triggers (at ddl_command_start). To drop a table
-or schema use the bypass functions pointed out in the exception messages.
+pgMemento also saves data before DROP COLUMN, DROP TABLE or DROP SCHEMA 
+events occur (at ddl_command_start). Data is not logged if tables or 
+columns are renamed or if the data type of columns is altered. But the
+DDL log tables are updated. Renamed tables can be traced by its internal
+OID (relid), altered columns by their ordinal position.
+
+**ATTENTION:** So far, changing the data type of columns will not produce
+data logs either.
 
 
 ### 5.4. Revert certain transactions
