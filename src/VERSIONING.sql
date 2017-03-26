@@ -55,7 +55,7 @@ DECLARE
 BEGIN
   -- check if the table existed when tid happened
   SELECT id INTO tab_id FROM pgmemento.audit_table_log 
-    WHERE relid = ($4 || ':' || $3)::regclass::oid
+    WHERE relid = ($4 || '.' || $3)::regclass::oid
       AND txid_range @> $1::numeric;
 
   IF NOT FOUND THEN
@@ -172,7 +172,7 @@ BEGIN
 
   -- check if the table existed when end_at_tid happened
   SELECT id INTO tab_id FROM pgmemento.audit_table_log 
-    WHERE relid = ($4 || ':' || $3)::regclass::oid
+    WHERE relid = ($4 || '.' || $3)::regclass::oid
       AND txid_range @> $2::numeric;
 
   IF tab_id IS NOT NULL THEN
