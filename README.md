@@ -579,11 +579,11 @@ WITH get_log_entries AS (
   FROM pgmemento.row_log r
   JOIN pgmemento.table_event_log e ON e.id = r.event_id
     WHERE r.audit_id = 12345
-      ORDER BY t.txid DESC
+      ORDER BY e.transaction_id DESC, e.id DESC
 )
 SELECT j.* FROM get_log_entries i
 JOIN LATERAL ( 
-  SELECT * FROM jsonb_populate_record(null::public.my-table, i.entry)
+  SELECT * FROM jsonb_populate_record(null::public.my_table, i.entry)
 ) j ON (true); 
 </pre>
 
