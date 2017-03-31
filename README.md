@@ -264,12 +264,16 @@ with the logs. pgMemento also saves data before `DROP SCHEMA`, `DROP TABLE`,
 `DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING` events occur
 (at ddl_command_start).
 
-** ATTENTION **: Data is NOT logged if tables or columns are renamed or 
-if DDL statements are called from functions. Comments inside query strings
-that fire the event trigger are forbidden and will raise an exception.
-So far, changing the data type of columns will only log the complete column
-if the keyword `USING` is found in the `ALTER TABLE` command. Also, note
-that transactions altering of dropping columns can not be reverted so far.
+**ATTENTION:** Data is NOT logged if DDL statements are called from 
+functions because they can only be parsed if they sit in the top level 
+query!  
+
+If tables or columns are renamed data is not logged either, as it would
+not change anyway. Comments inside query strings that fire the event
+trigger are forbidden and will raise an exception. So far, changing the
+data type of columns will only log the complete column if the keyword 
+`USING` is found in the `ALTER TABLE` command. Also, note that transactions
+altering of dropping columns can not be reverted so far.
 
 ### 5.4. Revert certain transactions
 
