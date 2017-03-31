@@ -260,17 +260,16 @@ The two tables `audit_table_log` and `audit_column_log` in the pgMemento
 schema provide information at what range of transactions the audited 
 tables and their columns exist. After a table is altered or dropped an
 event trigger is fired to compare the recent state (at ddl_command_end) 
-with the logs.
+with the logs. pgMemento also saves data before `DROP SCHEMA`, `DROP TABLE`,
+`DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING` events occur
+(at ddl_command_start).
 
-pgMemento also saves data before DROP COLUMN, DROP TABLE or DROP SCHEMA 
-events occur (at ddl_command_start). Data is not logged if tables or 
-columns are renamed or if the data type of columns is altered. But the
-DDL log tables are updated. Renamed tables can be traced by its internal
-OID (relid), altered columns by their ordinal position.
-
-**ATTENTION:** So far, changing the data type of columns will not produce
-data logs either.
-
+** ATTENTION **: Data is NOT logged if tables or columns are renamed or 
+if DDL statements are called from functions. Comments inside query strings
+that fire the event trigger are forbidden and will raise an exception.
+So far, changing the data type of columns will only log the complete column
+if the keyword `USING` is found in the `ALTER TABLE` command. Also, note
+that transactions altering of dropping columns can not be reverted so far.
 
 ### 5.4. Revert certain transactions
 

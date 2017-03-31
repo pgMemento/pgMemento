@@ -107,7 +107,7 @@ CREATE TABLE pgmemento.table_event_log
   id SERIAL,
   transaction_id BIGINT NOT NULL,
   op_id SMALLINT NOT NULL,
-  table_operation VARCHAR(8),
+  table_operation VARCHAR(12),
   table_relid OID NOT NULL
 );
 
