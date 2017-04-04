@@ -51,6 +51,7 @@ DECLARE
   tab_name TEXT;
   tab_schema TEXT;
   tab_upper_txid NUMERIC;
+  tab_op INTEGER;
   restore_query TEXT;
   log_column RECORD;
   v_columns TEXT := '';
@@ -106,6 +107,29 @@ BEGIN
     new_tab_name := tab_name;
     new_tab_upper_txid := tab_upper_txid;
   END IF;
+
+  -- check if row with requested audit_id existed when tid happened
+  -- first logged event for audit_id must not be an INSERT
+  EXECUTE format(
+    'SELECT COALESCE(
+       (SELECT e.op_id
+          FROM pgmemento.table_event_log e
+          JOIN pgmemento.row_log r ON r.event_id = e.id
+            WHERE e.transaction_id >= %L
+              AND e.table_relid = %L
+              AND r.audit_id = %L
+              ORDER BY e.id
+              LIMIT 1),
+       (SELECT 2 FROM %I.%I WHERE audit_id = %L),
+       0
+     )',
+     $1, tab_oid, $2, new_tab_schema, new_tab_name, $2)
+     INTO tab_op;
+
+  IF tab_op < 2 THEN
+    RAISE NOTICE 'No version exists for requested audit_id % before transaction %.', $2, $1;
+    RETURN NULL;
+  END IF; 
 
   -- start building the SQL command
   restore_query := 'SELECT jsonb_build_object(';
@@ -450,7 +474,7 @@ BEGIN
       RAISE NOTICE 'Did not found entries in log table for table ''%''.', new_tab_name;
     END IF;
     IF upper($6) = 'TABLE' THEN
-      EXECUTE format('CREATE TABLE %I.%I (LIKE %I)', $5, tab_name, template_name);
+      EXECUTE format('CREATE TABLE %I.%I AS SELECT * FROM %I', $5, tab_name, template_name);
     ELSIF upper($6) = 'VIEW' THEN
       EXECUTE format('CREATE ' || replace_view || 'VIEW %I.%I AS SELECT * FROM %I.%I LIMIT 0', $5, tab_name, $4, new_tab_name);        
     ELSE
