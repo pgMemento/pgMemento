@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.3     2017-04-05   greatly improved performance for restoring          FKun
+--                        using window functions with a FILTER
 -- 0.4.2     2017-03-28   better logic to query tables if nothing found       FKun
 --                        in logs (considers also rename events)
 -- 0.4.1     2017-03-15   reflecting new DDL log table schema                 FKun
@@ -34,7 +36,7 @@
 *   log_schema_state(schemaname TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   restore_schema_state(start_from_tid BIGINT, end_at_tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
-*     target_table_type TEXT DEFAULT 'VIEW', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*     target_table_type TEXT DEFAULT 'VIEW', update_state INTEGER DEFAULT '0') RETURNS SETOF VOID
 *   restore_table_state(start_from_tid BIGINT, end_at_tid BIGINT, original_table_name TEXT, original_schema_name TEXT, 
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW') RETURNS SETOF VOID
 ***********************************************************/
@@ -51,7 +53,6 @@ DECLARE
   tab_name TEXT;
   tab_schema TEXT;
   tab_upper_txid NUMERIC;
-  tab_op INTEGER;
   restore_query TEXT;
   log_column RECORD;
   v_columns TEXT := '';
@@ -62,7 +63,8 @@ DECLARE
   new_tab_schema TEXT;
   new_tab_upper_txid NUMERIC;
   new_column_name TEXT;
-  for_each_valid_id TEXT := '';
+  find_logs TEXT := '';
+  join_recent_state TEXT := '';
   jsonb_result JSONB := '{}'::jsonb;
 BEGIN
   -- check if the table exists in audit_table_log
@@ -108,60 +110,40 @@ BEGIN
     new_tab_upper_txid := tab_upper_txid;
   END IF;
 
-  -- check if row with requested audit_id existed when tid happened
-  -- first logged event for audit_id must not be an INSERT
-  EXECUTE format(
-    'SELECT COALESCE(
-       (SELECT e.op_id
-          FROM pgmemento.table_event_log e
-          JOIN pgmemento.row_log r ON r.event_id = e.id
-            WHERE e.transaction_id >= %L
-              AND e.table_relid = %L
-              AND r.audit_id = %L
-              ORDER BY e.id
-              LIMIT 1),
-       (SELECT 2 FROM %I.%I WHERE audit_id = %L),
-       0
-     )',
-     $1, tab_oid, $2, new_tab_schema, new_tab_name, $2)
-     INTO tab_op;
-
-  IF tab_op < 2 THEN
-    RAISE NOTICE 'No version exists for requested audit_id % before transaction %.', $2, $1;
-    RETURN NULL;
-  END IF; 
-
   -- start building the SQL command
   restore_query := 'SELECT jsonb_build_object(';
 
-  -- get the content of each column that happened to be in the table when the transaction was executed
+  -- loop over all columns and query the historic value for each column separately
   FOR log_column IN 
     SELECT column_name, ordinal_position, data_type, data_type_name
       FROM pgmemento.audit_column_log 
         WHERE audit_table_id = tab_id
           AND txid_range @> $1::numeric
+          ORDER BY ordinal_position
   LOOP
     new_column_name := NULL;
+
+    -- columns to be fed into jsonb_build_object function (requires alternating order of keys and values)
     v_columns_count := v_columns_count + 1;
-    v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
+    restore_query := restore_query 
+      || delimiter || E'\n'
+      || '  q.key' || v_columns_count || E',\n' 
+      || '  q.value' || v_columns_count
+      -- use ->>0 to extract first element from jsonb logs
+      || '->>0';
 
-    -- first: try to find the value within logged changes in row_log
-    -- (first occurrence greater than txid will be the correct value)
-    for_each_valid_id := for_each_valid_id || delimiter || format(
-      '(SELECT * FROM (
-          SELECT %L AS key, COALESCE(
-            (SELECT (r.changes -> %L) 
-               FROM pgmemento.row_log r
-               JOIN pgmemento.table_event_log e ON r.event_id = e.id
-               JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                 WHERE t.txid >= %L
-                   AND r.audit_id = %L
-                   AND (r.changes ? %L)
-                   ORDER BY r.id LIMIT 1
-              ), ',
-       log_column.column_name, log_column.column_name, $1, $2, log_column.column_name);
+    -- extend subquery string to retrieve historic values
+    find_logs := find_logs
+      || delimiter || E'\n'
+      -- key: use historic name
+      || format('    %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
+      -- value: query logs with given key
+      || E'    COALESCE(\n'
+      || format(E'      jsonb_agg(changes -> %L) FILTER (WHERE changes ? %L) OVER (ORDER BY r.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
+           log_column.column_name, log_column.column_name
+         );
 
-    -- second: if not found, query the recent state for information if table exists
+    -- if column is not found in the row_log table, recent state has to be queried if table exists
     -- additionally, check if column still exists
     SELECT column_name INTO new_column_name
       FROM pgmemento.audit_column_log
@@ -172,7 +154,7 @@ BEGIN
           AND upper(txid_range) IS NULL;
 
     IF new_tab_upper_txid IS NOT NULL OR new_column_name IS NULL THEN
-      -- there is either no existing table or column, so value will be NULL
+      -- there is either no existing table or column
       IF tab_name <> new_tab_name THEN
         RAISE NOTICE 'No matching field found for column ''%'' in active table ''%'' (formerly known as ''%'').',
                         log_column.column_name, new_tab_name, tab_name;
@@ -180,21 +162,53 @@ BEGIN
         RAISE NOTICE 'No matching field found for column ''%'' in active table ''%''.',
                         log_column.column_name, new_tab_name;
       END IF;
-      for_each_valid_id := for_each_valid_id || 'NULL';
     ELSE
       -- take current value from matching column (and hope that the data is really fitting)
-      for_each_valid_id := for_each_valid_id || format(
-        '(SELECT COALESCE(to_json(%I), NULL)::jsonb FROM %I.%I WHERE audit_id = %L)',
-      new_column_name, new_tab_schema, new_tab_name, $2);
+      find_logs := find_logs 
+        || format(E'      to_jsonb(x.%I), NULL\n', new_column_name);
+      join_recent_state := format(E'  LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name);
     END IF;
 
-    -- complete this part of the query
-    for_each_valid_id := for_each_valid_id || ') AS value) q) q' || v_columns_count;
+    -- if nothing is found in the logs or in the recent state value will be NULL
+    find_logs := find_logs
+      || E'      NULL\n';
+
+    -- complete the substring for given column
+    find_logs := find_logs
+      || '    ) AS value' || v_columns_count;
     delimiter := ',';
   END LOOP;
 
-  -- complete the SQL command
-  restore_query := restore_query || v_columns || ') AS log_entry FROM ' || for_each_valid_id;
+  -- finish restore query
+  restore_query := restore_query
+    -- complete SELECT part
+    || E'\n  ) AS log_entry\n'
+    -- add FROM block q that extracts the correct jsonb values
+    || E'FROM (\n'
+    -- use DISTINCT ON to get only one row
+    || '  SELECT DISTINCT ON (a.audit_id, x.audit_id)'
+    -- add column selection that has been set up above 
+    || find_logs
+    -- add subquery f to get last event for given audit_id before given transaction
+    || E'\n  FROM (\n'
+    || E'    SELECT DISTINCT ON (r.audit_id) r.audit_id, r.event_id, e.op_id\n'
+    || E'      FROM pgmemento.row_log r\n'
+    || E'      JOIN pgmemento.table_event_log e ON e.id = r.event_id\n'
+    || format(E'        WHERE e.transaction_id < %L\n', $1)
+    || format(E'          AND r.audit_id = %L\n', $2)
+    || E'          ORDER BY r.audit_id, e.id DESC\n'
+    || E'  ) f\n'
+    -- left join on row_log table and consider only events younger than the one extracted in subquery f
+    || E'  LEFT JOIN pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
+    -- left join on actual table to get the recent value for a field if nothing is found in the logs
+    || join_recent_state
+    -- do not produce a result if row with audit_id did not exist before given transaction
+    -- could be if filtered event has been either DELETE or TRUNCATE
+    || E'    WHERE f.op_id < 3\n'
+    -- order by oldest log entry for given audit_id
+    || E'    ORDER BY a.audit_id, x.audit_id, a.id\n'
+    -- closing FROM block q
+    || E') q\n';
 
   -- execute the SQL command
   EXECUTE restore_query INTO jsonb_result;
@@ -241,7 +255,8 @@ DECLARE
   new_tab_schema TEXT;
   new_tab_upper_txid NUMERIC;
   new_column_name TEXT;
-  for_each_valid_id TEXT := '';
+  find_logs TEXT := '';
+  join_recent_state TEXT := '';
 BEGIN
   -- test if target schema already exist
   IF NOT EXISTS (
@@ -355,7 +370,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- reset delimiter for later loop
+  -- reset delimiter for latter loop
   delimiter := '';
 
   -- check if logging entries exist in the audit_log table
@@ -363,59 +378,47 @@ BEGIN
     SELECT 1 FROM pgmemento.table_event_log 
       WHERE table_relid = tab_oid
   ) THEN
-    -- let's go back in time - restore a table state at a given date
-    -- first: fetch audit_ids valid at given txid window
+    -- let's go back in time - restore a table state for given transaction interval
     IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN
-      restore_query := format('CREATE ' || replace_view || $6 || ' %I.%I AS
-        WITH restore AS (
-          WITH fetch_audit_ids AS (
-            SELECT DISTINCT ON (r.audit_id) r.audit_id, e.op_id
-              FROM pgmemento.row_log r
-              JOIN pgmemento.table_event_log e ON r.event_id = e.id
-              JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                WHERE t.txid >= %L AND t.txid < %L
-                  AND e.table_relid = %L
-                  ORDER BY r.audit_id, e.id DESC
-          )',
-          $5, tab_name,
-          $1, $2, tab_oid
-        );
+      restore_query := 'CREATE ' 
+        || replace_view || $6 
+        || format(E' %I.%I AS\n', $5, tab_name)
+        -- select all rows from result of jsonb_populate_record function
+        || E'  SELECT p.* FROM (\n'
+        -- rebuild tuples as jsonb elements
+        || '    SELECT jsonb_build_object(';
 
-      -- second: get the content of each column that happened to be in the table when the second transaction was executed
-      -- recreate JSONB objects representing the past tuples
-      restore_query := restore_query ||
-        ' SELECT v.log_entry FROM fetch_audit_ids f
-            JOIN LATERAL (
-              SELECT jsonb_build_object(';
-
-      -- third: loop over all columns and query the historic value for each column separately
+      -- loop over all columns and query the historic value for each column separately
       FOR log_column IN 
         SELECT column_name, ordinal_position, data_type, data_type_name
           FROM pgmemento.audit_column_log 
             WHERE audit_table_id = tab_id
               AND txid_range @> $2::numeric
+              ORDER BY ordinal_position
       LOOP
         new_column_name := NULL;
+
+        -- columns to be fed into jsonb_build_object function (requires alternating order of keys and values)
         v_columns_count := v_columns_count + 1;
-        v_columns := v_columns || delimiter || 'q' || v_columns_count || '.key, ' || 'q' || v_columns_count || '.value';
+        restore_query := restore_query 
+          || delimiter || E'\n'
+          || '      q.key' || v_columns_count || E',\n' 
+          || '      q.value' || v_columns_count
+          -- use ->>0 to extract first element from jsonb logs
+          || '->>0';
 
-        -- try to find the value within logged changes in row_log
-        -- (first occurrence greater than txid will be the correct value)
-        for_each_valid_id := for_each_valid_id || delimiter || format(
-          '(SELECT * FROM (
-             SELECT %L AS key, COALESCE(
-               (SELECT (r.changes -> %L) 
-                  FROM pgmemento.row_log r
-                  JOIN pgmemento.table_event_log e ON r.event_id = e.id
-                  JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-                    WHERE t.txid >= %L
-                      AND r.audit_id = f.audit_id
-                      AND (r.changes ? %L)
-                      ORDER BY r.id LIMIT 1
-                 ), ',
-          log_column.column_name, log_column.column_name, $2, log_column.column_name);
+        -- extend subquery string to restore historic values
+        find_logs := find_logs
+          || delimiter || E'\n'
+          -- key: use historic name
+          || format('        %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
+          -- value: query logs with given key
+          || E'        COALESCE(\n'
+          || format(E'          jsonb_agg(changes -> %L) FILTER (WHERE changes ? %L) OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
+               log_column.column_name, log_column.column_name
+             );
 
-        -- if not found, query the recent state for information if table exists
+        -- if column is not found in the row_log table, recent state has to be queried if table exists
         -- additionally, check if column still exists
         SELECT column_name INTO new_column_name
           FROM pgmemento.audit_column_log
@@ -426,7 +429,7 @@ BEGIN
               AND upper(txid_range) IS NULL;
 
         IF new_tab_upper_txid IS NOT NULL OR new_column_name IS NULL THEN
-          -- there is either no existing table or column, so value will be NULL
+          -- there is either no existing table or column
           IF tab_name <> new_tab_name THEN
             RAISE NOTICE 'No matching field found for column ''%'' in active table ''%'' (formerly known as ''%'').',
                             log_column.column_name, new_tab_name, tab_name;
@@ -434,34 +437,63 @@ BEGIN
             RAISE NOTICE 'No matching field found for column ''%'' in active table ''%''.',
                             log_column.column_name, new_tab_name;
           END IF;
-          for_each_valid_id := for_each_valid_id || 'NULL';
         ELSE
           -- take current value from matching column (and hope that the data is really fitting)
-          for_each_valid_id := for_each_valid_id || format(
-            '(SELECT COALESCE(to_json(%I), NULL)::jsonb FROM %I.%I WHERE audit_id = f.audit_id)',
-          new_column_name, new_tab_schema, new_tab_name);
+          find_logs := find_logs 
+            || format(E'          to_jsonb(x.%I),\n', new_column_name);
+          join_recent_state := format(E'      LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name);
         END IF;
 
-        -- complete this part of the query
-        for_each_valid_id := for_each_valid_id || ') AS value) q) q' || v_columns_count;
+        -- if nothing is found in the logs or in the recent state value will be NULL
+        find_logs := find_logs
+          || E'          NULL\n';
+
+        -- complete the substring for given column
+        find_logs := find_logs
+          || '        ) AS value' || v_columns_count;
         delimiter := ',';
       END LOOP;
 
-      -- fourth: closing the jsonb_build_object function call, opened in second step
-      restore_query := restore_query || v_columns || 
-        ')::jsonb AS log_entry'
-        -- fifth: closing the 'restore' WITH block
-        || ' FROM ' || for_each_valid_id || ') v ON (true) '
-        || ' WHERE f.op_id < 3 ORDER BY f.audit_id)'
-        -- sixth: coming to the final SELECT which converts the JSONB objects back to relational record sets
-        || format(
-          'SELECT p.* FROM restore rq
-             JOIN LATERAL (
-               SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)
-             ) p ON (true)',
-             template_name
-          );
+      -- finish restore query
+      restore_query := restore_query
+        -- complete SELECT part
+        || E'\n    ) AS log_entry\n'        
+        -- add FROM block q that extracts the correct jsonb values
+        || E'    FROM (\n'
+        -- use DISTINCT ON to get only one row per audit_id
+        || '      SELECT DISTINCT ON (a.audit_id, x.audit_id)'
+        -- add column selection that has been set up above 
+        || find_logs
+        -- add subquery f to get last event for each distinct audit_id in given transaction interval
+        || E'\n      FROM (\n'
+        || E'        SELECT DISTINCT ON (r.audit_id) r.audit_id, r.event_id, e.op_id\n'
+        || E'          FROM pgmemento.row_log r\n'
+        || E'          JOIN pgmemento.table_event_log e ON e.id = r.event_id\n'
+        || E'          JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id\n'
+        || format(E'            WHERE t.txid >= %L AND t.txid < %L\n', $1, $2)
+        || format(E'              AND e.table_relid = %L\n', tab_oid)
+        || E'              ORDER BY r.audit_id, e.id DESC\n'
+        || E'      ) f\n'
+        -- left join on filtered audit_ids with row_log table
+        -- only consider events younger than the ones extracted in subquery f
+        || E'      LEFT JOIN pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
+        -- left join on actual table to get the recent value for a field if nothing is found in the logs
+        || join_recent_state
+        -- filter out rows that did not exist during requested transaction window
+        -- these are the ones where event has been either DELETE or TRUNCATE
+        || E'        WHERE f.op_id < 3\n'
+        -- order by oldest log entry for an audit_id
+        || E'        ORDER BY a.audit_id, x.audit_id, a.id\n'
+        -- closing FROM block q
+        || E'    ) q\n'
+        -- closing restoring part
+        || E'  ) rq\n'
+        -- pass reconstructed tuples to jsonb_populate_record function
+        || E'  JOIN LATERAL (\n'
+        || format(E'    SELECT * FROM jsonb_populate_record(null::%I, rq.log_entry)\n', template_name)
+        || '  ) p ON (true)';
 
+      -- finally execute query string
       EXECUTE restore_query;
     ELSE
       RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', $6;
