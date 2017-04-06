@@ -840,6 +840,7 @@ felix-kunde@gmx.de
 
 ## 10. Special Thanks
 
+* Petra Sauer (Beuth University of Applied Sciences) --> For support and discussions on a pgMemento research paper  
 * Adam Brusselback --> benchmarking and bugfixing
 * Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
 * Christophe Pettus (PGX) --> recommend to only log changes
