@@ -516,7 +516,7 @@ we could seach for e.g. `(changes ? 'column_B')` plus the audit_id. This
 would give us two entries:
 
 | changes                                                           |
-| ----------------------------------------------------------------- |                                                              |
+| ----------------------------------------------------------------- |
 | {"column_B":"some_value"}                                         |
 | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
 
