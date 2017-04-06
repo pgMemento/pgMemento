@@ -64,7 +64,7 @@ DECLARE
   new_tab_upper_txid NUMERIC;
   new_column_name TEXT;
   find_logs TEXT := '';
-  join_recent_state TEXT := '';
+  join_recent_state BOOLEAN := FALSE;
   jsonb_result JSONB := '{}'::jsonb;
 BEGIN
   -- check if the table exists in audit_table_log
@@ -166,7 +166,7 @@ BEGIN
       -- take current value from matching column (and hope that the data is really fitting)
       find_logs := find_logs 
         || format(E'      to_jsonb(x.%I), NULL\n', new_column_name);
-      join_recent_state := format(E'  LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name);
+      join_recent_state := TRUE;
     END IF;
 
     -- if nothing is found in the logs or in the recent state value will be NULL
@@ -186,7 +186,13 @@ BEGIN
     -- add FROM block q that extracts the correct jsonb values
     || E'FROM (\n'
     -- use DISTINCT ON to get only one row
-    || '  SELECT DISTINCT ON (a.audit_id, x.audit_id)'
+    || '  SELECT DISTINCT ON (a.audit_id'
+    || CASE WHEN join_recent_state THEN
+         ', x.audit_id'
+       ELSE
+         ''
+       END
+    || ')'
     -- add column selection that has been set up above 
     || find_logs
     -- add subquery f to get last event for given audit_id before given transaction
@@ -201,12 +207,22 @@ BEGIN
     -- left join on row_log table and consider only events younger than the one extracted in subquery f
     || E'  LEFT JOIN pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
-    || join_recent_state
+    || CASE WHEN join_recent_state THEN
+         format(E'  LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name)
+       ELSE
+         ''
+       END
     -- do not produce a result if row with audit_id did not exist before given transaction
     -- could be if filtered event has been either DELETE or TRUNCATE
     || E'    WHERE f.op_id < 3\n'
     -- order by oldest log entry for given audit_id
-    || E'    ORDER BY a.audit_id, x.audit_id, a.id\n'
+    || '    ORDER BY a.audit_id, '
+    || CASE WHEN join_recent_state THEN
+         'x.audit_id, '
+       ELSE
+         ''
+       END
+    || E' a.id\n'
     -- closing FROM block q
     || E') q\n';
 
@@ -256,7 +272,7 @@ DECLARE
   new_tab_upper_txid NUMERIC;
   new_column_name TEXT;
   find_logs TEXT := '';
-  join_recent_state TEXT := '';
+  join_recent_state BOOLEAN := FALSE;
 BEGIN
   -- test if target schema already exist
   IF NOT EXISTS (
@@ -441,7 +457,7 @@ BEGIN
           -- take current value from matching column (and hope that the data is really fitting)
           find_logs := find_logs 
             || format(E'          to_jsonb(x.%I),\n', new_column_name);
-          join_recent_state := format(E'      LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name);
+          join_recent_state := TRUE;
         END IF;
 
         -- if nothing is found in the logs or in the recent state value will be NULL
@@ -461,7 +477,13 @@ BEGIN
         -- add FROM block q that extracts the correct jsonb values
         || E'    FROM (\n'
         -- use DISTINCT ON to get only one row per audit_id
-        || '      SELECT DISTINCT ON (a.audit_id, x.audit_id)'
+        || '      SELECT DISTINCT ON (a.audit_id'
+        || CASE WHEN join_recent_state THEN
+             ', x.audit_id'
+           ELSE
+             ''
+           END
+        || ')'
         -- add column selection that has been set up above 
         || find_logs
         -- add subquery f to get last event for each distinct audit_id in given transaction interval
@@ -478,12 +500,22 @@ BEGIN
         -- only consider events younger than the ones extracted in subquery f
         || E'      LEFT JOIN pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
         -- left join on actual table to get the recent value for a field if nothing is found in the logs
-        || join_recent_state
+        || CASE WHEN join_recent_state THEN
+             format(E'      LEFT JOIN %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name)
+           ELSE
+             ''
+           END
         -- filter out rows that did not exist during requested transaction window
         -- these are the ones where event has been either DELETE or TRUNCATE
         || E'        WHERE f.op_id < 3\n'
         -- order by oldest log entry for an audit_id
-        || E'        ORDER BY a.audit_id, x.audit_id, a.id\n'
+        || '        ORDER BY a.audit_id, '
+        || CASE WHEN join_recent_state THEN
+             'x.audit_id, '
+           ELSE
+             ''
+           END
+        || E' a.id\n'
         -- closing FROM block q
         || E'    ) q\n'
         -- closing restoring part
