@@ -444,16 +444,16 @@ BEGIN
               INSERT INTO pgmemento.table_event_log 
                 (transaction_id, op_id, table_operation, table_relid) 
               VALUES
-                (txid_current(), 5, 'ALTER COLUMN', (schemaname || '.' || tablename)::regclass::oid)
+                (txid_current(), 2, 'ALTER COLUMN', (schemaname || '.' || tablename)::regclass::oid)
               ON CONFLICT (transaction_id, table_relid, op_id)
-                DO UPDATE SET op_id = 5 RETURNING id INTO e_id;
+                DO UPDATE SET op_id = 2 RETURNING id INTO e_id;
             ELSE
               INSERT INTO pgmemento.table_event_log 
                 (transaction_id, op_id, table_operation, table_relid) 
               VALUES
-                (txid_current(), 6, 'DROP COLUMN', (schemaname || '.' || tablename)::regclass::oid)
+                (txid_current(), 2, 'DROP COLUMN', (schemaname || '.' || tablename)::regclass::oid)
               ON CONFLICT (transaction_id, table_relid, op_id)
-                DO UPDATE SET op_id = 6 RETURNING id INTO e_id;
+                DO UPDATE SET op_id = 2 RETURNING id INTO e_id;
             END IF;
 
             -- log data of entire column
