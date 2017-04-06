@@ -134,8 +134,8 @@ A brief introduction about the different SQL files:
 
 Run the `INSTALL_PGMEMENTO.sql` script with the psql client of 
 PostgreSQL. Now a new schema will appear in your database called 
-`pgmemento`. As of version 0.4 the `pgmemento` consist of 5 log
-tables and 2 view:
+`pgmemento`. As of version 0.4 the `pgmemento` schema consist of 
+5 log tables and 2 view:
 
 * `TABLE audit_column_log`: Stores information about columns of audited tables (DDL log target)
 * `TABLE audit_table_log`: Stores information about audited tables (DDL log target)
@@ -352,8 +352,8 @@ When reverting DELETEs (older) tuples with a lower audit_id need to be
 reinserted first. The ordering of audit_ids is partitioned by the
 diffenrent events.
 
-Reverting also works if foreign keys are set to ON UPDATE CASCADE or
-ON DELETE CASCADE because the `audit_tables_dependency` produces the
+Reverting also works if foreign keys are set to `ON UPDATE CASCADE` or
+`ON DELETE CASCADE` because the `audit_tables_dependency` produces the
 correct order anyway and cross-referencing tuples in one table would
 belong to the same event.
 
@@ -463,8 +463,8 @@ case the result of the inner query would be 5.
  
 For restoring, pgMemento needs to know which entries were valid when
 transaction 5 started. This can be done by a simple JOIN between the log
-tables querying the last event of each related audit_id using DISTINCT ON
-with ORDER BY audit_id, event_id DESC. DELETE or TRUNCATE events would
+tables querying the last event of each related audit_id using `DISTINCT ON
+with ORDER BY audit_id, event_id DESC`. DELETE or TRUNCATE events would
 need to filtered out later.
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/fetch_auditids_en.png "Fetching Audit_IDs")
@@ -512,11 +512,11 @@ things become very tricky because the historic field values can be
 scattered all throughout the row_log table due to the pgMemento's logging
 behaviour (see example in 5.6). For each column we need to find JSONB
 objects containing the column's name as a key. As learned in chapter 5.4
-we could seach for e.g. (changes ? 'column_B') plus the audit_id. This
+we could seach for e.g. `(changes ? 'column_B')` plus the audit_id. This
 would give us two entries:
 
 | changes                                                           |
-|:-----------------------------------------------------------------:|                                                              |
+| ----------------------------------------------------------------- |                                                              |
 | {"column_B":"some_value"}                                         |
 | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
 
@@ -607,8 +607,8 @@ JOIN LATERAL(
 </pre>
 
 Since v0.4 pgMemento uses a window function
-with FILTER clauses that were introduced in PostgreSQL 9.4. This allows
-for searching for different keys on same level of the query. A FILTER
+with `FILTER` clauses that were introduced in PostgreSQL 9.4. This allows
+for searching for different keys on same level of the query. A filter
 can only be used in conjunction with an aggregate function. Luckily,
 with jsonb_agg PostgreSQL offers a suitable function for the JSONB
 logs. The window is ordered by the ID of the row_log table to get
@@ -663,16 +663,16 @@ FROM (
 </pre>
 
 Now, the row_log table and the audited table only appear once in the
-query. They have to be joined with an OUTER JOIN against the queried list
+query. They have to be joined with an `OUTER JOIN` against the queried list
 of valid audit_ids because both could be missing an audit_id. As said,
 this is very unlikely. For each audit_id only the first entry of the
-result is of interest. This is done again with DISTINCT ON. As we are
+result is of interest. This is done again with `DISTINCT ON`. As we are
 using a window query the extracted JSONB array for each key can contain
 all further historic values of the audit_id found in the logs
 (`ROW BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING`), no matter if we 
-strip out rows with DISTINCT ON. Only the first element if the array
-(ORDER BY a.id) is necessary. Therefore, it has to be extracted in the
-upper query with the ->> operator.
+strip out rows with `DISTINCT ON`. Only the first element if the array
+(`ORDER BY a.id`) is necessary. Therefore, it has to be extracted in the
+upper query with the `->>` operator.
 
 #### 5.6.5. Generating JSONB objects and recreate table (done internally)
 
@@ -690,7 +690,7 @@ But it cannot be written just like that because we need to combine it
 with a query that returns numerous JSONB objects. There is also the 
 function `jsonb_populate_recordset` to return a set of records but it
 needs all JSONB objects to be aggregated which is a little overhead.
-The solution is to use a LATERAL JOIN:
+The solution is to use a `LATERAL JOIN`:
 
 <pre>
 SELECT 
@@ -728,12 +728,11 @@ table to reconstruct a template that reflects the historic table schema.
 
 The template are created as temporary tables. This means when restoring
 the audited tables as VIEWs they only exist as long as the current
-sessions lasts (ON COMMIT PRESERVE ROWS). When creating a new session
+sessions lasts (`ON COMMIT PRESERVE ROWS`). When creating a new session
 the restore procedure has to be called again. It doesn't matter if the
 target schema already exist. When restoring the audited tables as BASE 
 TABLEs, they will of course remain in the target schema but occupying
 extra disk space.
-
 
 #### 5.5.5. Restore revisions of a certain tuple
 
