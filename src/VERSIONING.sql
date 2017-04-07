@@ -139,7 +139,7 @@ BEGIN
       || format('    %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
       -- value: query logs with given key
       || E'    COALESCE(\n'
-      || format(E'      jsonb_agg(changes -> %L) FILTER (WHERE changes ? %L) OVER (ORDER BY r.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
+      || format(E'      jsonb_agg(a.changes -> %L) FILTER (WHERE a.changes ? %L) OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
            log_column.column_name, log_column.column_name
          );
 
@@ -165,7 +165,7 @@ BEGIN
     ELSE
       -- take current value from matching column (and hope that the data is really fitting)
       find_logs := find_logs 
-        || format(E'      to_jsonb(x.%I), NULL\n', new_column_name);
+        || format(E'      to_jsonb(x.%I),\n', new_column_name);
       join_recent_state := TRUE;
     END IF;
 
@@ -430,7 +430,7 @@ BEGIN
           || format('        %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
           -- value: query logs with given key
           || E'        COALESCE(\n'
-          || format(E'          jsonb_agg(changes -> %L) FILTER (WHERE changes ? %L) OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
+          || format(E'          jsonb_agg(a.changes -> %L) FILTER (WHERE a.changes ? %L) OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
                log_column.column_name, log_column.column_name
              );
 

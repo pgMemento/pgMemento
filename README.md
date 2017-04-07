@@ -629,8 +629,8 @@ FROM (
     -- set value, use COALESCE to handle NULLs
     COALESCE(
       -- get value from JSONB log
-      jsonb_agg(changes -> 'id')
-        FILTER (WHERE changes ? 'id')
+      jsonb_agg(a.changes -> 'id')
+        FILTER (WHERE a.changes ? 'id')
           OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),
       -- if NULL, query recent value
       to_jsonb(x.id),
@@ -640,8 +640,8 @@ FROM (
     'id'::text AS key2,
     -- set value, use COALESCE to handle NULLs
     COALESCE(
-      jsonb_agg(changes -> 'column_B')
-        FILTER (WHERE changes ? 'column_B')
+      jsonb_agg(a.changes -> 'column_B')
+        FILTER (WHERE a.changes ? 'column_B')
           OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),
       to_jsonb(x.column_B),
       NULL
@@ -734,7 +734,7 @@ target schema already exist. When restoring the audited tables as BASE
 TABLEs, they will of course remain in the target schema but occupying
 extra disk space.
 
-#### 5.5.5. Restore revisions of a certain tuple
+#### 5.6.6. Restore revisions of a certain tuple
 
 It is also possible to restore only revisions of a certain tuple with 
 the function `pgmemento.generate_log_entry`. It requires a transaction
@@ -777,7 +777,7 @@ JOIN LATERAL (
 </pre>
 
 
-#### 5.5.6. Work with the past state
+#### 5.6.7. Work with the past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
@@ -793,7 +793,7 @@ over time it might not be possible to recreate constraints and indexes as
 their metadata is not yet logged by pgMemento. 
 
 
-### 5.6. Uninstall pgMemento
+### 5.7. Uninstall pgMemento
 
 In order to stop and remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
 script.
