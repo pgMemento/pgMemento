@@ -497,7 +497,7 @@ BEGIN
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.object_type = 'table' AND obj.schema_name <> 'pg_temp' THEN
+    IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
       PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name);
     END IF;
   END LOOP;

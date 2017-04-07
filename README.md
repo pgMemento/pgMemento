@@ -734,12 +734,15 @@ target schema already exist. When restoring the audited tables as BASE
 TABLEs, they will of course remain in the target schema but occupying
 extra disk space.
 
-#### 5.6.6. Restore revisions of a certain tuple
+#### 5.6.6. Restore revisions of a certain tuple or table on-the-fly
 
-It is also possible to restore only revisions of a certain tuple with 
-the function `pgmemento.generate_log_entry`. It requires a transaction
-ID, the audit_id of the tuple and the corresponding table and schema 
-name.
+It is also possible to restore only revisions of a certain tuple or
+table with the function `pgmemento.generate_log_entry` or
+`pgmemento.generate_log_entries`. Both functions require a range of
+transaction IDs the user is interested in and the corresponding table
+and schema name. With the audit_id, `generate_log_entry` takes one
+more additional argument to specify the tuple. With the following
+query, it is possible to look at all revisions of one tuple.
 
 <pre>
 SELECT 
@@ -748,10 +751,11 @@ SELECT
 FROM (
   SELECT
     pgmemento.generate_log_entry(
+      1
       e.transaction_id,
-      r.audit_id,
       'my_table',
-      'public'
+      'public',
+      r.audit_id,
     ) AS entry
   FROM 
     pgmemento.row_log r
@@ -761,8 +765,8 @@ FROM (
   WHERE 
     r.audit_id = 12345
   ORDER BY
-    e.transaction_id DESC,
-	e.id DESC
+    e.transaction_id,
+    e.id
 ) log
 JOIN LATERAL ( 
   SELECT
