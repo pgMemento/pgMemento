@@ -78,7 +78,7 @@ BEGIN
   -- UPDATE case
   ELSIF $4 = 2 THEN
 	IF $7 <> 0 THEN
-      restore_version := pgmemento.generate_log_entry($1, $2, $5, $6);
+      restore_version := pgmemento.generate_log_entry(0, $1, $5, $6, $2);
 
       -- get recent version of that row
       EXECUTE format(
