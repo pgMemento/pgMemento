@@ -130,7 +130,7 @@ only logging transaction metadata at the moment and not the data itself.
 
 A brief introduction about the different SQL files:
 * `DDL_LOG.sql` enables logging of schema changes (DDL statements)
-* `LOG_UTIL.sql` provides some helpe functions for handling the audited information
+* `LOG_UTIL.sql` provides some helper functions for handling the audited information
 * `REVERT.sql` contains procedures to rollback changes of a certain transaction and
 * `SCHEMA_MANAGEMENT.sql` includes functions to define constraints in the schema where tables have been restored
 * `SETUP.sql` contains DDL scripts for tables and basic setup functions

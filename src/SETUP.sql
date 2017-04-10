@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.4.2     2017-04-10   included parts from other scripts                   FKun
 -- 0.4.1     2017-03-15   empty JSONB diffs are not logged anymore            FKun
 --                        updated schema for DDL log tables
 -- 0.4.0     2017-03-05   updated JSONB functions                             FKun
@@ -43,6 +44,10 @@
 *   table_event_log
 *   transaction_log
 *
+* VIEWS:
+*   audit_tables
+*   audit_tables_dependency
+*
 * INDEXES:
 *   column_log_column_idx
 *   column_log_range_idx
@@ -69,6 +74,7 @@
 *   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   get_txid_bounds_to_table(table_name TEXT, schema_name TEXT DEFAULT 'public', OUT txid_min BIGINT, OUT txid_max BIGINT) RETURNS RECORD
 *   log_schema_state(schemaname TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *
@@ -227,6 +233,117 @@ CREATE SEQUENCE pgmemento.audit_id_seq
   CACHE 1
   NO CYCLE
   OWNED BY NONE;
+
+
+/***********************************************************
+* GET TXID BOUNDS TO TABLE
+*
+* A helper function to get highest and lowest logged
+* transaction id to an audited table 
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.get_txid_bounds_to_table(
+  table_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
+  OUT txid_min BIGINT,
+  OUT txid_max BIGINT
+  ) RETURNS RECORD AS
+$$
+SELECT min(transaction_id) AS txid_min, max(transaction_id) AS txid_max
+  FROM pgmemento.table_event_log e 
+    WHERE e.table_relid = ($2 || '.' || $1)::regclass::oid;
+$$
+LANGUAGE sql;
+
+
+/***********************************************************
+* AUDIT_TABLES VIEW
+*
+* A view that shows the user at which transaction auditing
+* has been started.
+***********************************************************/
+CREATE OR REPLACE VIEW pgmemento.audit_tables AS
+  SELECT
+    t.schemaname, t.tablename, b.txid_min, b.txid_max, 
+    CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
+      TRUE
+    ELSE
+      FALSE
+    END AS tg_is_active
+  FROM pg_class c
+  JOIN pg_namespace n ON c.relnamespace = n.oid
+  JOIN pg_tables t ON c.relname = t.tablename
+  JOIN pg_attribute a ON c.oid = a.attrelid
+  LEFT JOIN (
+    SELECT tgrelid, tgenabled FROM pg_trigger WHERE tgname = 'log_transaction_trigger'::name
+  ) AS tg
+  ON c.oid = tg.tgrelid
+  JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
+  ) b ON (true)
+    WHERE n.nspname = t.schemaname 
+      AND t.schemaname != 'pgmemento'
+      AND a.attname = 'audit_id'
+      ORDER BY schemaname, tablename;
+
+
+/***********************************************************
+* AUDIT_TABLES_DEPENDENCY VIEW
+*
+* This view is essential for reverting transactions.
+* pgMemento can only log one INSERT/UPDATE/DELETE event per
+* table per transaction which maps all changed rows to this
+* one event even though it belongs to a subsequent one. 
+* Therefore, knowledge about table dependencies is required
+* to not violate foreign keys.
+***********************************************************/
+CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
+  WITH RECURSIVE table_dependency(parent, child, schemaname, depth) AS (
+    SELECT DISTINCT ON (tc.table_name)
+      ccu.table_name AS parent,
+      tc.table_name AS child,
+      tc.table_schema AS schemaname,
+      1 AS depth 
+    FROM information_schema.table_constraints AS tc 
+    JOIN information_schema.key_column_usage AS kcu 
+      ON tc.constraint_name = kcu.constraint_name
+    JOIN information_schema.constraint_column_usage AS ccu 
+      ON ccu.constraint_name = tc.constraint_name
+    JOIN pgmemento.audit_tables a
+      ON a.tablename = tc.table_name
+     AND a.schemaname = tc.table_schema
+      WHERE constraint_type = 'FOREIGN KEY' 
+        AND tc.table_name <> ccu.table_name
+    UNION ALL
+      SELECT DISTINCT ON (tc.table_name)
+        ccu.table_name AS parent,
+        tc.table_name AS child,
+        tc.table_schema AS schemaname,
+        t.depth + 1 AS depth
+      FROM information_schema.table_constraints AS tc 
+      JOIN information_schema.key_column_usage AS kcu 
+        ON tc.constraint_name = kcu.constraint_name
+      JOIN information_schema.constraint_column_usage AS ccu 
+        ON ccu.constraint_name = tc.constraint_name
+      JOIN pgmemento.audit_tables a
+        ON a.tablename = tc.table_name
+       AND a.schemaname = tc.table_schema
+      JOIN table_dependency t 
+        ON t.child = ccu.table_name
+        WHERE constraint_type = 'FOREIGN KEY' 
+          AND t.child <> tc.table_name
+  )
+  SELECT schemaname, tablename, depth FROM (
+    SELECT schemaname, child AS tablename, max(depth) AS depth
+      FROM table_dependency
+      GROUP BY schemaname, child
+    UNION ALL
+      SELECT at.schemaname, at.tablename, 0 AS depth 
+        FROM pgmemento.audit_tables at
+        LEFT JOIN table_dependency d
+          ON d.child = at.tablename
+          WHERE d.child IS NULL
+  ) t
+  ORDER BY schemaname, depth, tablename;
 
 
 /**********************************************************
