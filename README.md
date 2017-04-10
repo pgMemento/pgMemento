@@ -160,10 +160,12 @@ other:
 To enable auditing for an entire database schema simply run the `INIT.sql`
 script. First, you are requested to specify the target schema. For the 
 second parameter you can define a set of tables you want to exclude from
-auditing (comma-separated list). As for the third parameter you can choose
-if newly created tables shall be enabled for auditing automatically. 
-`INIT.sql` also creates event triggers for the database to track schema
-changes of audited tables.
+auditing (comma-separated list). As for the third parameter you can decide
+to log already existing data as inserted. This is highly recommended in
+order to have a proper baseline the versioning can reflect on. Finally,
+you can choose if newly created tables shall be enabled for auditing
+automatically. `INIT.sql` also creates event triggers for the database to
+track schema changes of audited tables.
 
 Auditing can also be enabled manually for single tables using the 
 following function, which adds an additional audit_id column to the table
@@ -172,9 +174,23 @@ and creates triggers that are fired during DML changes.
 <pre>
 SELECT pgmemento.create_table_audit(
   'table_A',
-  'public'
+  'public',
+  1
 );
 </pre>
+
+With the last argument you define, if existing data is logged or not. 
+For each row in the audited tables another row will be written to the 
+'row_log' table telling the system that it has been 'inserted' at the 
+timestamp the procedure has been executed. Depending on the number of 
+tables to alter and on the amount of data that has to be defined as 
+INSERTed this process can take a while. With 0 nothing is logged in
+the first place. If you change your mind later, you can still call
+`pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
+
+**HINT:** When setting up a new database I would recommend to start 
+pgMemento after bulk imports. Otherwise the import will be slower and 
+several different timestamps might appear in the transaction_log table.
 
 If `INIT.sql` has not been used event triggers can be created by calling
 the following procedure:
@@ -186,24 +202,9 @@ SELECT pgmemento.create_schema_event_trigger(1);
 By passing a 1 to the procedure an additional event trigger for 
 `CREATE TABLE` events is created (not for `CREATE TABLE AS` events).
 
-**ATTENTION:** It is important to generate a proper baseline on which a
-table/database versioning can reflect on. Before you begin or continue
-to work with the database and change its content, define the present 
-state as the initial versioning state by executing the procedure
-`pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
-For each row in the audited tables another row will be written to the 
-'row_log' table telling the system that it has been 'inserted' at the 
-timestamp the procedure has been executed. Depending on the number of 
-tables to alter and on the amount of data that has to be defined as 
-INSERTed this process can take a while.
-
-**HINT:** When setting up a new database I would recommend to start 
-pgMemento after bulk imports. Otherwise the import will be slower and 
-several different timestamps might appear in the transaction_log table.
-
 Logging can be stopped and restarted by running the `STOP_AUDITING.sql`
-and `START_AUDITING.sql` scripts. Note that theses scripts do not affect
-(remove) the audit_id column in the logged tables.
+and `START_AUDITING.sql` scripts. Note that theses scripts do not 
+remove the audit_id column in the logged tables.
 
 
 ### 5.3. Uninstall pgMemento
@@ -279,14 +280,19 @@ UPDATEs).
 
 **ATTENTION:** Data is NOT logged if DDL statements are called from 
 functions because they can only be parsed if they sit in the top level 
-query!  
+query!
 
 If tables or columns are renamed data is not logged either, as it would
 not change anyway. Comments inside query strings that fire the event
 trigger are forbidden and will raise an exception. So far, changing the
 data type of columns will only log the complete column if the keyword 
-`USING` is found in the `ALTER TABLE` command. Also, note that 
-transactions altering of dropping columns can not be reverted so far.
+`USING` is found in the `ALTER TABLE` command. 
+
+Additionally, `CREATE TABLE` (op_id = 0), `ADD COLUMN` (op_id = 1) and
+`DROP TABLE` (op_id = 5) events are written to the `transaction_log`
+and `table_event_log` although no data log are referenced to them. For
+one of the next releases, it is planned to also revert such DDL events 
+like DML operations (see chapter 7).
 
 
 ### 6.3. Query the logs
