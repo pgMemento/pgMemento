@@ -445,8 +445,8 @@ BEGIN
   ) THEN
     IF $7 = 1 THEN
       IF $6 = 'TABLE' THEN
-        RAISE EXCEPTION 'Only VIEWs are updatable.'
-          USING HINT = 'Create another target schema when using TABLE as target table type.'; 
+        -- drop the table state
+        PERFORM drop_table_state($3, $5);
       ELSE
         replace_view := 'OR REPLACE ';
       END IF;
