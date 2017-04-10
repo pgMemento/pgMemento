@@ -154,8 +154,7 @@ LANGUAGE plpgsql;
 * AUDIT_TABLES VIEW
 *
 * A view that shows the user at which transaction auditing
-* has been started. This will be useful when switching the
-* production schema. (more functions to come in the near future)
+* has been started.
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT

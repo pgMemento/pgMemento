@@ -5,7 +5,7 @@
 pgMemento provides an audit trail for your data inside a PostgreSQL
 database using triggers and server-side functions written in PL/pgSQL.
 It also tracks DDL changes to enable schema versioning and offers
-powerful mechanism to restore or repair past revisions.
+powerful algorithms to restore or repair past revisions.
 
 
 ## Index
@@ -14,13 +14,17 @@ powerful mechanism to restore or repair past revisions.
 2. About
 3. System requirements
 4. Background & References
-5. How To
-6. Future Plans
-7. Media
-8. Developers
-9. Contact
-10. Special thanks
-11. Disclaimer
+5. Installation
+6. Logging behaviour
+7. Reverting transactions
+8. Restoring previous versions
+9. Branching
+10. Future Plans
+11. Media
+12. Developers
+13. Contact
+14. Special thanks
+15. Disclaimer
 
 
 ## 1. License
@@ -49,9 +53,9 @@ Logging only fragments can produce sparsely filled history/audit tables.
 Using a semistructured data type like JSONB can make the data logs more 
 compact. In general, using JSONB for auditing has another big advantage:
 The audit mechanism (triggers and audit tables) does not need to adapt
-to schema changes. Actually, you do not even need shadow tables for each 
-audited table. All logs can be written to one central table with a JSONB
-field. 
+to schema changes. Actually, you do not even need history tables for each 
+audited table (sometimes also called 'shadow tables'). All logs can be
+written to one central table with a JSONB field. 
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
 
@@ -120,7 +124,7 @@ and its [fork](https://github.com/pgaudit/pgaudit) by David Steele are
 only logging transaction metadata at the moment and not the data itself.
 
 
-## 5. How To
+## 5. Installation
 
 ### 5.1. Add pgMemento to a database
 
@@ -202,9 +206,15 @@ and `START_AUDITING.sql` scripts. Note that theses scripts do not affect
 (remove) the audit_id column in the logged tables.
 
 
-### 5.3. Logging behaviour
+### 5.3. Uninstall pgMemento
 
-#### 5.3.1. DML logging
+In order to remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
+script.
+
+
+## 6. Logging behaviour
+
+### 6.1. DML logging
 
 pgMemento uses two logging stages. The first trigger is fired before 
 each statement on each audited table. Every transaction is only logged 
@@ -251,19 +261,21 @@ TRUNCATE (op_id = 4) commands would cause logging of the complete rows
 while INSERTs (op_id = 1) would leave a the 'changes' field blank. 
 Thus, there is no data redundancy.
 
-#### 5.3.2. DDL logging
+
+### 6.2. DDL logging
 
 Since v0.3 pgMemento supports DDL logging to capture schema changes.
-This is important for restoring former table or database states (see 5.5).
-The two tables `audit_table_log` and `audit_column_log` in the pgMemento
-schema provide information at what range of transactions the audited 
-tables and their columns exist. After a table is altered or dropped an
-event trigger is fired to compare the recent state (at ddl_command_end) 
-with the logs. pgMemento also saves data before `DROP SCHEMA`, `DROP TABLE`,
-`DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING` events occur
-(at ddl_command_start). Dropping tables or schemas will lead to `TRUNCATE`
-actions whereas field changes will be logged as either `ALTER COLUMN` or
-`DROP COLUMN` events (both with op_id = 2 like UPDATEs).
+This is important for restoring former table or database states (see
+chapter 8). The two tables `audit_table_log` and `audit_column_log`
+in the pgMemento schema provide information at what range of transactions
+the audited tables and their columns exist. After a table is altered or 
+dropped an event trigger is fired to compare the recent state (at
+ddl_command_end) with the logs. pgMemento also saves data before 
+`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING`
+events occur (at ddl_command_start). Dropping tables or schemas will lead
+to `TRUNCATE` actions whereas field changes will be logged as either 
+`ALTER COLUMN` or `DROP COLUMN` events (both with op_id = 2 like 
+UPDATEs).
 
 **ATTENTION:** Data is NOT logged if DDL statements are called from 
 functions because they can only be parsed if they sit in the top level 
@@ -276,7 +288,8 @@ data type of columns will only log the complete column if the keyword
 `USING` is found in the `ALTER TABLE` command. Also, note that 
 transactions altering of dropping columns can not be reverted so far.
 
-### 5.4. Query the logs
+
+### 6.3. Query the logs
 
 The logged information can already be of use, e.g. list all transactions 
 that had an effect on a certain column by using the ? operator:
@@ -301,17 +314,17 @@ SELECT DISTINCT audit_id
     changes @> '{"column_B": "old_value"}'::jsonb;
 </pre>
 
-### 5.5. Revert certain transactions
+
+## 7. Revert certain transactions
 
 The logged information can be used to revert certain transactions that
 happened in the past. Reinsert deleted rows, remove imported data etc.
-The procedure is called `revert_transaction`.
-
-The procedure loops over each row that was affected by the given 
-transaction. For data integrity reasons the order of operations and 
-audit_ids is important. Imagine three tables A, B and C, with B and C
-referencing A. Deleting entries in A requires deleting depending rows
-in B and C. The order of events in one transaction can look like this:
+The procedure is called `revert_transaction`. It loops over each row
+that was affected by the given transaction. For data integrity reasons
+the order of operations and audit_ids is important. Imagine three
+tables A, B and C, with B and C referencing A. Deleting entries in A 
+requires deleting depending rows in B and C. The order of events in one
+transaction can look like this:
 
 <pre>
 Txid 1000
@@ -374,24 +387,56 @@ SELECT pgmemento.revert_distinct_transactions(lower_txid, upper_txid);
 </pre>
 
 
-### 5.6. Restore a past state of your database
+## 8. Restore a past states of tuples, tables and schemas
 
-A table state is restored with the procedure `pgmemento.restore_table_state
-(start_from_txid, end_at_txid, 'name_of_audited_table', 'name_of_audited_schema', 'name_for_target_schema', 'VIEW', 0)`: 
-* With a given range of transaction ids the user specifies the time slot
-  he is interested in. If the first value is lower than the minimum txid 
-  found in the transaction_log table a complete historic replica of the 
-  table is created (as it looked like **before** the second given txid 
-  has been executed). Note, that only then you are able to have a correct
-  view on a past state of your table.
-* The result is written to another schema specified by the user.
-* Tables can be restored as VIEWs (default) or TABLEs. 
-* If chosen VIEW the procedure can be executed again (e.g. by using
-  another transaction id) and would replace the old view(s) if the last
-  parameter is specified as 1.
-* A whole database state might be restored with `pgmemento.restore_schema_state`.
+The main motivation for having an audit trail might not be the ability
+to undo certain changes, but to simply browse through the history of 
+a tuple, table or even a whole database. When working with additional
+columns that specify the lifetime of different data versions (as most
+tools introduced in 4. do) this is easy by including these field into
+the WHERE clause.
 
-How does the restoring work? Imagine a time line like this:
+For a generic logging approach with only one central data log table the
+biggest challenge is to provide an interface which can be used as easy
+and intuitive like the shadow table design. pgMemento offers two ways:
+* Previous versions can be restored on-the-fly using a function
+* Previous version can restored as a VIEW or a TABLE in a separate 
+  database schema to be queried like a normal table.
+
+
+### 8.1. Thinking in transactions, not timestamps
+
+To address different versions of your data with pgMemento you have to
+think in transactions, not timestamps. Although, each transaction is
+logged with a timestamp, you still need to know the txid to filter the
+data changes. Especially when dealing with concurrent edits filtering
+only by timestamps could produce inconsistent views. Establishing
+versions based on transactions will produce a state of the data as the
+user has seen it when he applied the changes.
+
+**So, when pgMemento provides a function where the user can determine
+the state he wants to restore by passing a transaction id (txid) it
+addresses the version BEFORE the transaction excluding the changes of
+this transaction!**
+
+Nevertheless, as most users of an audit trail solution probably want
+to use timestamps to query the history of their database, they could
+get the next transaction id found after a given timestamp with this
+query:
+
+<pre>
+SELECT txid
+  FROM pgmemento.transaction_log
+    WHERE stmt_date >= '2017-02-22 16:00:00'
+    LIMIT 1
+) t;
+</pre>
+
+
+### 8.2. Restore internals
+
+In the following, it will be explained in depth how the restore process
+works internally? Imagine a time line like this:
 
 `1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8` [Transactions] <br/>
 `I -> U -> D -> I -> U -> U -> D -> now` [Operations] <br/>
@@ -429,37 +474,8 @@ In the 'row_log' table this would be logged as follows:
 | 99  | 81        | 555      | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
 | ... | ...       | ...      | ...                                                               |
 
-#### 5.6.1. The next transaction after date x
 
-As said in the beginning of this chapter the restore process requires a
-transaction ID as a starting point for browsing through the audited logs.
-Historic data will be restored as it has been when the transaction happend
-excluding the changes this transaction might produce. As most users of an
-audit trail solution are probably thinking in timestamps when querying 
-the history of their database, the `transaction_log` table can also be 
-queried using a timestamp. The next transaction id found after the given 
-timestamp can be used for restoring.
-
-<pre>
-SELECT pgmemento.restore_schema_state(
-  0 -- I'm using a 0 here to be sure I querying the complete history
-  t.txid,
-  'public',
-  'test',
-  'VIEW',
-  1
-FROM (
-  SELECT txid
-    FROM pgmemento.transaction_log
-      WHERE stmt_date >= '2017-02-22 16:00:00'
-      LIMIT 1
-) t;
-</pre>
-
-Imagine if a user knows the date before the update jobs happened. In this 
-case the result of the inner query would be 5.
-
-#### 5.6.2. Fetching audit_ids (done internally)
+#### 8.2.1. Fetching audit_ids
  
 For restoring, pgMemento needs to know which entries were valid when
 transaction 5 started. This can be done by a simple JOIN between the log
@@ -505,13 +521,14 @@ existing data is marked as INSERTed is really important because of this
 query. If there is no initial event found for an audit_id it will not be
 restored.
 
-#### 5.6.3. Find the right historic values
+
+#### 8.2.2. Find the right historic values
 
 For each fetched audit_id a row has to be reconstructed. This is where
 things become very tricky because the historic field values can be 
 scattered all throughout the row_log table due to the pgMemento's logging
-behaviour (see example in 5.6). For each column we need to find JSONB
-objects containing the column's name as a key. As learned in chapter 5.4
+behaviour (see example in 6.). For each column we need to find JSONB
+objects containing the column's name as a key. As learned in chapter 6.3
 we could seach for e.g. `(changes ? 'column_B')` plus the audit_id. This
 would give us two entries:
 
@@ -546,7 +563,8 @@ column could have been renamed or that the column could have been dropped.
 pgMemento takes this into account. If nothing is found at all (which
 would not be reasonable) the value will be NULL.
 
-#### 5.6.4. Window functions to bring it all together (done internally)
+
+#### 8.2.3. Window functions to bring it all together
 
 Until pgMemento v0.3 the retrieval of historic values was rolled out
 in seperate queries for each column. This was too inefficient for a 
@@ -560,9 +578,9 @@ SELECT
   value2,
   ...
 FROM (
-  ... -- subquery from 5.6.2. (extracted event_ids and audit_ids)
+  ... -- subquery from 8.2. (extracted event_ids and audit_ids)
 ) f
-JOIN LATERAL(
+JOIN LATERAL (
   SELECT
     q1.key AS key1, -- ID
     q1.value AS value1,
@@ -606,14 +624,13 @@ JOIN LATERAL(
   ON (true)
 </pre>
 
-Since v0.4 pgMemento uses a window function
-with `FILTER` clauses that were introduced in PostgreSQL 9.4. This allows
-for searching for different keys on same level of the query. A filter
-can only be used in conjunction with an aggregate function. Luckily,
-with jsonb_agg PostgreSQL offers a suitable function for the JSONB
-logs. The window is ordered by the ID of the row_log table to get
-the oldest log first. The window frame starts at the current row and
-has no upper boundary.
+Since v0.4 pgMemento uses a window function with `FILTER` clauses 
+that were introduced in PostgreSQL 9.4. This allows for searching for
+different keys on same level of the query. A filter can only be used
+in conjunction with an aggregate function. Luckily, with `jsonb_agg`
+PostgreSQL offers a suitable function for the JSONB logs. The window
+is ordered by the ID of the row_log table to get the oldest log first.
+The window frame starts at the current row and has no upper boundary.
 
 <pre>
 SELECT
@@ -648,7 +665,7 @@ FROM (
     ) AS value2,
     ...
   FROM (
-    ... -- subquery from 5.6.2. (extracted event_ids and audit_ids)
+    ... -- subquery from 8.2. (extracted event_ids and audit_ids)
   ) f
   LEFT JOIN
     pgmemento.row_log a 
@@ -663,24 +680,54 @@ FROM (
 </pre>
 
 Now, the row_log table and the audited table only appear once in the
-query. They have to be joined with an `OUTER JOIN` against the queried list
-of valid audit_ids because both could be missing an audit_id. As said,
-this is very unlikely. For each audit_id only the first entry of the
-result is of interest. This is done again with `DISTINCT ON`. As we are
-using a window query the extracted JSONB array for each key can contain
-all further historic values of the audit_id found in the logs
+query. They have to be joined with an `OUTER JOIN` against the queried
+list of valid audit_ids because both could be missing an audit_id. As 
+said, this is very unlikely. For each audit_id only the first entry of 
+the result is of interest. This is done again with `DISTINCT ON`. As we
+are using a window query the extracted JSONB array for each key can 
+contain all further historic values of the audit_id found in the logs
 (`ROW BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING`), no matter if we 
 strip out rows with `DISTINCT ON`. Only the first element if the array
 (`ORDER BY a.id`) is necessary. Therefore, it has to be extracted in the
 upper query with the `->>` operator.
 
-#### 5.6.5. Generating JSONB objects and recreate table (done internally)
+
+#### 8.2.4. Generating JSONB objects
 
 Now, that we got an alternating list of keys and values we could simply
 call the PostgreSQL function jsonb_build_object to produce complete
-tuples as JSONB. The last step of the restoring process is to bring these
-generated JSONB objects into a tabular representation. PostgreSQL offers
-the function `jsonb_populate_record` to do this job.
+tuples as JSONB.
+
+<pre>
+SELECT 
+  jsonb_build_object(
+    q.key1 , -- ID
+    q.value1->>0,
+    q.key2, -- column_B
+    q.value2->>0,
+    ...
+  ) AS log_entry
+FROM (
+  ... -- query from previous steps
+) q
+</pre>
+
+To get the whole query described in the last chapters call
+`pgmemento.restore_query`. As for the first two arguments it takes two
+txids specifying the transaction range you are interested in. Then you
+need to name the table and the schema, optionally followed by an 
+audit_id, if you are only interested in a certain tuple. But, this 
+function only returns the query string. You should use it along with
+`pgmemento.generate_log_entry` to return single tuples as JSONB objects
+or `pgmemento.generate_log_entries` to return a setof JSONB records
+(see examples in next chapter).
+
+
+### 8.3. From JSONB back to relational data
+
+The last step of the restoring process is to bring these generated JSONB
+objects into a tabular representation. PostgreSQL offers the function 
+`jsonb_populate_record` to do this job.
 
 <pre>
 SELECT * FROM jsonb_populate_record(null::table_A, jsonb_object);
@@ -694,55 +741,29 @@ The solution is to use a `LATERAL JOIN`:
 
 <pre>
 SELECT 
-  p.*
-FROM (
-  SELECT 
-    jsonb_build_object(
-      q.key1 , -- ID
-      q.value1->>0,
-      q.key2, -- column_B
-      q.value2->>0,
-      ...
-    ) AS log_entry
-  FROM (
-    ... -- query from previous steps
-  ) q
-) rq
+  p.* 
+FROM 
+  generate_log_entries(
+    0,
+    5,
+    'my_table',
+    'public'
+  ) AS entries
 JOIN LATERAL (
   SELECT 
-    * 
+    *
   FROM
     jsonb_populate_record(
-      null::table_A, -- template table
-      rq.log_entry   -- reconstructed row as JSONB
-    )
+       null::public.my_table,
+       entries
+	)
 ) p
-  ON (true)
+ON (true);
 </pre>
 
-This is also the moment when the DDL log tables are getting relevant.
-In order to produce a correct historic replica of a table, the table 
-schema for the requested time (transaction) window has to be known.
-The upper transaction boundary is used to query the `audit_column_log`
-table to reconstruct a template that reflects the historic table schema. 
-
-The template are created as temporary tables. This means when restoring
-the audited tables as VIEWs they only exist as long as the current
-sessions lasts (`ON COMMIT PRESERVE ROWS`). When creating a new session
-the restore procedure has to be called again. It doesn't matter if the
-target schema already exist. When restoring the audited tables as BASE 
-TABLEs, they will of course remain in the target schema but occupying
-extra disk space.
-
-#### 5.6.6. Restore revisions of a certain tuple or table on-the-fly
-
-It is also possible to restore only revisions of a certain tuple or
-table with the function `pgmemento.generate_log_entry` or
-`pgmemento.generate_log_entries`. Both functions require a range of
-transaction IDs the user is interested in and the corresponding table
-and schema name. With the audit_id, `generate_log_entry` takes one
-more additional argument to specify the tuple. With the following
-query, it is possible to look at all revisions of one tuple.
+With the following query, it is possible to look at all revisions of 
+one tuple. As in chapter 8.2.1 we use 0 as the lower boundary for the 
+transaction id range to get all revisions.
 
 <pre>
 SELECT 
@@ -781,7 +802,91 @@ JOIN LATERAL (
 </pre>
 
 
-#### 5.6.7. Work with the past state
+### 8.4 Creating restore templates
+
+In the last two query examples the recent table schema has been used as
+the template for the `jsonb_populate_record` function. This will only
+work if the schema of the table has not changed over time. In order to
+produce a correct historic replica of a table, the table schema for the
+requested time (transaction) window has to be known. Now, the DDL log
+tables are getting important.
+
+The restore functions of pgMemento query the `audit_column_log` table
+to put the historic table schema together. A matching template to this
+process can be created with the `pgmemento.create_restore_template`
+function.
+
+<pre>
+SELECT create_restore_template(
+  5, 'my_template', 'my_table', 'public', 1
+);
+</pre>
+
+Again, the first argument specifies the transaction id to return to.
+With the second argument you choose the name of the template which
+should be used later for `jsonb_populate_record`. Templates are created
+as temporary tables. To preserve a table on commit, choose 1 as the last
+argument. The template will live as long as the current database session.
+The default is 0 which means `ON COMMIT DROP`. This is only useful when
+combining the template creation with other process steps during one
+transaction (see next chapter). 
+
+
+### 8.5 Restore table states in separate schemas as VIEWs or TABLEs
+
+For reasons of convenience pgMemento provides the function 
+`pgmemento.restore_table_state` which combines the previous steps to
+produce a historic VIEW or TABLE in another database schema.
+
+<pre>
+SELECT pgmemento.restore_table_state(
+  0, 
+  5, 
+  'my_table',
+  'public',
+  'target_schema',
+  'VIEW',
+  1
+)
+</pre>
+
+This function can also be called on behalf of a whole schema with
+`pgmemento.restore_schema_state`. When restoring audited tables as
+VIEWs they only exist as long as the current sessions lasts
+(`ON COMMIT PRESERVE ROWS`). When creating a new session the restore
+procedure must be called again. When restoring the audited tables as
+BASE TABLEs, they will remain in the target schema but occupying extra
+disk space.
+
+Restoring can be run multiple times against the same schema, if the last
+argument of `pgmemento.restore_table_state` is set to 1. This replaces
+existing VIEWs or drops restored TABLEs with `pgmemento.drop_table_state`.
+It does not matter if the target schema already exist.
+
+
+## 9. Branching
+
+So far, pgMemento does not enable hierarchical versioning where users can
+work in separate branches and merge different versions with each other.
+This is a feature, I had in mind since I've started the development. So,
+you can find some prerequisites here and there in the code.
+
+* There is only one global sequence for audit_ids. This would be useful
+  to reference tuples accross separate branches.
+* Function `pgmemento.move_table_state` can be used to copy a whole
+  schema. This sets the foundation for intitializing a branch. Probably
+  I should use `CREATE TABLE ... LIKE` to copy also constraints, indexes,
+  triggers etc.
+* There a couple of functions to add constraints, column definitions,
+  indexes and sequences to a a restored state (see next chapter).
+* Code from `revert_transaction` might be useful for merging changes
+  (ergo logs) into another branch.
+* The `audit_tables` VIEW was intended to help for switching the
+  production state to a restored schema. With the improvements on
+  reverting transaction, this idea has been dropped.
+
+
+### 9.1. Work with a past state
 
 If past states were restored as tables they do not have primary keys 
 or indexes assigned to them. References between tables are lost as well. 
@@ -797,16 +902,10 @@ over time it might not be possible to recreate constraints and indexes as
 their metadata is not yet logged by pgMemento. 
 
 
-### 5.7. Uninstall pgMemento
-
-In order to stop and remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
-script.
-
-
-## 6. Future Plans
+## 10. Future Plans
 
 Here are some plans I have for the next release:
-* Have a test logic for all procedures
+* Have a test logic for all procedures to enable continious integration
 * Add revert for DDL changes
 * Have log tables for primary keys, constraints, indexes etc.
 * Have a view to store metadata of additional created schemas
@@ -814,6 +913,7 @@ Here are some plans I have for the next release:
 
 General thoughts:
 * Better protection for log tables?
+* How hard would it be to enable branching?
 * Table partitioning strategy for row_log table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
 * Build a pgMemento PostgreSQL extension
 
@@ -823,7 +923,7 @@ Together we might create a powerful, easy-to-use versioning approach for
 PostgreSQL.
 
 
-## 7. Media
+## 11. Media
 
 I gave a presentation in german at FOSSGIS 2015:
 https://www.youtube.com/watch?v=EqLkLNyI6Yk
@@ -832,17 +932,17 @@ I gave another presentation in FOSSGIS-NA 2016:
 http://slides.com/fxku/pgmemento_foss4gna16
 
 
-## 8. Developers
+## 12. Developers
 
 Felix Kunde
 
 
-## 9. Contact
+## 13. Contact
 
 felix-kunde@gmx.de
 
 
-## 10. Special Thanks
+## 14. Special Thanks
 
 * Petra Sauer (Beuth University of Applied Sciences) --> For support and discussions on a pgMemento research paper  
 * Adam Brusselback --> benchmarking and bugfixing
@@ -854,7 +954,7 @@ felix-kunde@gmx.de
 * Ugur Yilmaz --> feedback and suggestions
 
 
-## 11. Disclaimer
+## 15. Disclaimer
 
 pgMemento IS PROVIDED "AS IS" AND "WITH ALL FAULTS." 
 I MAKE NO REPRESENTATIONS OR WARRANTIES OF ANY KIND CONCERNING THE 
