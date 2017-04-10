@@ -39,8 +39,6 @@
 *   create_restore_template(tid BIGINT, template_name TEXT, table_name TEXT, schema_name TEXT, preserve_template INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   generate_log_entries(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT) RETURNS SETOF jsonb
 *   generate_log_entry(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT, aid BIGINT) RETURNS jsonb
-*   log_schema_state(schemaname TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   restore_query(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL) RETURNS TEXT
 *   restore_schema_state(start_from_tid BIGINT, end_at_tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state INTEGER DEFAULT '0') RETURNS SETOF VOID
@@ -528,86 +526,5 @@ SELECT pgmemento.restore_table_state(
 ) FROM pgmemento.audit_table_log 
   WHERE schema_name = $3
     AND txid_range @> $2::numeric;
-$$
-LANGUAGE sql;
-
-
-/**********************************************************
-* LOG TABLE STATE
-*
-* Log table content in the audit_log table (as inserted values)
-* to have a baseline for table versioning.
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
-  original_table_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
-  ) RETURNS SETOF VOID AS
-$$
-DECLARE
-  is_empty INTEGER := 0;
-  e_id INTEGER;
-  pkey_columns TEXT := '';
-BEGIN
-  -- first, check if table is not empty
-  EXECUTE format(
-    'SELECT 1 FROM %I.%I LIMIT 1',
-    $2, $1)
-    INTO is_empty;
-
-  IF is_empty <> 0 THEN
-    -- fill transaction_log table 
-    INSERT INTO pgmemento.transaction_log
-      (txid, stmt_date, user_name, client_name)
-    VALUES 
-      (txid_current(), statement_timestamp(), current_user, inet_client_addr())
-    ON CONFLICT (txid)
-      DO NOTHING;
-
-    -- fill table_event_log table  
-    INSERT INTO pgmemento.table_event_log
-      (transaction_id, op_id, table_operation, table_relid) 
-    VALUES
-      (txid_current(), 1, 'INSERT', ($2 || '.' || $1)::regclass::oid)
-    ON CONFLICT (transaction_id, table_relid, op_id)
-      DO NOTHING
-      RETURNING id INTO e_id;
-
-    -- fill row_log table
-    IF e_id IS NOT NULL THEN
-      -- get the primary key columns
-      SELECT array_to_string(array_agg(pga.attname),',') INTO pkey_columns
-        FROM pg_index pgi, pg_class pgc, pg_attribute pga 
-          WHERE pgc.oid = ($2 || '.' || $1)::regclass::oid
-            AND pgi.indrelid = pgc.oid 
-            AND pga.attrelid = pgc.oid 
-            AND pga.attnum = ANY(pgi.indkey) AND pgi.indisprimary;
-
-      IF pkey_columns IS NOT NULL THEN
-        pkey_columns := ' ORDER BY ' || pkey_columns;
-      END IF;
-
-      EXECUTE format(
-        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-           SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I' || pkey_columns,
-           $2, $1) USING e_id;
-    END IF;
-  END IF;
-END;
-$$
-LANGUAGE plpgsql;
-
--- perform log_table_state on multiple tables in one schema
-CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
-  schemaname TEXT DEFAULT 'public'
-  ) RETURNS SETOF VOID AS
-$$
-SELECT pgmemento.log_table_state(a.table_name, a.schema_name)
-  FROM pgmemento.audit_table_log a, pgmemento.audit_tables_dependency d
-    WHERE a.schema_name = d.schemaname
-      AND a.table_name = d.tablename
-      AND a.schema_name = $1
-      AND d.schemaname = $1
-      AND upper(txid_range) IS NULL
-      ORDER BY d.depth;
 $$
 LANGUAGE sql;
