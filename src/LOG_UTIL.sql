@@ -15,13 +15,13 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                 | Author
--- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added json_merge   FKun
--- 0.4.0     2017-03-06   new view for table dependencies               FKun
--- 0.3.0     2016-04-14   reflected changes in log tables               FKun
--- 0.2.1     2016-04-05   additional column in audit_tables view        FKun
--- 0.2.0     2016-02-15   get txids done right                          FKun
--- 0.1.0     2015-06-20   initial commit                                FKun
+-- Version | Date       | Description                                  | Author
+-- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added jsonb_merge   FKun
+-- 0.4.0     2017-03-06   new view for table dependencies                FKun
+-- 0.3.0     2016-04-14   reflected changes in log tables                FKun
+-- 0.2.1     2016-04-05   additional column in audit_tables view         FKun
+-- 0.2.0     2016-02-15   get txids done right                           FKun
+-- 0.1.0     2015-06-20   initial commit                                 FKun
 --
 
 /**********************************************************

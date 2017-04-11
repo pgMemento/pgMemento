@@ -168,7 +168,7 @@ automatically. `INIT.sql` also creates event triggers for the database to
 track schema changes of audited tables.
 
 Auditing can also be enabled manually for single tables using the 
-following function, which adds an additional audit_id column to the table
+following function, which adds an additional `audit_id` column to the table
 and creates triggers that are fired during DML changes.
 
 <pre>
@@ -181,7 +181,7 @@ SELECT pgmemento.create_table_audit(
 
 With the last argument you define, if existing data is logged or not. 
 For each row in the audited tables another row will be written to the 
-'row_log' table telling the system that it has been 'inserted' at the 
+`row_log` table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed. Depending on the number of 
 tables to alter and on the amount of data that has to be defined as 
 INSERTed this process can take a while. With 0 nothing is logged in
@@ -190,7 +190,7 @@ the first place. If you change your mind later, you can still call
 
 **HINT:** When setting up a new database I would recommend to start 
 pgMemento after bulk imports. Otherwise the import will be slower and 
-several different timestamps might appear in the transaction_log table.
+several different timestamps might appear in the `transaction_log` table.
 
 If `INIT.sql` has not been used event triggers can be created by calling
 the following procedure:
@@ -204,7 +204,7 @@ By passing a 1 to the procedure an additional event trigger for
 
 Logging can be stopped and restarted by running the `STOP_AUDITING.sql`
 and `START_AUDITING.sql` scripts. Note that theses scripts do not 
-remove the audit_id column in the logged tables.
+remove the `audit_id` column in the logged tables.
 
 
 ### 5.3. Uninstall pgMemento
@@ -234,8 +234,8 @@ Within the trigger procedure the corresponding INSERT, UPDATE, DELETE or
 TRUNCATE event for the current transaction is queried and each row is 
 mapped against it.
 
-For example, an UPDATE command on 'table_A' changing the value of some 
-rows of 'column_B' to 'new_value' will appear in the log tables like this:
+For example, an UPDATE command on `table_A` changing the value of some 
+rows of `column_B` to `new_value` will appear in the log tables like this:
 
 TRANSACTION_LOG
 
@@ -257,9 +257,9 @@ ROW_LOG
 | 2   | 1         | 556      | {"column_B":"old_value"} |
 | 3   | 1         | 557      | {"column_B":"old_value"} |
 
-As you can see only the changes are logged. DELETE (op_id = 3) and
-TRUNCATE (op_id = 4) commands would cause logging of the complete rows
-while INSERTs (op_id = 1) would leave a the 'changes' field blank. 
+As you can see only the changes are logged. DELETE (`op_id` = 3) and
+TRUNCATE (`op_id` = 4) commands would cause logging of the complete rows
+while INSERTs (`op_id` = 1) would leave a the `changes` field blank. 
 Thus, there is no data redundancy.
 
 
@@ -275,7 +275,7 @@ ddl_command_end) with the logs. pgMemento also saves data before
 `DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING`
 events occur (at ddl_command_start). Dropping tables or schemas will lead
 to `TRUNCATE` actions whereas field changes will be logged as either 
-`ALTER COLUMN` or `DROP COLUMN` events (both with op_id = 2 like 
+`ALTER COLUMN` or `DROP COLUMN` events (both with `op_id` = 2 like 
 UPDATEs).
 
 **ATTENTION:** Data is NOT logged if DDL statements are called from 
@@ -288,8 +288,8 @@ trigger are forbidden and will raise an exception. So far, changing the
 data type of columns will only log the complete column if the keyword 
 `USING` is found in the `ALTER TABLE` command. 
 
-Additionally, `CREATE TABLE` (op_id = 0), `ADD COLUMN` (op_id = 1) and
-`DROP TABLE` (op_id = 5) events are written to the `transaction_log`
+Additionally, `CREATE TABLE` (`op_id` = 0), `ADD COLUMN` (`op_id` = 1)
+and `DROP TABLE` (`op_id` = 5) events are written to the `transaction_log`
 and `table_event_log` although no data log are referenced to them. For
 one of the next releases, it is planned to also revert such DDL events 
 like DML operations (see chapter 7).
@@ -298,7 +298,7 @@ like DML operations (see chapter 7).
 ### 6.3. Query the logs
 
 The logged information can already be of use, e.g. list all transactions 
-that had an effect on a certain column by using the ? operator:
+that had an effect on a certain column by using the `?` operator:
 
 <pre>
 SELECT t.txid 
@@ -311,7 +311,7 @@ SELECT t.txid
     (r.changes ? 'column_B');
 </pre>
 
-List all rows that once had a certain value by using the @> operator:
+List all rows that once had a certain value by using the `@>` operator:
 
 <pre>
 SELECT DISTINCT audit_id 
@@ -319,6 +319,27 @@ SELECT DISTINCT audit_id
   WHERE 
     changes @> '{"column_B": "old_value"}'::jsonb;
 </pre>
+
+To get all changes per `audit_id` of one transaction as one row of
+JSONB you can use the `pgmemento.jsonb_merge` function as an aggregate
+or window function. When combining it with an ordering by the `row_log`
+ID it is possible to see the first or the last changes per field.
+
+<pre>
+SELECT DISTINCT ON (r.audit_id)
+  pgmemento.jsonb_merge(r.changes) OVER () AS changes
+FROM pgmemento.row_log r
+JOIN pgmemento.table_event_log e 
+  ON e.id = r.event_id
+JOIN pgmemento.transaction_log t
+  ON t.txid = e.transaction_id
+WHERE
+  t.txid = 1000000
+ORDER BY
+  r.audit_id,
+  r.id -- this would give you the oldest changes/logs per field
+;
+</pre> 
 
 
 ## 7. Revert certain transactions
@@ -365,11 +386,11 @@ Revert Txid 1000
 For INSERTs and UPDATEs the reverse depth order is used. The same
 distinction is used when resolving self-references on tables. A parent
 element must be inserted before the tuples that are referencing it. 
-The parent naturally has got a lower audit_id value. When reverting
-INSERTs (younger) tuples with a higher audit_id need to be deleted first. 
-When reverting DELETEs (older) tuples with a lower audit_id need to be
-reinserted first. The ordering of audit_ids is partitioned by the
-diffenrent events.
+The parent naturally has got a lower `audit_id` value. When reverting
+INSERTs (younger) tuples with a higher `audit_id` need to be deleted
+first. When reverting DELETEs (older) tuples with a lower `audit_id`
+need to be reinserted first. The ordering of audit_ids is partitioned
+by the diffenrent events.
 
 Reverting also works if foreign keys are set to `ON UPDATE CASCADE` or
 `ON DELETE CASCADE` because the `audit_tables_dependency` produces the
@@ -385,8 +406,8 @@ SELECT pgmemento.revert_transactions(lower_txid, upper_txid);
 It uses nearly the same query but with an additional ordering by 
 transaction ids (DESC). When reverting many transactions an alternative 
 procedure can be used called `revert_distinct_transaction`. For each
-distinct audit_it only the oldest table operation is applied to make the
-revert process faster. It is also provided for transaction ranges.
+distinct audit_it only the oldest table operation is applied to make
+the revert process faster. It is also provided for transaction ranges.
 
 <pre>
 SELECT pgmemento.revert_distinct_transactions(lower_txid, upper_txid);
@@ -465,7 +486,7 @@ UPDATE table_a SET column_C = 'def';
 DELETE FROM table_a WHERE id = 1;
 </pre>
 
-In the 'row_log' table this would be logged as follows:
+In the `row_log` table this would be logged as follows:
 
 | ID  | event_id  | audit_id | changes                                                           |
 | --- |:---------:|:--------:|:-----------------------------------------------------------------:|
@@ -520,30 +541,30 @@ WHERE f.op_id < 3
 )
 </pre>
 
-For audit_id 555 this query would tell us that the row did exist before
-transaction 5 and that its last event had been an INSERT (op_id = 1)
+For `audit_id` 555 this query would tell us that the row did exist before
+transaction 5 and that its last event had been an INSERT (`op_id` = 1)
 event with the ID 4. As said in 5.2. having a baseline where already
 existing data is marked as INSERTed is really important because of this
-query. If there is no initial event found for an audit_id it will not be
+query. If there is no initial event found for an `audit_id` it will not be
 restored.
 
 
 #### 8.2.2. Find the right historic values
 
-For each fetched audit_id a row has to be reconstructed. This is where
+For each fetched `audit_id` a row has to be reconstructed. This is where
 things become very tricky because the historic field values can be 
-scattered all throughout the row_log table due to the pgMemento's logging
-behaviour (see example in 6.). For each column we need to find JSONB
-objects containing the column's name as a key. As learned in chapter 6.3
-we could seach for e.g. `(changes ? 'column_B')` plus the audit_id. This
-would give us two entries:
+scattered all throughout the `row_log` table due to the pgMemento's
+logging behaviour (see example in 6.). For each column we need to find
+JSONB objects containing the column's name as a key. As learned in
+chapter 6.3 we could seach for e.g. `(changes ? 'column_B')` plus the
+`audit_id`. This would give us two entries:
 
 | changes                                                           |
 | ----------------------------------------------------------------- |
 | {"column_B":"some_value"}                                         |
 | {"ID":1,"column_B":"final_value","column_C":"def","audit_id":555} |
 
-By sorting on the internal ID of the row_log table we get the correct 
+By sorting on the internal ID of the `row_log` table we get the correct 
 historic order of these logs. The value in the event_id column must be
 bigger than the event ID we have extracted in the previous step. 
 Otherwise, we would also get the logs of former revisions which are
@@ -556,7 +577,7 @@ This log has been produced by the UPDATE event of transaction 5. Thus,
 before transaction 5 `column_B` had the value "some_value". This is what
 we have asked for. We do the same query for all the other columns. For
 `column_C` we find the log `{"column_C":"abc"}`. So, the historic value
-before transaction 5 has been "abc". For columns ID and audit_id there
+before transaction 5 has been "abc". For columns ID and `audit_id` there
 is only one JSONB log found: The entire row, generated by the DELETE 
 query of transaction 7. We can also find other values for the two fields
 `column_B` and `column_C` in this log but they were created after
@@ -567,7 +588,7 @@ logs for e.g. the ID column. In this case, we need to query the recent
 state of the table. We would have to consider that the table or the
 column could have been renamed or that the column could have been dropped.
 pgMemento takes this into account. If nothing is found at all (which
-would not be reasonable) the value will be NULL.
+would not be reasonable) the value will be `NULL`.
 
 
 #### 8.2.3. Window functions to bring it all together
@@ -635,7 +656,7 @@ that were introduced in PostgreSQL 9.4. This allows for searching for
 different keys on same level of the query. A filter can only be used
 in conjunction with an aggregate function. Luckily, with `jsonb_agg`
 PostgreSQL offers a suitable function for the JSONB logs. The window
-is ordered by the ID of the row_log table to get the oldest log first.
+is ordered by the ID of the `row_log` table to get the oldest log first.
 The window frame starts at the current row and has no upper boundary.
 
 <pre>
@@ -685,13 +706,13 @@ FROM (
 ) q
 </pre>
 
-Now, the row_log table and the audited table only appear once in the
+Now, the `row_log` table and the audited table only appear once in the
 query. They have to be joined with an `OUTER JOIN` against the queried
-list of valid audit_ids because both could be missing an audit_id. As 
-said, this is very unlikely. For each audit_id only the first entry of 
+list of valid audit_ids because both could be missing an `audit_id`. As 
+said, this is very unlikely. For each `audit_id` only the first entry of 
 the result is of interest. This is done again with `DISTINCT ON`. As we
 are using a window query the extracted JSONB array for each key can 
-contain all further historic values of the audit_id found in the logs
+contain all further historic values of the `audit_id` found in the logs
 (`ROW BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING`), no matter if we 
 strip out rows with `DISTINCT ON`. Only the first element if the array
 (`ORDER BY a.id`) is necessary. Therefore, it has to be extracted in the
@@ -722,7 +743,7 @@ To get the whole query described in the last chapters call
 `pgmemento.restore_query`. As for the first two arguments it takes two
 txids specifying the transaction range you are interested in. Then you
 need to name the table and the schema, optionally followed by an 
-audit_id, if you are only interested in a certain tuple. But, this 
+`audit_id`, if you are only interested in a certain tuple. But, this 
 function only returns the query string. You should use it along with
 `pgmemento.generate_log_entry` to return single tuples as JSONB objects
 or `pgmemento.generate_log_entries` to return a setof JSONB records
@@ -920,7 +941,7 @@ Here are some plans I have for the next release:
 General thoughts:
 * Better protection for log tables?
 * How hard would it be to enable branching?
-* Table partitioning strategy for row_log table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
+* Table partitioning strategy for `row_log` table (maybe [pg_pathman](https://github.com/postgrespro/pg_pathman) can help)
 * Build a pgMemento PostgreSQL extension
 
 I would be very happy if there are other PostgreSQL developers out there
