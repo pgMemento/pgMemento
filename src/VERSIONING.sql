@@ -461,8 +461,6 @@ BEGIN
 
   -- create a temporary table used as template for jsonb_populate_record
   template_name := $3 || '_tmp' || trunc(random() * 99999 + 1);
-
-  -- create a temporary table used as template for jsonb_populate_record
   PERFORM pgmemento.create_restore_template($2, template_name, tab_name, tab_schema, CASE WHEN $6 = 'TABLE' THEN 0 ELSE 1 END);
 
   -- check if logging entries exist in the audit_log table
