@@ -16,7 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
--- 0.4.1     2017-04-10   moved VIEWs to SETUP.sql                      FKun
+-- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added json_merge   FKun
 -- 0.4.0     2017-03-06   new view for table dependencies               FKun
 -- 0.3.0     2016-04-14   reflected changes in log tables               FKun
 -- 0.2.1     2016-04-05   additional column in audit_tables view        FKun
@@ -27,6 +27,9 @@
 /**********************************************************
 * C-o-n-t-e-n-t:
 *
+* AGGREGATE:
+*   jsonb_merge(jsonb)
+*
 * FUNCTIONS:
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_table_event_log(tid BIGINT, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
@@ -36,6 +39,19 @@
 *   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT
 *
 ***********************************************************/
+
+/**********************************************************
+* JSONB MERGE
+*
+* Custom aggregate function to merge several JSONB logs
+* into one JSONB element eliminating redundant keys
+***********************************************************/
+CREATE AGGREGATE pgmemento.jsonb_merge(jsonb)
+(
+    sfunc = jsonb_concat(jsonb, jsonb),
+    stype = jsonb,
+    initcond = '{}'
+);
 
 /**********************************************************
 * GET TRANSACTION ID
