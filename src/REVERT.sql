@@ -319,7 +319,7 @@ BEGIN
       AND d.schemaname = a.schema_name
       ORDER BY dependency_order, q.event_id DESC, audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name, 1);
+    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
