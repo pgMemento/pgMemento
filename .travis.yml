@@ -1,11 +1,5 @@
 language: SQL
 
-services:
-    - postgresql
-
-addons:
-    postgresql: "9.6"
-
 before_script:
     - echo "deb http://apt.postgresql.org/pub/repos/apt/ precise-pgdg main" | sudo tee -a /etc/apt/sources.list
     - sudo apt-get install wget ca-certificates
@@ -15,6 +9,12 @@ before_script:
     - sudo apt-get install postgresql-9.6
     - psql -c 'create database pgmemento_test;' -U postgres
     - psql --version
+
+services:
+    - postgresql
+
+addons:
+    postgresql: "9.6"
 
 script:
     - psql -U postgres -d pgmemento_test -a -f INSTALL_PGMEMENTO.sql
