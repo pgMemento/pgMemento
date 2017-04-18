@@ -1,0 +1,7 @@
+language: PLpgSQL
+
+services:
+    - postgresql
+
+before_script:
+    - psql -c 'create database pgMemento_test;' -U postgres
