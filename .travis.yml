@@ -1,4 +1,4 @@
-language: PLpgSQL
+language: SQL
 
 services:
     - postgresql
