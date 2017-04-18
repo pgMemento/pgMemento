@@ -3,6 +3,9 @@ language: SQL
 services:
     - postgresql
 
+addons:
+    postgresql: "9.6"
+
 before_script:
     - psql -c 'create database pgmemento_test;' -U postgres
 
