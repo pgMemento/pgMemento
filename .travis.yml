@@ -8,6 +8,7 @@ addons:
 
 before_script:
     - psql -c 'create database pgmemento_test;' -U postgres
+    - psql --version
 
 script:
     - psql -U postgres -d pgmemento_test -a -f INSTALL_PGMEMENTO.sql
