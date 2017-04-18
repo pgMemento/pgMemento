@@ -1,5 +1,7 @@
 # pgMemento
 
+[![Build Status](https://travis-ci.org/pgMemento/pgMemento.svg?branch=master)](https://travis-ci.org/pgMemento/pgMemento)
+
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
 
 pgMemento provides an audit trail for your data inside a PostgreSQL
