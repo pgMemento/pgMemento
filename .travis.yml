@@ -5,3 +5,6 @@ services:
 
 before_script:
     - psql -c 'create database pgMemento_test;' -U postgres
+
+script:
+    - psql -U postgres -d pgMemento_test -a -f INSTALL_PGMEMENTO.sql
