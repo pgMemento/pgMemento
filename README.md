@@ -904,8 +904,8 @@ you can find some prerequisites here and there in the code.
   schema. This sets the foundation for intitializing a branch. Probably
   I should use `CREATE TABLE ... LIKE` to copy also constraints, indexes,
   triggers etc.
-* There a couple of functions to add constraints, column definitions,
-  indexes and sequences to a a restored state (see next chapter).
+* There are a couple of functions to add constraints, column definitions,
+  indexes and sequences to a restored state (see next chapter).
 * Code from `revert_transaction` might be useful for merging changes
   (ergo logs) into another branch.
 * The `audit_tables` VIEW was intended to help for switching the

@@ -18,3 +18,4 @@ addons:
 
 script:
     - psql -U postgres -d pgmemento_test -a -f INSTALL_PGMEMENTO.sql
+    - psql -U postgres -d pgmemento_test -a -f UNINSTALL_PGMEMENTO.sql
