@@ -683,7 +683,7 @@ FROM (
       -- no logs, no current value = NULL
       NULL
     ) AS value1,
-    'id'::text AS key2,
+    'column_B'::text AS key2,
     -- set value, use COALESCE to handle NULLs
     COALESCE(
       jsonb_agg(a.changes -> 'column_B')
