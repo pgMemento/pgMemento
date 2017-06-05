@@ -191,7 +191,7 @@ BEGIN
       || format('    %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
       -- value: query logs with given key
       || E'    COALESCE(\n'
-      || format(E'      jsonb_agg(a.changes -> %L) FILTER (WHERE a.changes ? %L) OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),\n',
+      || format(E'      jsonb_agg(a.changes -> %L) FILTER (WHERE a.changes ? %L) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW),\n',
            log_column.column_name, log_column.column_name
          );
 
