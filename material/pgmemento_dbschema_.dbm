@@ -45,7 +45,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="937" y="536.4"/>
+	<position x="943" y="533.4"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -130,7 +130,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="338" y="240"/>
+	<position x="294" y="240"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -154,7 +154,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="248" y="444"/>
+	<position x="262" y="444"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -170,28 +170,10 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="column_default">
 		<type name="text"/>
 	</column>
-	<column name="is_nullable">
-		<type name="varchar" length="3"/>
+	<column name="not_null">
+		<type name="boolean" length="3"/>
 	</column>
 	<column name="data_type">
-		<type name="text"/>
-	</column>
-	<column name="data_type_name">
-		<type name="text"/>
-	</column>
-	<column name="char_max_length">
-		<type name="integer"/>
-	</column>
-	<column name="numeric_precision">
-		<type name="integer"/>
-	</column>
-	<column name="numeric_precision_radix">
-		<type name="integer"/>
-	</column>
-	<column name="datetime_precision">
-		<type name="integer"/>
-	</column>
-	<column name="interval_type">
 		<type name="text"/>
 	</column>
 	<column name="txid_range">
@@ -285,7 +267,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
-<relationship name="rel_table_event_log_transaction_log" type="relfk"
+<relationship name="event_to_transaction" type="relfk"
 	 src-table="pgmemento.table_event_log"
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
@@ -300,11 +282,11 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<position x="-2.35999" y="0.799988"/>
 	</label>
 	<label ref-type="name-label">
-		<position x="153.976" y="-16.8485"/>
+		<position x="61.4757" y="-23.3485"/>
 	</label>
 </relationship>
 
-<relationship name="rel_row_log_table_event_log" type="relfk"
+<relationship name="changed_rows_to_event" type="relfk"
 	 src-table="pgmemento.row_log"
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
@@ -313,17 +295,17 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<position x="1373" y="569"/>
 	</line>
 	<label ref-type="name-label">
-		<position x="-120.024" y="-38.3485"/>
+		<position x="-142.524" y="-39.8485"/>
 	</label>
 </relationship>
 
-<relationship name="rel_audit_column_log_audit_table_log" type="relfk"
+<relationship name="audit_column_to_audit_table" type="relfk"
 	 src-table="pgmemento.audit_column_log"
 	 dst-table="pgmemento.audit_table_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="734" y="497"/>
-	<position x="734" y="274"/>
+		<position x="694" y="496"/>
+	<position x="696" y="273"/>
 	</line>
 	<label ref-type="src-label">
 		<position x="0.539978" y="-0.200012"/>
@@ -332,7 +314,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<position x="1.53998" y="-0.200012"/>
 	</label>
 	<label ref-type="name-label">
-		<position x="42.9757" y="-55.8485"/>
+		<position x="-4.02429" y="-54.3485"/>
 	</label>
 </relationship>
 
