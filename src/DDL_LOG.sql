@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
+-- 0.4.0     2017-07-12   reflect changes to audit_column_log table     FKun
 -- 0.3.2     2017-04-10   log also CREATE/DROP TABLE and ADD COLUMN     FKun
 --                        event in log tables (no data logging)
 -- 0.3.1     2017-03-31   data logging before ALTER COLUMN events       FKun
@@ -108,57 +109,81 @@ BEGIN
 
     -- insert columns of new audited table into 'audit_column_log'
     INSERT INTO pgmemento.audit_column_log 
-      (id, audit_table_id, column_name, ordinal_position, column_default, is_nullable, 
-       data_type, data_type_name, char_max_length, numeric_precision, numeric_precision_radix, numeric_scale, 
-       datetime_precision, interval_type, txid_range)
+      (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
     (
       SELECT 
         nextval('pgmemento.audit_column_log_id_seq') AS id,
-        tab_id AS audit_table_id, column_name, ordinal_position, column_default, is_nullable,
-        data_type, udt_name, character_maximum_length, numeric_precision, numeric_precision_radix, numeric_scale,
-        datetime_precision, interval_type, numrange(txid_current(), NULL, '[)') AS txid_range
-      FROM information_schema.columns
-        WHERE table_name = $1
-          AND table_schema = $2
+        tab_id AS audit_table_id,
+        a.attname AS column_name,
+        a.attnum AS ordinal_position,
+        d.adsrc AS column_default,
+        a.attnotnull AS not_null,
+        format_type(a.atttypid, a.atttypmod) AS data_type,
+        numrange(txid_current(), NULL, '[)') AS txid_range
+      FROM
+        pg_attribute a
+      LEFT JOIN
+        pg_attrdef d
+        ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+      WHERE
+        a.attrelid = ($2 || '.' || $1)::regclass
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        ORDER BY a.attnum
     );
   ELSIF $3 = 'ALTER' THEN
     -- get id from audit_table_log
-    SELECT id INTO tab_id
-      FROM pgmemento.audit_table_log
-        WHERE table_name = $1
-          AND schema_name = $2
-          AND upper(txid_range) IS NULL;
+    SELECT
+      id INTO tab_id
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      table_name = $1
+      AND schema_name = $2
+      AND upper(txid_range) IS NULL;
 
     -- EVENT: New column created
     -- insert columns that do not exist in audit_column_log table
     WITH added_columns AS (
       INSERT INTO pgmemento.audit_column_log
-        (id, audit_table_id, column_name, ordinal_position, column_default, is_nullable, 
-         data_type, data_type_name, char_max_length, numeric_precision, numeric_precision_radix, numeric_scale, 
-         datetime_precision, interval_type, txid_range)
+        (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
       (
         SELECT 
-          nextval('pgmemento.audit_column_log_id_seq') AS id, 
-          tab_id AS audit_table_id, col.column_name, col.ordinal_position, col.column_default, col.is_nullable,
-          col.data_type, col.udt_name, col.character_maximum_length, col.numeric_precision, col.numeric_precision_radix, col.numeric_scale,
-          col.datetime_precision, col.interval_type, numrange(txid_current(), NULL, '[)') AS txid_range
-        FROM information_schema.columns col 
+          nextval('pgmemento.audit_column_log_id_seq') AS id,
+          tab_id AS audit_table_id,
+          a.attname AS column_name,
+          a.attnum AS ordinal_position,
+          d.adsrc AS column_default,
+          a.attnotnull AS not_null,
+          format_type(a.atttypid, a.atttypmod) AS data_type,
+          numrange(txid_current(), NULL, '[)') AS txid_range
+        FROM
+          pg_attribute a
+        LEFT JOIN
+          pg_attrdef d
+          ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         LEFT JOIN (
-          SELECT a.table_name, c.column_name, a.schema_name
-            FROM pgmemento.audit_column_log c
-            JOIN pgmemento.audit_table_log a
-              ON a.id = c.audit_table_id
-              WHERE a.table_name = $1
-                AND a.schema_name = $2
-                AND upper(a.txid_range) IS NULL
-                AND upper(c.txid_range) IS NULL
-        ) acl
-          ON acl.table_name = col.table_name
-         AND acl.column_name = col.column_name
-         AND acl.schema_name = col.table_schema
-          WHERE col.table_name = $1
-            AND col.table_schema = $2
-            AND acl.column_name IS NULL
+          SELECT
+            a.table_name,
+            c.column_name,
+            a.schema_name
+          FROM
+            pgmemento.audit_column_log c
+          JOIN
+            pgmemento.audit_table_log a ON a.id = c.audit_table_id
+          WHERE
+            a.table_name = $1
+            AND a.schema_name = $2
+            AND upper(a.txid_range) IS NULL
+            AND upper(c.txid_range) IS NULL
+          ) acl
+          ON acl.column_name = a.attname
+        WHERE
+          a.attrelid = ($2 || '.' || $1)::regclass
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+		  AND acl.column_name IS NULL
+          ORDER BY a.attnum
       )
       RETURNING id
     )
@@ -172,96 +197,136 @@ BEGIN
     -- EVENT: Column dropped
     -- update txid_range for removed columns in audit_column_log table
     WITH dropped_columns AS (
-      SELECT c.id
-        FROM pgmemento.audit_table_log a
-        JOIN pgmemento.audit_column_log c
-          ON c.audit_table_id = a.id
-        LEFT JOIN (
-          SELECT column_name, table_name, table_schema
-            FROM information_schema.columns
-              WHERE table_name = $1
-                AND table_schema = $2
+      SELECT
+        c.id
+      FROM
+        pgmemento.audit_table_log a
+      JOIN
+        pgmemento.audit_column_log c ON c.audit_table_id = a.id
+      LEFT JOIN (
+        SELECT
+          attname AS column_name,
+          $1 AS table_name,
+          $2 AS schema_name
+        FROM
+          pg_attribute
+        WHERE
+          attrelid = ($2 || '.' || $1)::regclass
         ) col
-          ON col.column_name = c.column_name
-         AND col.table_name = a.table_name
-         AND col.table_schema = a.schema_name
-          WHERE a.table_name = $1
-            AND a.schema_name = $2
-            AND col.column_name IS NULL
-            AND upper(a.txid_range) IS NULL
-            AND upper(c.txid_range) IS NULL
+        ON col.column_name = c.column_name
+        AND col.table_name = a.table_name
+        AND col.schema_name = a.schema_name
+      WHERE
+        a.table_name = $1
+        AND a.schema_name = $2
+        AND col.column_name IS NULL
+        AND upper(a.txid_range) IS NULL
+        AND upper(c.txid_range) IS NULL
     )
-    UPDATE pgmemento.audit_column_log acl
-      SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
-      FROM dropped_columns dc
-        WHERE acl.id = dc.id;
+    UPDATE
+      pgmemento.audit_column_log acl
+    SET
+      txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+    FROM
+      dropped_columns dc
+    WHERE
+      acl.id = dc.id;
 
     -- EVENT: Column altered
     -- update txid_range for updated columns and insert new versions into audit_column_log table
     WITH updated_columns AS (
-      SELECT acl.id, acl.audit_table_id, col.column_name, col.ordinal_position, col.column_default, col.is_nullable,
-             col.data_type, col.udt_name, col.character_maximum_length, col.numeric_precision, col.numeric_precision_radix, col.numeric_scale,
-             col.datetime_precision, col.interval_type
-        FROM information_schema.columns col
-        JOIN (
-          SELECT c.*, a.table_name, a.schema_name
-            FROM pgmemento.audit_column_log c
-            JOIN pgmemento.audit_table_log a
-              ON a.id = c.audit_table_id
-              WHERE a.table_name = $1
-                AND a.schema_name = $2
-                AND upper(a.txid_range) IS NULL
-                AND upper(c.txid_range) IS NULL
+      SELECT
+        acl.id, acl.audit_table_id, col.column_name,
+        col.ordinal_position, col.column_default, col.not_null, col.data_type
+      FROM (
+        SELECT
+          a.attname AS column_name,
+          a.attnum AS ordinal_position,
+          d.adsrc AS column_default, a.attnotnull AS not_null,
+          format_type(a.atttypid, a.atttypmod) AS data_type,
+          $1 AS table_name,
+          $2 AS schema_name
+        FROM
+          pg_attribute a
+        LEFT JOIN
+          pg_attrdef d
+          ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+        WHERE
+          a.attrelid = ($2 || '.' || $1)::regclass
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+      ) col
+      JOIN (
+        SELECT
+          c.*,
+          a.table_name,
+          a.schema_name
+        FROM
+          pgmemento.audit_column_log c
+        JOIN
+          pgmemento.audit_table_log a
+          ON a.id = c.audit_table_id
+        WHERE
+          a.table_name = $1
+          AND a.schema_name = $2
+          AND upper(a.txid_range) IS NULL
+          AND upper(c.txid_range) IS NULL
         ) acl
-          ON col.column_name = acl.column_name
-         AND col.table_name = acl.table_name
-         AND col.table_schema = acl.schema_name
-          WHERE (
-               col.column_default <> acl.column_default
-            OR col.is_nullable <> acl.is_nullable
-            OR col.data_type <> acl.data_type
-            OR col.udt_name <> acl.data_type_name
-            OR col.character_maximum_length <> acl.char_max_length
-            OR col.numeric_precision <> acl.numeric_precision
-            OR col.numeric_precision_radix <> acl.numeric_precision_radix
-            OR col.numeric_scale <> acl.numeric_scale
-            OR col.datetime_precision <> acl.datetime_precision
-            OR col.interval_type <> acl.interval_type
-          )
-      ), insert_new_versions AS (
-        INSERT INTO pgmemento.audit_column_log
-          (id, audit_table_id, column_name, ordinal_position, column_default, is_nullable, 
-           data_type, data_type_name, char_max_length, numeric_precision, numeric_precision_radix, numeric_scale, 
-           datetime_precision, interval_type, txid_range)
-        (
-          SELECT
-            nextval('pgmemento.audit_column_log_id_seq') AS id,
-            audit_table_id, column_name, ordinal_position, column_default, is_nullable,
-            data_type, udt_name, character_maximum_length, numeric_precision, numeric_precision_radix, numeric_scale,
-            datetime_precision, interval_type, numrange(txid_current(), NULL, '[)') AS txid_range
-          FROM updated_columns
-        )
+        ON col.column_name = acl.column_name
+        AND col.table_name = acl.table_name
+        AND col.schema_name = acl.schema_name
+      WHERE (
+        col.column_default <> acl.column_default
+        OR col.not_null <> acl.not_null
+        OR col.data_type <> acl.data_type
       )
-      UPDATE pgmemento.audit_column_log acl
-        SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
-        FROM updated_columns uc
-          WHERE uc.id = acl.id;
+    ), insert_new_versions AS (
+      INSERT INTO pgmemento.audit_column_log
+        (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
+      (
+        SELECT
+          nextval('pgmemento.audit_column_log_id_seq') AS id,
+          audit_table_id,
+          column_name, 
+          ordinal_position,
+          column_default,
+          not_null,
+          data_type,
+          numrange(txid_current(), NULL, '[)') AS txid_range
+        FROM
+          updated_columns
+      )
+    )
+    UPDATE
+      pgmemento.audit_column_log acl
+    SET
+      txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+    FROM
+      updated_columns uc
+    WHERE
+      uc.id = acl.id;
   -- DROP scenario
   ELSE
     -- update txid_range for removed table in audit_table_log table
-    UPDATE pgmemento.audit_table_log
-      SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
-      WHERE table_name = $1
-        AND schema_name = $2
-        AND upper(txid_range) IS NULL
-        RETURNING id INTO tab_id;
+    UPDATE
+      pgmemento.audit_table_log
+    SET
+      txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+    WHERE
+      table_name = $1
+      AND schema_name = $2
+      AND upper(txid_range) IS NULL
+      RETURNING id INTO tab_id;
 
     IF tab_id IS NOT NULL THEN
       -- update txid_range for removed columns in audit_column_log table
-      UPDATE pgmemento.audit_column_log
-        SET txid_range = numrange(lower(txid_range), txid_current(), '[)') 
-        WHERE audit_table_id = tab_id
-          AND upper(txid_range) IS NULL;
+      UPDATE
+        pgmemento.audit_column_log
+      SET
+        txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+      WHERE
+        audit_table_id = tab_id
+        AND upper(txid_range) IS NULL;
     END IF;
   END IF;
 END;
@@ -306,13 +371,20 @@ BEGIN
 
   -- truncate tables to log the data
   FOR rec IN 
-    SELECT p.schemaname, p.tablename 
-      FROM pg_tables p
-      JOIN pgmemento.audit_tables_dependency d
-        ON p.schemaname = d.schemaname
-        AND p.tablename = d.tablename
-        WHERE p.schemaname = schema_name
-        ORDER BY p.schemaname, d.depth
+    SELECT
+      p.schemaname,
+      p.tablename 
+    FROM
+      pg_tables p
+    JOIN
+      pgmemento.audit_tables_dependency d
+      ON p.schemaname = d.schemaname
+      AND p.tablename = d.tablename
+    WHERE
+      p.schemaname = schema_name
+    ORDER BY
+      p.schemaname,
+      d.depth
   LOOP
     IF cascading THEN
       EXECUTE format('TRUNCATE %I.%I CASCADE', rec.schemaname, rec.tablename);
@@ -342,18 +414,25 @@ BEGIN
   LOOP
     -- first check if table is audited
     IF NOT EXISTS (
-      SELECT 1 FROM pgmemento.audit_tables
-        WHERE schemaname = obj.schema_name
-          AND tablename = split_part(obj.object_identity, '.' ,2)
+      SELECT
+        1
+      FROM
+        pgmemento.audit_tables
+      WHERE
+        schemaname = obj.schema_name
+        AND tablename = split_part(obj.object_identity, '.' ,2)
     ) THEN
       RETURN;
     ELSE
       -- check if affected table exists in 'audit_table_log' (with open range)
-      SELECT id INTO tab_id
-        FROM pgmemento.audit_table_log 
-          WHERE schema_name = obj.schema_name
-            AND table_name = split_part(obj.object_identity, '.' ,2)
-            AND upper(txid_range) IS NULL;
+      SELECT
+        id INTO tab_id
+      FROM
+        pgmemento.audit_table_log 
+      WHERE
+        schema_name = obj.schema_name
+        AND table_name = split_part(obj.object_identity, '.' ,2)
+        AND upper(txid_range) IS NULL;
 
       IF tab_id IS NULL THEN
         -- EVENT: if table got renamed "close" the old version
@@ -439,10 +518,13 @@ BEGIN
 
       -- check if table is audited and not ambiguous
       FOR schemaname IN
-        SELECT schema_name
-          FROM pgmemento.audit_table_log
-            WHERE table_name = tablename
-              AND upper(txid_range) IS NULL
+        SELECT
+          schema_name
+        FROM
+          pgmemento.audit_table_log
+        WHERE
+          table_name = tablename
+          AND upper(txid_range) IS NULL
       LOOP
         ntables := ntables + 1;
       END LOOP;
@@ -469,14 +551,17 @@ BEGIN
       IF do_next THEN
         IF columnname <> 'column' THEN
           IF EXISTS (
-            SELECT 1
-              FROM pgmemento.audit_column_log c,
-                   pgmemento.audit_table_log a
-                WHERE c.audit_table_id = a.id
-                  AND c.column_name = columnname
-                  AND a.table_name = tablename
-                  AND a.schema_name = schemaname
-                  AND upper(c.txid_range) IS NULL
+            SELECT
+              1
+            FROM
+              pgmemento.audit_column_log c,
+              pgmemento.audit_table_log a
+            WHERE
+              c.audit_table_id = a.id
+              AND c.column_name = columnname
+              AND a.table_name = tablename
+              AND a.schema_name = schemaname
+              AND upper(c.txid_range) IS NULL
           ) THEN
             -- try to log corresponding table event
             IF altering THEN
@@ -609,10 +694,13 @@ BEGIN
 
     -- check if table is audited and not ambiguous
     FOR schemaname IN
-      SELECT schema_name
-        FROM pgmemento.audit_table_log
-          WHERE table_name = tablename
-            AND upper(txid_range) IS NULL
+      SELECT
+        schema_name
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = tablename
+        AND upper(txid_range) IS NULL
     LOOP
       ntables := ntables + 1;
     END LOOP;

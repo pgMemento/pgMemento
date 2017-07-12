@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.0     2017-07-12   reflect changes to audit_column_log table           FKun
 -- 0.4.4     2017-04-07   split up restore code to different functions        FKun
 -- 0.4.3     2017-04-05   greatly improved performance for restoring          FKun
 --                        using window functions with a FILTER
@@ -167,7 +168,7 @@ BEGIN
 
   -- loop over all columns and query the historic value for each column separately
   FOR log_column IN 
-    SELECT column_name, ordinal_position, data_type, data_type_name
+    SELECT column_name, ordinal_position, data_type
       FROM pgmemento.audit_column_log 
         WHERE audit_table_id = tab_id
           AND txid_range @> $2::numeric
@@ -202,7 +203,6 @@ BEGIN
         WHERE audit_table_id = new_tab_id
           AND ordinal_position = log_column.ordinal_position
           AND data_type = log_column.data_type
-          AND data_type_name = log_column.data_type_name
           AND upper(txid_range) IS NULL;
 
     IF new_tab_upper_txid IS NOT NULL OR new_column_name IS NULL THEN
@@ -275,7 +275,7 @@ BEGIN
     -- order by oldest log entry for given audit_id
     || '    ORDER BY a.audit_id, '
     || CASE WHEN join_recent_state THEN
-         'x.audit_id, '
+         'x.audit_id,'
        ELSE
          ''
        END
@@ -355,8 +355,7 @@ DECLARE
 BEGIN
   -- get columns that exist at transaction with id end_at_tid
   FOR log_column IN
-    SELECT c.column_name, c.column_default, c.is_nullable, c.data_type_name, c.char_max_length, 
-           c.numeric_precision, c.numeric_scale, c.datetime_precision, c.interval_type
+    SELECT c.column_name, c.column_default, c.not_null, c.data_type
       FROM pgmemento.audit_column_log c
       JOIN pgmemento.audit_table_log t ON t.id = c.audit_table_id
         WHERE t.schema_name = $4
@@ -365,22 +364,9 @@ BEGIN
           AND c.txid_range @> $1::numeric
           ORDER BY ordinal_position
   LOOP
-    ddl_command := ddl_command || delimiter || log_column.column_name || ' ' || log_column.data_type_name ||
-    CASE WHEN log_column.char_max_length IS NOT NULL
-      THEN '('||log_column.char_max_length||')' ELSE '' END ||
-    CASE WHEN log_column.numeric_precision IS NOT NULL 
-      AND log_column.data_type_name = 'numeric' 
-      THEN '('||log_column.numeric_precision||','||log_column.numeric_scale||')' ELSE '' END ||
-    CASE WHEN log_column.datetime_precision IS NOT NULL 
-      AND NOT log_column.data_type_name = 'date' 
-      AND log_column.interval_type IS NULL 
-      THEN '('||log_column.datetime_precision||')' ELSE '' END ||
-    CASE WHEN log_column.interval_type IS NOT NULL 
-      THEN ' ' || log_column.interval_type ELSE '' END ||
-    CASE WHEN log_column.is_nullable IS NOT NULL 
-      THEN ' NOT NULL' ELSE '' END ||
-    CASE WHEN log_column.column_default IS NOT NULL 
-      THEN ' DEFAULT ' || log_column.column_default ELSE '' END;
+    ddl_command := ddl_command || delimiter || log_column.column_name || ' ' || log_column.data_type ||
+    CASE WHEN log_column.not_null THEN ' NOT NULL' ELSE '' END ||
+    CASE WHEN log_column.column_default IS NOT NULL THEN ' DEFAULT ' || log_column.column_default ELSE '' END;
     delimiter := ',';
   END LOOP;
 

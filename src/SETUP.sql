@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.0     2017-07-12   simplified schema for audit_column_log              FKun
 -- 0.4.2     2017-04-10   included parts from other scripts                   FKun
 -- 0.4.1     2017-03-15   empty JSONB diffs are not logged anymore            FKun
 --                        updated schema for DDL log tables
@@ -154,17 +155,10 @@ CREATE TABLE pgmemento.audit_column_log (
   column_name TEXT NOT NULL,
   ordinal_position INTEGER,
   column_default TEXT,
-  is_nullable VARCHAR(3),
+  not_null BOOLEAN,
   data_type TEXT,
-  data_type_name TEXT,
-  char_max_length INTEGER,
-  numeric_precision INTEGER,
-  numeric_precision_radix INTEGER,
-  numeric_scale INTEGER,
-  datetime_precision INTEGER,
-  interval_type TEXT,
   txid_range numrange
-);  
+); 
 
 ALTER TABLE pgmemento.audit_column_log
   ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
