@@ -123,7 +123,7 @@ BEGIN
   RETURN;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STABLE STRICT;
 
 
 /**********************************************************
@@ -286,7 +286,7 @@ BEGIN
   RETURN query_text;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql IMMUTABLE;
 
 
 /**********************************************************
@@ -313,7 +313,7 @@ BEGIN
   RETURN jsonb_result;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entries(
   start_from_tid BIGINT,
@@ -330,7 +330,7 @@ BEGIN
   RETURN QUERY EXECUTE restore_query;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -380,7 +380,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -493,7 +493,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform restore_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
@@ -511,4 +511,4 @@ SELECT pgmemento.restore_table_state(
   WHERE schema_name = $3
     AND txid_range @> $2::numeric;
 $$
-LANGUAGE sql;
+LANGUAGE sql STRICT;

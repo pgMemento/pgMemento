@@ -67,7 +67,7 @@ SELECT t.txid
   JOIN pgmemento.row_log r ON r.event_id = e.id
     WHERE r.audit_id = $1;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
@@ -77,7 +77,7 @@ SELECT min(t.txid)
   JOIN pgmemento.row_log r ON r.event_id = e.id
     WHERE r.audit_id = $1;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
@@ -87,7 +87,7 @@ SELECT max(t.txid)
   JOIN pgmemento.row_log r ON r.event_id = e.id
     WHERE r.audit_id = $1;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE STRICT;
 
 
 /**********************************************************
@@ -101,7 +101,7 @@ $$
 DELETE FROM pgmemento.transaction_log
   WHERE txid = $1 RETURNING txid;
 $$
-LANGUAGE sql;
+LANGUAGE sql STRICT;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
@@ -118,7 +118,7 @@ DELETE FROM pgmemento.table_event_log e
     AND a.txid_range @> $1::numeric
     RETURNING e.id;
 $$
-LANGUAGE sql;
+LANGUAGE sql STRICT;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
@@ -146,4 +146,4 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;

@@ -89,7 +89,7 @@ BEGIN
   EXECUTE format('ALTER TABLE %I.%I ADD CONSTRAINT %I_PK PRIMARY KEY (' || pkey_columns || ')', $2, $1, $1);
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform pkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
@@ -150,7 +150,7 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform fkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
@@ -236,7 +236,7 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform index_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
@@ -281,7 +281,7 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -314,7 +314,7 @@ BEGIN
   END LOOP;
 END
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform default_values_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.default_values_schema_state(
@@ -356,7 +356,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
   target_schema_name TEXT, 
@@ -432,7 +432,7 @@ BEGIN
   EXECUTE format('DROP TABLE %I.%I CASCADE', $2, $1);
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(

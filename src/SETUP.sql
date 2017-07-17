@@ -246,7 +246,7 @@ SELECT min(transaction_id) AS txid_min, max(transaction_id) AS txid_max
   FROM pgmemento.table_event_log e 
     WHERE e.table_relid = ($2 || '.' || $1)::regclass::oid;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE STRICT;
 
 
 /***********************************************************
@@ -405,7 +405,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform create_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
@@ -434,7 +434,7 @@ BEGIN
   EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', $2, $1);
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
@@ -489,7 +489,7 @@ BEGIN
   END IF;	
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform create_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
@@ -532,7 +532,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
@@ -786,7 +786,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform log_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
@@ -802,7 +802,7 @@ SELECT pgmemento.log_table_state(a.table_name, a.schema_name)
       AND upper(txid_range) IS NULL
       ORDER BY d.depth;
 $$
-LANGUAGE sql;
+LANGUAGE sql STRICT;
 
 
 /**********************************************************
@@ -833,7 +833,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform create_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
@@ -863,7 +863,7 @@ BEGIN
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(

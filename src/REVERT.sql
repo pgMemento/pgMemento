@@ -112,7 +112,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -164,7 +164,7 @@ BEGIN
   END LOOP;
 END;
 $$ 
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_transactions(
   start_from_tid BIGINT, 
@@ -210,7 +210,7 @@ BEGIN
   END LOOP;
 END;
 $$ 
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -270,7 +270,7 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transactions(
   start_from_tid BIGINT, 
@@ -323,4 +323,4 @@ BEGIN
   END LOOP;
 END;
 $$ 
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STRICT;
