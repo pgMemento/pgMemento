@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.1     2017-07-18   add functions un/register_audit_table               FKun
 -- 0.5.0     2017-07-12   simplified schema for audit_column_log              FKun
 -- 0.4.2     2017-04-10   included parts from other scripts                   FKun
 -- 0.4.1     2017-03-15   empty JSONB diffs are not logged anymore            FKun
@@ -78,7 +79,9 @@
 *   get_txid_bounds_to_table(table_name TEXT, schema_name TEXT DEFAULT 'public', OUT txid_min BIGINT, OUT txid_max BIGINT) RETURNS RECORD
 *   log_schema_state(schemaname TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*
+*   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public') RETURNS INTEGER
+*   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*  
 * TRIGGER FUNCTIONS
 *   log_delete() RETURNS trigger
 *   log_insert() RETURNS trigger
@@ -341,6 +344,130 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
 
 
 /**********************************************************
+* UN/REGISTER TABLE
+*
+* Function to un/register information of audited table in
+* audit_table_log and corresponding columns in audit_column_log
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.unregister_audit_table(
+  audit_table_name TEXT,
+  audit_schema_name TEXT DEFAULT 'public'
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  tab_id INTEGER;
+BEGIN
+  -- update txid_range for removed table in audit_table_log table
+  UPDATE
+    pgmemento.audit_table_log
+  SET
+    txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+  WHERE
+    table_name = $1
+    AND schema_name = $2
+    AND upper(txid_range) IS NULL
+    RETURNING id INTO tab_id;
+
+  IF tab_id IS NOT NULL THEN
+    -- update txid_range for removed columns in audit_column_log table
+    UPDATE
+      pgmemento.audit_column_log
+    SET
+      txid_range = numrange(lower(txid_range), txid_current(), '[)') 
+    WHERE
+      audit_table_id = tab_id
+      AND upper(txid_range) IS NULL;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.register_audit_table( 
+  audit_table_name TEXT,
+  audit_schema_name TEXT DEFAULT 'public'
+  ) RETURNS INTEGER AS
+$$
+DECLARE
+  tab_id INTEGER;
+BEGIN
+  -- first check if table is audited
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pgmemento.audit_tables
+    WHERE
+      tablename = $1
+      AND schemaname = $2
+  ) THEN
+    RETURN NULL;
+  ELSE
+    -- check if affected table exists in 'audit_table_log' (with open range)
+    SELECT
+      id INTO tab_id
+    FROM
+      pgmemento.audit_table_log 
+    WHERE
+      table_name = $1
+      AND schema_name = $2
+      AND upper(txid_range) IS NULL;
+
+    IF tab_id IS NULL THEN
+      -- check if table exists in 'audit_table_log' with another name (and open range)
+      -- if so, unregister first before making new inserts
+      PERFORM
+        pgmemento.unregister_audit_table(table_name, schema_name)
+      FROM
+        pgmemento.audit_table_log 
+      WHERE
+        relid = ($2 || '.' || $1)::regclass::oid
+        AND upper(txid_range) IS NULL;
+
+      -- now register table and corresponding columns in audit tables
+      INSERT INTO pgmemento.audit_table_log
+        (relid, schema_name, table_name, txid_range)
+      VALUES 
+        (($2 || '.' || $1)::regclass::oid, $2, $1, numrange(txid_current(), NULL, '[)'))
+      RETURNING id INTO tab_id;
+
+      -- insert columns of new audited table into 'audit_column_log'
+      INSERT INTO pgmemento.audit_column_log 
+        (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
+      (
+        SELECT 
+          nextval('pgmemento.audit_column_log_id_seq') AS id,
+          tab_id AS audit_table_id,
+          a.attname AS column_name,
+          a.attnum AS ordinal_position,
+          d.adsrc AS column_default,
+          a.attnotnull AS not_null,
+          substr(
+            format_type(a.atttypid, a.atttypmod),
+            position('.' IN format_type(a.atttypid, a.atttypmod))+1,
+            length(format_type(a.atttypid, a.atttypmod))
+          ) AS data_type,
+          numrange(txid_current(), NULL, '[)') AS txid_range
+        FROM
+          pg_attribute a
+        LEFT JOIN
+          pg_attrdef d
+          ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+        WHERE
+          a.attrelid = ($2 || '.' || $1)::regclass
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+          ORDER BY a.attnum
+      );
+    END IF;
+  END IF;
+
+  RETURN tab_id;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
 * LOGGING TRIGGER
 *
 * Define trigger on a table to fire events when
@@ -527,6 +654,9 @@ BEGIN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP COLUMN audit_id',
       $2, $1);
+
+    -- update audit_table_log and audit_column_log
+    PERFORM pgmemento.unregister_audit_table($1, $2);
   ELSE
     RETURN;
   END IF;
