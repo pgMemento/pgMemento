@@ -135,7 +135,7 @@ CREATE OR REPLACE FUNCTION pgmemento.modify_ddl_log_tables(
 $$
 DECLARE
   tab_id INTEGER;
-  column_ids int[];
+  column_ids int[] := '{}';
 BEGIN
   -- get id from audit_table_log for given table
   tab_id := pgmemento.register_audit_table($1,$2);
@@ -192,8 +192,8 @@ BEGIN
 	SELECT array_agg(id) INTO column_ids FROM added_columns;
 
     -- log add column event
-    IF column_ids IS NOT NULL THEN
-      PERFORM pgmemento.log_ddl_event(tablename, schemaname, 1, 'ADD COLUMN');
+    IF column_ids IS NOT NULL AND array_length(column_ids, 1) > 0 THEN
+      PERFORM pgmemento.log_ddl_event(tablename, schemaname, 0, 'ADD COLUMN');
     END IF;
 
     -- EVENT: Column dropped

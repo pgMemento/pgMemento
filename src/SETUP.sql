@@ -455,6 +455,7 @@ BEGIN
         WHERE
           a.attrelid = ($2 || '.' || $1)::regclass
           AND a.attnum > 0
+          AND a.attname <> 'audit_id'
           AND NOT a.attisdropped
           ORDER BY a.attnum
       );
