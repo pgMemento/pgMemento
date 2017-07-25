@@ -18,7 +18,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="transaction_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="963" y="242"/>
+	<position x="962" y="242"/>
 	<column name="id" not-null="true">
 		<type name="integer"/>
 	</column>
@@ -45,7 +45,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="943" y="533.4"/>
+	<position x="942" y="534.4"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -56,7 +56,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<type name="smallint"/>
 	</column>
 	<column name="table_operation" not-null="true">
-		<type name="varchar" length="8"/>
+		<type name="varchar" length="12"/>
 	</column>
 	<column name="table_relid" not-null="true">
 		<type name="oid"/>
@@ -69,7 +69,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="row_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1455" y="391"/>
+	<position x="1454" y="391"/>
 	<column name="id" not-null="true">
 		<type name="bigserial"/>
 	</column>
@@ -130,7 +130,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="294" y="240"/>
+	<position x="293" y="240"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -154,7 +154,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="262" y="444"/>
+	<position x="261" y="444"/>
 	<column name="id" not-null="true">
 		<type name="serial"/>
 	</column>
@@ -167,14 +167,14 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="ordinal_position">
 		<type name="integer"/>
 	</column>
+	<column name="data_type">
+		<type name="text"/>
+	</column>
 	<column name="column_default">
 		<type name="text"/>
 	</column>
 	<column name="not_null">
 		<type name="boolean" length="3"/>
-	</column>
-	<column name="data_type">
-		<type name="text"/>
 	</column>
 	<column name="txid_range">
 		<type name="numrange"/>
@@ -272,8 +272,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="839" y="587"/>
-	<position x="841" y="294"/>
+		<position x="838" y="587"/>
+	<position x="840" y="294"/>
 	</line>
 	<label ref-type="src-label">
 		<position x="-4.35999" y="-0.600037"/>
@@ -282,7 +282,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<position x="-2.35999" y="0.799988"/>
 	</label>
 	<label ref-type="name-label">
-		<position x="61.4757" y="-23.3485"/>
+		<position x="90.9757" y="-7.34854"/>
 	</label>
 </relationship>
 
@@ -291,11 +291,11 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="1372" y="443"/>
-	<position x="1373" y="569"/>
+		<position x="1371" y="443"/>
+	<position x="1372" y="569"/>
 	</line>
 	<label ref-type="name-label">
-		<position x="-142.524" y="-39.8485"/>
+		<position x="-103.524" y="-40.8485"/>
 	</label>
 </relationship>
 
@@ -304,8 +304,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 dst-table="pgmemento.audit_table_log"
 	 src-required="false" dst-required="false">
 	<line>
-		<position x="694" y="496"/>
-	<position x="696" y="273"/>
+		<position x="693" y="496"/>
+	<position x="695" y="273"/>
 	</line>
 	<label ref-type="src-label">
 		<position x="0.539978" y="-0.200012"/>
