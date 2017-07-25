@@ -110,6 +110,7 @@ BEGIN
         ON c.column_name = a.attname
       WHERE
         a.attrelid = ('citydb.' || tab)::regclass
+        AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
         AND c.column_name IS NULL

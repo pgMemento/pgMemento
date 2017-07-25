@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.2     2017-07-25   UNIQUE constraint for audit_id column, new op_ids   FKun
+--                        new column order in audit_column_log
 -- 0.5.1     2017-07-18   add functions un/register_audit_table               FKun
 -- 0.5.0     2017-07-12   simplified schema for audit_column_log              FKun
 -- 0.4.2     2017-04-10   included parts from other scripts                   FKun
@@ -157,9 +159,9 @@ CREATE TABLE pgmemento.audit_column_log (
   audit_table_id INTEGER NOT NULL,
   column_name TEXT NOT NULL,
   ordinal_position INTEGER,
+  data_type TEXT,
   column_default TEXT,
   not_null BOOLEAN,
-  data_type TEXT,
   txid_range numrange
 ); 
 
@@ -454,8 +456,8 @@ BEGIN
           ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         WHERE
           a.attrelid = ($2 || '.' || $1)::regclass
-          AND a.attnum > 0
           AND a.attname <> 'audit_id'
+          AND a.attnum > 0
           AND NOT a.attisdropped
           ORDER BY a.attnum
       );
@@ -599,22 +601,9 @@ BEGIN
         AND NOT attisdropped
     ) THEN
     EXECUTE format(
-      'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass)',
+      'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
       $2, $1);
   END IF;
-
-  -- add index for 'audit_id' column if it does not exist, yet
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_index pgi, pg_attribute pga
-      WHERE pgi.indrelid = ($2 || '.' || $1)::regclass
-        AND pga.attrelid = pgi.indrelid
-        AND pga.attnum = ANY(pgi.indkey)
-        AND pga.attname = 'audit_id'
-    ) THEN
-    EXECUTE format(
-      'CREATE INDEX %I ON %I.%I (audit_id)', $1 || '_audit_idx',
-      $2, $1);
-  END IF;	
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -639,11 +628,6 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  -- drop index on 'audit_id' column if it exists
-  EXECUTE format(
-    'DROP INDEX IF EXISTS %I',
-    $1 || '_audit_idx');
-
   -- drop 'audit_id' column if it exists
   IF EXISTS (
     SELECT 1 FROM pg_attribute
@@ -700,10 +684,10 @@ BEGIN
 
   -- assign id for operation type
   CASE TG_OP
-    WHEN 'INSERT' THEN operation_id := 1;
-	WHEN 'UPDATE' THEN operation_id := 2;
-    WHEN 'DELETE' THEN operation_id := 3;
-	WHEN 'TRUNCATE' THEN operation_id := 4;
+    WHEN 'INSERT' THEN operation_id := 3;
+	WHEN 'UPDATE' THEN operation_id := 4;
+    WHEN 'DELETE' THEN operation_id := 7;
+	WHEN 'TRUNCATE' THEN operation_id := 8;
   END CASE;
 
   -- try to log corresponding table event
@@ -738,7 +722,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 4;
+        AND op_id = 8;
 
   -- log the whole content of the truncated table in the row_log table
   EXECUTE format(
@@ -770,7 +754,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 1;
+        AND op_id = 3;
 
   -- log inserted row ('changes' column can be left blank)
   INSERT INTO pgmemento.row_log (event_id, audit_id)
@@ -801,7 +785,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 2;
+        AND op_id = 4;
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
@@ -843,7 +827,7 @@ BEGIN
     FROM pgmemento.table_event_log 
       WHERE transaction_id = txid_current() 
         AND table_relid = TG_RELID
-        AND op_id = 3;
+        AND op_id = 7;
 
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
@@ -878,6 +862,8 @@ BEGIN
     INTO is_empty;
 
   IF is_empty <> 0 THEN
+    RAISE NOTICE 'Log existing data in table %.% as inserted', $1, $2;
+
     -- fill transaction_log table 
     INSERT INTO pgmemento.transaction_log
       (txid, stmt_date, user_name, client_name)
@@ -890,7 +876,7 @@ BEGIN
     INSERT INTO pgmemento.table_event_log
       (transaction_id, op_id, table_operation, table_relid) 
     VALUES
-      (txid_current(), 1, 'INSERT', ($2 || '.' || $1)::regclass::oid)
+      (txid_current(), 3, 'INSERT', ($2 || '.' || $1)::regclass::oid)
     ON CONFLICT (transaction_id, table_relid, op_id)
       DO NOTHING
       RETURNING id INTO e_id;
@@ -955,11 +941,8 @@ BEGIN
   -- add audit_id column
   PERFORM pgmemento.create_table_audit_id($1, $2);
 
-  -- log existing table state as inserted
-  IF $3 <> 1 THEN
-    RAISE NOTICE 'Existing content in table %.% is not logged as inserted', $1, $2;
-  ELSE
-    RAISE NOTICE 'Log existing data in table %.% as inserted', $1, $2;
+  -- log existing table content as inserted
+  IF $3 = 1 THEN
     PERFORM pgmemento.log_table_state($1, $2);
   END IF;
 END;
