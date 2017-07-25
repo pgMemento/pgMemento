@@ -217,24 +217,44 @@ script.
 
 ## 6. Logging behaviour
 
-### 6.1. DML logging
+### 6.1. What is logged
+
+The following table provides an overview what DML and DDL events are
+logged and which command is applied when reverting the event (see
+chapter 7). Events marked with * are captured by event triggers.
+More details on the logging behaviour are explained in the next
+sections.
+
+| OP_ID | EVENT                     | REVERSE EVENT                   | LOG CONTENT                    |
+| ----- |:--------------------------|:-------------------------------:|:------------------------------:|
+| 1     | CREATE TABLE*             | DROP TABLE                      | NULL                           |
+| 2     | ALTER TABLE ADD COLUMN*   | ALTER TABLE DROP COLUMN         | NULL                           |
+| 3     | INSERT                    | DELETE                          | NULL                           |
+| 4     | UPDATE                    | UPDATE                          | changed fields of changed rows |
+| 5     | ALTER TABLE ALTER COLUMN* | ALTER TABLE ALTER COLUMN        | all rows of altered columns    |
+| 6     | ALTER TABLE DROP COLUMN*  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
+| 7     | DELETE                    | INSERT                          | all fields of deleted rows     |
+| 8     | TRUNCATE                  | INSERT                          | all fields of table            |
+| 9     | DROP TABLE*               | CREATE TABLE + INSERT           | all fields of table            |
+
+
+### 6.2. DML logging
 
 pgMemento uses two logging stages. The first trigger is fired before 
 each statement on each audited table. Every transaction is only logged 
 once in the `transaction_log` table. Within the trigger procedure the 
 corresponding table operations are logged as well in the `table_event_log`
-table. Only one INSERT, UPDATE, DELETE and TRUNCATE event can be logged
-per table per transaction. So, if two operations of the same kind are
-applied against one table during one transaction the logged data is 
-mapped to the first event that has been inserted into `table_event_log`.
-In the next chapter you will see why this won't produce any consistency
-issues.
+table. A type of table operation (e.g. INSERT, UPDATE, DELETE etc.) is
+only logged once per table per transaction. For two or more operations
+of the same kind logged data of subsequent events are referenced to the
+first first event that has been inserted into `table_event_log`. In the
+next chapter you will see why this doesn't produce consistency issues.
 
 The second logging stage is related two the data that has changed. 
 Row-level triggers are fired after each operations on the audited tables. 
 Within the trigger procedure the corresponding INSERT, UPDATE, DELETE or
 TRUNCATE event for the current transaction is queried and each row is 
-mapped against it.
+referenced to it.
 
 For example, an UPDATE command on `table_A` changing the value of some 
 rows of `column_B` to `new_value` will appear in the log tables like this:
@@ -249,7 +269,7 @@ TABLE_EVENT_LOG
 
 | ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid |
 | --- |:--------------:|:-----:|:---------------:|:-----------:|:-----------:|:-----------:|
-| 1   | 1000000        | 2     | UPDATE          | public      | table_A     | 44444444    |
+| 1   | 1000000        | 4     | UPDATE          | public      | table_A     | 44444444    |
 
 ROW_LOG
 
@@ -259,13 +279,12 @@ ROW_LOG
 | 2   | 1         | 556      | {"column_B":"old_value"} |
 | 3   | 1         | 557      | {"column_B":"old_value"} |
 
-As you can see only the changes are logged. DELETE (`op_id` = 3) and
-TRUNCATE (`op_id` = 4) commands would cause logging of the complete rows
-while INSERTs (`op_id` = 1) would leave a the `changes` field blank. 
-Thus, there is no data redundancy.
+As you can see only the changes are logged. DELETE and TRUNCATE commands
+would cause logging of complete rows while INSERTs would leave a the 
+`changes` field blank. Thus, there is no data redundancy.
 
 
-### 6.2. DDL logging
+### 6.3. DDL logging
 
 Since v0.3 pgMemento supports DDL logging to capture schema changes.
 This is important for restoring former table or database states (see
@@ -273,31 +292,27 @@ chapter 8). The two tables `audit_table_log` and `audit_column_log`
 in the pgMemento schema provide information at what range of transactions
 the audited tables and their columns exist. After a table is altered or 
 dropped an event trigger is fired to compare the recent state (at
-ddl_command_end) with the logs. pgMemento also saves data before 
-`DROP SCHEMA`, `DROP TABLE`, `DROP COLUMN` or `ALTER COLUMN ... TYPE ... USING`
-events occur (at ddl_command_start). Dropping tables or schemas will lead
-to `TRUNCATE` actions whereas field changes will be logged as either 
-`ALTER COLUMN` or `DROP COLUMN` events (both with `op_id` = 2 like 
-UPDATEs).
+ddl_command_end) with the logs. pgMemento also saves data from all rows
+before a `DROP SCHEMA`, `DROP TABLE` or `ALTER TABLE ... DROP COLUMN`
+event occurs (at ddl_command_start).
 
-**ATTENTION:** Data is NOT logged if DDL statements are called from 
-functions because they can only be parsed if they sit in the top level 
-query!
+For `ALTER TABLE ... ALTER COLUMN` events data is only logged if the
+data type is changed using an explicit transformation between data types
+with the signal word `USING`. Logs are not needed if altering the type
+worked without an explicit cast definition because it means that the
+current state of the data could be used along with a former version of
+the table schema. If tables or columns are renamed it is reflected in
+the audit tables but data is not logged. The same applies to `ADD COLUMN`
+events. As noted in 5.2., `CREATE TABLE` will only fire a trigger if it
+has been enabled previously.
 
-If tables or columns are renamed data is not logged either, as it would
-not change anyway. Comments inside query strings that fire the event
-trigger are forbidden and will raise an exception. So far, changing the
-data type of columns will only log the complete column if the keyword 
-`USING` is found in the `ALTER TABLE` command. 
-
-Additionally, `CREATE TABLE` (`op_id` = 0), `ADD COLUMN` (`op_id` = 1)
-and `DROP TABLE` (`op_id` = 5) events are written to the `transaction_log`
-and `table_event_log` although no data log are referenced to them. For
-one of the next releases, it is planned to also revert such DDL events 
-like DML operations (see chapter 7).
+**NOTE:**: For correct parsing of DDL command, comments inside query
+strings that fire event triggers are forbidden and will raise an
+exception. At least, since v0.5 DDL changes executed from inside
+functions can be extracted correctly.
 
 
-### 6.3. Query the logs
+### 6.4. Query the logs
 
 The logged information can already be of use, e.g. list all transactions 
 that had an effect on a certain column by using the `?` operator:
@@ -347,13 +362,13 @@ ORDER BY
 ## 7. Revert certain transactions
 
 The logged information can be used to revert certain transactions that
-happened in the past. Reinsert deleted rows, remove imported data etc.
-The procedure is called `revert_transaction`. It loops over each row
-that was affected by the given transaction. For data integrity reasons
-the order of operations and audit_ids is important. Imagine three
-tables A, B and C, with B and C referencing A. Deleting entries in A 
-requires deleting depending rows in B and C. The order of events in one
-transaction can look like this:
+happened in the past. Reinsert deleted rows, remove imported data, 
+reverse updates etc. The procedure is called `revert_transaction`. It
+loops over each row that was affected by the given transaction. For data
+integrity reasons the order of operations and audit_ids is important.
+Imagine three tables A, B and C, with B and C referencing A. Deleting
+entries in A requires deleting depending rows in B and C. The order of
+events in one transaction can look like this:
 
 <pre>
 Txid 1000
@@ -539,7 +554,7 @@ FROM (
     r.audit_id,
     e.id DESC
 ) f
-WHERE f.op_id < 3
+WHERE f.op_id < 7
 )
 </pre>
 
@@ -677,7 +692,7 @@ FROM (
       -- get value from JSONB log
       jsonb_agg(a.changes -> 'id')
         FILTER (WHERE a.changes ? 'id')
-          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),
+          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND CURRENT ROW),
       -- if NULL, query recent value
       to_jsonb(x.id),
       -- no logs, no current value = NULL
@@ -703,7 +718,7 @@ FROM (
   LEFT JOIN public.table_A x
     ON x.audit_id = f.audit_id
   WHERE
-    f.op_id < 3
+    f.op_id < 7
     ORDER BY a.audit_id, x.audit_id, a.id
 ) q
 </pre>
@@ -716,9 +731,10 @@ the result is of interest. This is done again with `DISTINCT ON`. As we
 are using a window query the extracted JSONB array for each key can 
 contain all further historic values of the `audit_id` found in the logs
 (`ROW BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING`), no matter if we 
-strip out rows with `DISTINCT ON`. Only the first element if the array
-(`ORDER BY a.id`) is necessary. Therefore, it has to be extracted in the
-upper query with the `->>` operator.
+strip out rows with `DISTINCT ON`. As only the first element in the array
+(`ORDER BY a.id`) is necessary we shrink the window to only the current
+row (`ROW BETWEEN CURRENT ROW AND CURRENT ROW`). The value is extracted
+in the upper query with the `->>` operator.
 
 
 #### 8.2.4. Generating JSONB objects
@@ -935,7 +951,6 @@ their metadata is not yet logged by pgMemento.
 
 Here are some plans I have for the next release:
 * Have a test logic for all procedures to enable continious integration
-* Add revert for DDL changes
 * Have log tables for primary keys, constraints, indexes etc.
 * Have a view to store metadata of additional created schemas
   for former table / database states.

@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.5.0     2017-07-25   add revert support for DDL events               FKun
 -- 0.4.1     2017-04-11   improved revert_distinct_transaction(s)         FKun
 -- 0.4.0     2017-03-08   integrated table dependencies                   FKun
 --                        recover_audit_version takes txid as first arg
@@ -54,65 +55,258 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  column_name TEXT;
-  delimiter TEXT;
-  update_set TEXT;
-  join_columns TEXT := '';
+  stmt TEXT;
 BEGIN
-  -- INSERT case
-  IF $4 = 1 THEN
+  CASE
+  -- CREATE TABLE case
+  WHEN $4 = 1 THEN
+    -- try to drop table
     BEGIN
-      EXECUTE format(
-        'DELETE FROM %I.%I WHERE audit_id = $1',
-        $6, $5) 
-        USING aid;
+      EXECUTE format('DROP TABLE %I.%I', $6, $5);
 
-      -- row is already deleted
       EXCEPTION
-        WHEN no_data_found THEN
-          NULL;
+        WHEN undefined_table THEN
+          RAISE NOTICE 'Could not revert CREATE TABLE event for table %.%: %', $6, $5, SQLERRM;
     END;
 
-  -- UPDATE case
-  ELSIF $4 = 2 THEN
-    -- update the row with values from changes
-    IF $3 IS NOT NULL AND $3 <> '{}'::jsonb THEN
-      -- begin UPDATE statement
-      delimiter := '';
-      update_set := format('UPDATE %I.%I t SET', $6, $5);
+  -- ADD COLUMN case
+  WHEN $4 = 2 THEN
+    -- collect added columns
+    SELECT
+      string_agg(
+        'DROP COLUMN '
+        || c.column_name,
+        ', ' ORDER BY c.id DESC
+      ) INTO stmt
+    FROM
+      pgmemento.audit_column_log c
+    JOIN
+      pgmemento.audit_table_log t
+      ON c.audit_table_id = t.id
+    WHERE
+      lower(c.txid_range) = $1
+      AND upper(c.txid_range) IS NULL
+      AND t.table_name = $5
+      AND t.schema_name = $6;
 
-      -- loop over found keys and extend strings fpr UPDATE statement
-      FOR column_name IN SELECT jsonb_object_keys($3) LOOP
-        update_set := update_set || delimiter || format(' %I = j.%I', column_name, column_name);
-		join_columns := join_columns || delimiter || format(' %I', column_name);
-        delimiter := ',';
-      END LOOP;
+    BEGIN
+      -- try to execute ALTER TABLE command
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
+      END IF;
 
-      -- complete statement and add condition
-      update_set := update_set || ' FROM (SELECT ' || join_columns
-        || format(' FROM jsonb_populate_record(null::%I.%I, %L)) j ', $6, $5, $3)
-        || format('WHERE t.audit_id = %L', $2);
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert ADD COLUMN event for table %.%: %', $6, $5, SQLERRM;
+    END;
 
-      EXECUTE update_set;
+  -- INSERT case
+  WHEN $4 = 3 THEN
+    -- aid can be null in case of conflicts during insert
+    IF $2 IS NOT NULL THEN
+      -- delete inserted row
+      BEGIN
+        EXECUTE format(
+          'DELETE FROM %I.%I WHERE audit_id = $1',
+          $6, $5)
+          USING $2;
+
+        -- row is already deleted
+        EXCEPTION
+          WHEN no_data_found THEN
+            NULL;
+      END;
     END IF;
 
-  -- DELETE and TRUNCATE case
-  ELSE
+  -- UPDATE case
+  WHEN $4 = 4 THEN
+    -- update the row with values from changes
+    IF $3 IS NOT NULL AND $3 <> '{}'::jsonb THEN
+      -- create SET part
+      SELECT
+        string_agg(key || '=' || quote_nullable(value),', ') INTO stmt
+      FROM
+        jsonb_each_text($3);
+
+      BEGIN
+        -- try to execute UPDATE command
+        EXECUTE format(
+          'UPDATE %I.%I t SET ' || stmt || ' WHERE t.audit_id = $1',
+          $6, $5)
+          USING $2;
+
+        -- row is already deleted
+        EXCEPTION
+          WHEN others THEN
+            RAISE NOTICE 'Could not revert UPDATE event for table %.%: %', $6, $5, SQLERRM;
+      END;
+    END IF;
+
+  -- ALTER COLUMN case
+  WHEN $4 = 5 THEN
+    -- collect information of altered columns
+    SELECT
+      string_agg(
+        'ALTER COLUMN '
+        || c_new.column_name
+        || ' SET DATA TYPE '
+        || c_old.data_type
+        || ' USING '
+        || c_new.column_name
+        || '::'
+        || c_old.data_type,
+        ', ' ORDER BY c_new.id
+      ) INTO stmt
+    FROM
+      pgmemento.audit_column_log c_old,
+      pgmemento.audit_column_log c_new,
+      pgmemento.audit_table_log t
+    WHERE
+      c_old.audit_table_id = t.id
+      AND c_new.audit_table_id = t.id
+      AND t.table_name = $5
+      AND t.schema_name = $6
+      AND upper(c_old.txid_range) = $1
+      AND lower(c_new.txid_range) = $1
+      AND upper(c_new.txid_range) IS NULL
+      AND c_old.ordinal_position = c_new.ordinal_position
+      AND c_old.data_type <> c_new.data_type;
+
+    BEGIN
+      -- try to execute ALTER TABLE command
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
+      END IF;
+
+      -- fill in data with an UPDATE statement
+      PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert ALTER COLUMN event for table %.% : %', $6, $5, SQLERRM;
+    END;
+
+  -- DROP COLUMN case
+  WHEN $4 = 6 THEN
+    -- collect information of dropped columns
+    SELECT
+      string_agg(
+        'ADD COLUMN '
+        || c_old.column_name || ' '
+        || c_old.data_type
+        || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END 
+        || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
+        ', ' ORDER BY c_old.id
+      ) INTO stmt
+    FROM
+      pgmemento.audit_table_log t
+    JOIN
+      pgmemento.audit_column_log c_old
+      ON c_old.audit_table_id = t.id
+    LEFT JOIN LATERAL (
+      SELECT
+        c.column_name
+      FROM
+        pgmemento.audit_table_log atl
+      JOIN
+        pgmemento.audit_column_log c
+        ON c.audit_table_id = atl.id
+      WHERE
+        atl.table_name = t.table_name
+        AND atl.schema_name = t.schema_name
+        AND upper(c.txid_range) IS NULL
+      ) c_new
+      ON c_old.column_name = c_new.column_name
+    WHERE
+      upper(c_old.txid_range) = $1
+      AND c_new.column_name IS NULL
+      AND t.table_name = $5
+      AND t.schema_name = $6;
+
+    BEGIN
+      -- try to execute ALTER TABLE command
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
+      END IF;
+
+      -- fill in data with an UPDATE statement
+      PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+
+      EXCEPTION
+        WHEN duplicate_column THEN
+          -- if column already exist just do an UPDATE
+          PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+	END;
+
+  -- DELETE or TRUNCATE case
+  WHEN $4 = 7 OR $4 = 8 THEN
     BEGIN
       EXECUTE format(
-        'INSERT INTO %I.%I SELECT * FROM jsonb_populate_record(null::%I.%I, %L)',
-         $6, $5, $6, $5, $3);
+        'INSERT INTO %I.%I SELECT * FROM jsonb_populate_record(null::%I.%I, $1)',
+        $6, $5, $6, $5)
+        USING $3;
 
       -- row has already been re-inserted, so update it based on the values of this deleted version
       EXCEPTION
         WHEN unique_violation THEN
           -- merge changes with recent version of table record and update row
-          PERFORM pgmemento.recover_audit_version($1, $2, $3, 2, $5, $6);
+          PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+        WHEN others THEN
+          NULL;
     END;
-  END IF;
+
+  -- DROP TABLE case
+  WHEN $4 = 9 THEN
+    -- collect information of columns of dropped table
+    SELECT
+      string_agg(
+        c_old.column_name
+        || ' ' || c_old.data_type
+        || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END
+        || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
+        ', ' ORDER BY c_old.id
+      ) INTO stmt
+    FROM
+      pgmemento.audit_table_log t
+    JOIN
+      pgmemento.audit_column_log c_old
+      ON c_old.audit_table_id = t.id
+    LEFT JOIN LATERAL (
+      SELECT
+        atl.table_name
+      FROM
+        pgmemento.audit_table_log atl
+      WHERE
+        atl.table_name = t.table_name
+        AND atl.schema_name = t.schema_name
+        AND upper(txid_range) IS NULL
+      ) t_new
+      ON t.table_name = t_new.table_name
+    WHERE
+      upper(c_old.txid_range) = $1
+      AND c_old.column_name <> 'audit_id'
+      AND t_new.table_name IS NULL
+      AND t.table_name = $5
+      AND t.schema_name = $6;
+
+    -- try to create table
+    BEGIN
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('CREATE TABLE %I.%I (' || stmt || ')', $6, $5);
+      END IF;
+
+      -- fill in truncated data
+      PERFORM pgmemento.recover_audit_version($1, $2, $3, 8, $5, $6);
+
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert CREATE TABLE event for table %.% : %', $6, $5, SQLERRM;
+    END;
+
+  END CASE;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql;
 
 
 /**********************************************************
@@ -136,29 +330,37 @@ BEGIN
       e.op_id, 
       a.table_name,
       a.schema_name,
-      CASE WHEN e.op_id > 2 THEN
+      CASE WHEN e.op_id > 4 THEN
         rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC, r.id DESC)
       ELSE
         rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC, r.id DESC)
       END AS audit_order,
-      CASE WHEN e.op_id > 2 THEN
+      CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
-    FROM pgmemento.transaction_log t 
-    JOIN pgmemento.table_event_log e
+    FROM 
+      pgmemento.transaction_log t 
+    JOIN
+      pgmemento.table_event_log e
       ON e.transaction_id = t.txid
-    JOIN pgmemento.row_log r
-      ON r.event_id = e.id
-    JOIN pgmemento.audit_table_log a 
+    JOIN
+      pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
-    JOIN pgmemento.audit_tables_dependency d
+    LEFT JOIN
+      pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
      AND d.schemaname = a.schema_name
-     WHERE upper(a.txid_range) IS NULL
-       AND t.txid = $1
-       ORDER BY dependency_order, e.id DESC, audit_order
+    LEFT JOIN
+      pgmemento.row_log r
+      ON r.event_id = e.id
+    WHERE
+      t.txid = $1
+    ORDER BY
+      dependency_order,
+      e.id DESC,
+      audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
@@ -182,29 +384,38 @@ BEGIN
       e.op_id,
       a.table_name,
       a.schema_name,
-      CASE WHEN e.op_id > 2 THEN
+      CASE WHEN e.op_id > 4 THEN
         rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC, r.id DESC)
       ELSE
         rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC, r.id DESC)
       END AS audit_order,
-      CASE WHEN e.op_id > 2 THEN
+      CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
-    FROM pgmemento.transaction_log t 
-    JOIN pgmemento.table_event_log e
+    FROM
+      pgmemento.transaction_log t 
+    JOIN
+      pgmemento.table_event_log e
       ON e.transaction_id = t.txid
-    JOIN pgmemento.row_log r
-      ON r.event_id = e.id
-    JOIN pgmemento.audit_table_log a 
+    JOIN
+      pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
-    JOIN pgmemento.audit_tables_dependency d
+    LEFT JOIN
+      pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
      AND d.schemaname = a.schema_name
-      WHERE upper(a.txid_range) IS NULL
-        AND t.txid BETWEEN $1 AND $2
-        ORDER BY t.id DESC, dependency_order, e.id DESC, audit_order
+    LEFT JOIN
+      pgmemento.row_log r
+      ON r.event_id = e.id
+    WHERE
+      t.txid BETWEEN $1 AND $2
+    ORDER BY
+      t.id DESC,
+      dependency_order,
+      e.id DESC,
+      audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
@@ -235,12 +446,12 @@ BEGIN
       q.changes, 
       a.table_name,
       a.schema_name,
-      CASE WHEN q.op_id > 2 THEN
+      CASE WHEN q.op_id > 4 THEN
         rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id ASC)
       ELSE
         rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id DESC)
       END AS audit_order,
-      CASE WHEN q.op_id > 2 THEN
+      CASE WHEN q.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
@@ -253,18 +464,29 @@ BEGIN
         e.table_relid,
         e.op_id,
         pgmemento.jsonb_merge(r.changes) OVER () AS changes
-      FROM pgmemento.row_log r
-      JOIN pgmemento.table_event_log e ON e.id = r.event_id
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-        WHERE t.txid = $1
-        ORDER BY r.audit_id, r.id
+      FROM
+        pgmemento.transaction_log t 
+      JOIN
+        pgmemento.table_event_log e
+        ON e.transaction_id = t.txid
+      LEFT JOIN
+        pgmemento.row_log r
+        ON r.event_id = e.id
+      WHERE
+        t.txid = $1
+      ORDER BY
+        r.audit_id,
+        r.id
     ) q
     JOIN pgmemento.audit_table_log a
       ON a.relid = q.table_relid
-    JOIN pgmemento.audit_tables_dependency d
+    LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
       AND d.schemaname = a.schema_name
-      ORDER BY dependency_order, q.event_id DESC, audit_order
+    ORDER BY
+      dependency_order,
+      q.event_id DESC,
+      audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
@@ -288,12 +510,12 @@ BEGIN
       q.changes, 
       a.table_name,
       a.schema_name,
-      CASE WHEN q.op_id > 2 THEN
+      CASE WHEN q.op_id > 4 THEN
         rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id ASC)
       ELSE
         rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id DESC)
       END AS audit_order,
-      CASE WHEN q.op_id > 2 THEN
+      CASE WHEN q.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
@@ -306,18 +528,29 @@ BEGIN
         e.table_relid,
         e.op_id,
         pgmemento.jsonb_merge(r.changes) OVER () AS changes
-      FROM pgmemento.row_log r
-      JOIN pgmemento.table_event_log e ON e.id = r.event_id
-      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id
-        WHERE t.txid BETWEEN $1 AND $2
-        ORDER BY r.audit_id, r.id
+      FROM
+        pgmemento.transaction_log t 
+      JOIN
+        pgmemento.table_event_log e
+        ON e.transaction_id = t.txid
+      LEFT JOIN
+        pgmemento.row_log r
+        ON r.event_id = e.id
+      WHERE
+        t.txid BETWEEN $1 AND $2
+      ORDER BY
+        r.audit_id,
+        r.id
     ) q
     JOIN pgmemento.audit_table_log a
       ON a.relid = q.table_relid
-    JOIN pgmemento.audit_tables_dependency d
+    LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
       AND d.schemaname = a.schema_name
-      ORDER BY dependency_order, q.event_id DESC, audit_order
+    ORDER BY
+      dependency_order,
+      q.event_id DESC,
+      audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;

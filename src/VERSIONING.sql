@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.1     2017-07-25   reflect changes of updates event logging            FKun
 -- 0.5.0     2017-07-12   reflect changes to audit_column_log table           FKun
 -- 0.4.4     2017-04-07   split up restore code to different functions        FKun
 -- 0.4.3     2017-04-05   greatly improved performance for restoring          FKun
@@ -270,8 +271,8 @@ BEGIN
          ''
        END
     -- do not produce a result if row with audit_id did not exist before given transaction
-    -- could be if filtered event has been either DELETE or TRUNCATE
-    || E'    WHERE f.op_id < 3\n'
+    -- could be if filtered event has been either DELETE, TRUNCATE or DROP TABLE
+    || E'    WHERE f.op_id < 7\n'
     -- order by oldest log entry for given audit_id
     || '    ORDER BY a.audit_id, '
     || CASE WHEN join_recent_state THEN

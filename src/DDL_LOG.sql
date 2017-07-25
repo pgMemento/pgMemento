@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                 | Author
+-- 0.5.0     2017-07-25   improved processing of DDL events             FKun
 -- 0.4.1     2017-07-18   now using register functions from SETUP       FKun
 -- 0.4.0     2017-07-12   reflect changes to audit_column_log table     FKun
 -- 0.3.2     2017-04-10   log also CREATE/DROP TABLE and ADD COLUMN     FKun
@@ -67,9 +68,13 @@ BEGIN
     FOR i IN 2..array_length(objs,1) LOOP
       EXIT WHEN do_next = FALSE;
       -- try to find starting position of DDL command
-      ddl_pos := position('ALTER TABLE' IN objs[i]);
+      ddl_pos := GREATEST(
+                   position('ALTER TABLE' IN objs[i]),
+                   position('DROP TABLE' IN objs[i]),
+                   position('DROP SCHEMA' IN objs[i])
+                 );
       IF ddl_pos > 0 THEN
-        ddl_text := substr(objs[2], ddl_pos, length(objs[2]) - 1 - ddl_pos);
+        ddl_text := substr(objs[2], ddl_pos, length(objs[2]) - ddl_pos);
         do_next := FALSE;
       END IF;
     END LOOP;
@@ -97,6 +102,7 @@ CREATE OR REPLACE FUNCTION pgmemento.log_ddl_event(
 $$
 DECLARE
   e_id INTEGER;
+  table_oid OID;
 BEGIN
   -- log transaction of ddl event
   -- on conflict do nothing
@@ -107,19 +113,23 @@ BEGIN
   ON CONFLICT (txid)
     DO NOTHING;
 
+  IF table_name IS NOT NULL AND schema_name IS NOT NULL THEN
+    table_oid := ($2 || '.' || $1)::regclass::oid;
+  END IF;
+
   -- try to log corresponding table event
   -- on conflict do dummy update to get event_id
   INSERT INTO pgmemento.table_event_log 
     (transaction_id, op_id, table_operation, table_relid) 
   VALUES
-    (txid_current(), $3, $4, ($2 || '.' || $1)::regclass::oid)
+    (txid_current(), $3, $4, table_oid)
   ON CONFLICT (transaction_id, table_relid, op_id)
     DO UPDATE SET op_id = $3 RETURNING id INTO e_id;
 
   RETURN e_id;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql;
 
 
 /**********************************************************
@@ -145,20 +155,20 @@ BEGIN
     -- insert columns that do not exist in audit_column_log table
     WITH added_columns AS (
       INSERT INTO pgmemento.audit_column_log
-        (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
+        (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
       (
         SELECT 
           nextval('pgmemento.audit_column_log_id_seq') AS id,
           tab_id AS audit_table_id,
           a.attname AS column_name,
           a.attnum AS ordinal_position,
-          d.adsrc AS column_default,
-          a.attnotnull AS not_null,
           substr(
             format_type(a.atttypid, a.atttypmod),
             position('.' IN format_type(a.atttypid, a.atttypmod))+1,
             length(format_type(a.atttypid, a.atttypmod))
           ) AS data_type,
+          d.adsrc AS column_default,
+          a.attnotnull AS not_null,
           numrange(txid_current(), NULL, '[)') AS txid_range
         FROM
           pg_attribute a
@@ -182,6 +192,7 @@ BEGIN
           ON acl.column_name = a.attname
         WHERE
           a.attrelid = ($2 || '.' || $1)::regclass
+          AND a.attname <> 'audit_id'
           AND a.attnum > 0
           AND NOT a.attisdropped
           AND acl.column_name IS NULL
@@ -193,7 +204,7 @@ BEGIN
 
     -- log add column event
     IF column_ids IS NOT NULL AND array_length(column_ids, 1) > 0 THEN
-      PERFORM pgmemento.log_ddl_event(tablename, schemaname, 0, 'ADD COLUMN');
+      PERFORM pgmemento.log_ddl_event(tablename, schemaname, 2, 'ADD COLUMN');
     END IF;
 
     -- EVENT: Column dropped
@@ -204,7 +215,8 @@ BEGIN
       FROM
         pgmemento.audit_table_log a
       JOIN
-        pgmemento.audit_column_log c ON c.audit_table_id = a.id
+        pgmemento.audit_column_log c
+        ON c.audit_table_id = a.id
       LEFT JOIN (
         SELECT
           attname AS column_name,
@@ -238,17 +250,18 @@ BEGIN
     WITH updated_columns AS (
       SELECT
         acl.id, acl.audit_table_id, col.column_name,
-        col.ordinal_position, col.column_default, col.not_null, col.data_type
+        col.ordinal_position, col.data_type, col.column_default, col.not_null
       FROM (
         SELECT
           a.attname AS column_name,
           a.attnum AS ordinal_position,
-          d.adsrc AS column_default, a.attnotnull AS not_null,
           substr(
             format_type(a.atttypid, a.atttypmod),
             position('.' IN format_type(a.atttypid, a.atttypmod))+1,
             length(format_type(a.atttypid, a.atttypmod))
           ) AS data_type,
+          d.adsrc AS column_default,
+          a.attnotnull AS not_null,
           $1 AS table_name,
           $2 AS schema_name
         FROM
@@ -286,16 +299,16 @@ BEGIN
       )
     ), insert_new_versions AS (
       INSERT INTO pgmemento.audit_column_log
-        (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
+        (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
       (
         SELECT
           nextval('pgmemento.audit_column_log_id_seq') AS id,
           audit_table_id,
           column_name, 
           ordinal_position,
+          data_type,
           column_default,
           not_null,
-          data_type,
           numrange(txid_current(), NULL, '[)') AS txid_range
         FROM
           updated_columns
@@ -325,9 +338,9 @@ $$
 DECLARE
   ddl_text TEXT := current_query();
   stack TEXT;
-  cascading BOOLEAN := FALSE;
   schema_name TEXT;
   rec RECORD;
+  e_id INTEGER;
 BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
@@ -347,9 +360,6 @@ BEGIN
   OR ddl_text LIKE '%*/%' THEN
     RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
   END IF;
-	
-  -- has CASCADE been used?
-  cascading := lower(ddl_text) LIKE '%cascade%';
 
   -- extracting the schema name from the DDL command
   -- remove irrelevant parts and line breaks from the DDL string
@@ -359,6 +369,7 @@ BEGIN
   schema_name := replace(schema_name, ' restrict', '');
   schema_name := replace(schema_name, ';', '');
   schema_name := regexp_replace(schema_name, '[\r\n]+', ' ', 'g');
+  schema_name := substring(schema_name, '\S(?:.*\S)*');
 
   -- truncate tables to log the data
   FOR rec IN 
@@ -375,13 +386,19 @@ BEGIN
       p.schemaname = schema_name
     ORDER BY
       p.schemaname,
-      d.depth
+      d.depth DESC
   LOOP
-    IF cascading THEN
-      EXECUTE format('TRUNCATE %I.%I CASCADE', rec.schemaname, rec.tablename);
-    ELSE
-      EXECUTE format('TRUNCATE %I.%I', rec.schemaname, rec.tablename);
-    END IF;
+    -- log drop table event
+    e_id :=  pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 9, 'DROP TABLE');
+
+    -- log the whole content of the dropped table in the row_log table
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
+         rec.tablename, rec.schemaname, rec.tablename) USING e_id;
+
+    -- unregister table from log tables
+    PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
   END LOOP;
 END;
 $$
@@ -466,7 +483,7 @@ BEGIN
 
     FOR i IN 1..length(ddl_text) LOOP
       EXIT WHEN do_next = FALSE;
-      IF substr(ddl_text,i,1) <> ' ' THEN
+      IF substr(ddl_text,i,1) <> ' ' OR position('"' IN table_ident) = 1 THEN
         table_ident := table_ident || substr(ddl_text,i,1);
       ELSE
         IF length(table_ident) > 0 THEN
@@ -474,12 +491,26 @@ BEGIN
         END IF;
       END IF;
     END LOOP;
-
+	
     -- get table and schema name
     IF table_ident LIKE '%.%' THEN
-      schemaname := split_part(table_ident, '.', 1);
-      tablename := split_part(table_ident, '.', 2);
-      ntables := 1;
+      -- check if table is audited
+      SELECT
+        table_name,
+        schema_name
+      INTO
+        tablename,
+        schemaname
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = split_part(table_ident, '.', 2)
+        AND schema_name = split_part(table_ident, '.', 1)
+        AND upper(txid_range) IS NULL;
+
+      IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
+        ntables := 1;
+      END IF;
     ELSE
       tablename := table_ident;
 
@@ -510,11 +541,14 @@ BEGIN
     -- remove schema and table name from DDL string and try to process columns
     ddl_text := replace(ddl_text, schemaname || '.', '');
     ddl_text := replace(ddl_text, tablename, '');
-    do_next := FALSE;
     objs := regexp_split_to_array(ddl_text, E'\\s+');
+
+    -- set 'do_next' to FALSE because first element in objs will not be the column name
+    do_next := FALSE;
 
     FOREACH columnname IN ARRAY objs LOOP
       columnname := replace(columnname, ',', '');
+      columnname := substring(columnname, '\S(?:.*\S)*');
       IF do_next THEN
         IF columnname <> 'column' THEN
           IF EXISTS (
@@ -532,9 +566,9 @@ BEGIN
           ) THEN
             -- try to log corresponding table event
             IF altering THEN
-              e_id = pgmemento.log_ddl_event(tablename, schemaname, 2, 'ALTER COLUMN');
+              e_id := pgmemento.log_ddl_event(tablename, schemaname, 5, 'ALTER COLUMN');
             ELSE
-              e_id = pgmemento.log_ddl_event(tablename, schemaname, 2, 'DROP COLUMN');
+              e_id := pgmemento.log_ddl_event(tablename, schemaname, 6, 'DROP COLUMN');
             END IF;
 
             -- log data of entire column
@@ -580,10 +614,10 @@ BEGIN
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
       -- log create table event
-      PERFORM pgmemento.log_ddl_event(split_part(obj.object_identity, '.' ,2), obj.schema_name, 0, 'CREATE TABLE');
+      PERFORM pgmemento.log_ddl_event(split_part(obj.object_identity, '.' ,2), obj.schema_name, 1, 'CREATE TABLE');
 
       -- start auditing for new table
-      PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, 1);
+      PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, 0);
     END IF;
   END LOOP;
 END;
@@ -625,10 +659,10 @@ $$
 DECLARE
   ddl_text TEXT := current_query();
   stack TEXT;
-  cascading BOOLEAN := FALSE;
   schemaname TEXT;
   tablename TEXT;
   ntables INTEGER := 0;
+  e_id INTEGER;
 BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
@@ -649,9 +683,6 @@ BEGIN
     RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
   END IF;
 
-  -- has CASCADE been used?
-  cascading := ddl_text LIKE '%cascade%';
-
   -- extracting the table identifier from the DDL command
   -- remove irrelevant parts and line breaks from the DDL string
   ddl_text := replace(ddl_text, 'drop table ', '');
@@ -660,15 +691,28 @@ BEGIN
   ddl_text := replace(ddl_text, ' restrict', '');
   ddl_text := replace(ddl_text, ';', '');
   ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
+  ddl_text := substring(ddl_text, '\S(?:.*\S)*');
 
   -- get table and schema name
   IF ddl_text LIKE '%.%' THEN
-    schemaname := replace(split_part(ddl_text, '.', 1), ' ', '');
-    tablename := replace(split_part(ddl_text, '.', 2), ' ', '');
-    ntables := 1;
-  ELSE
-    tablename := replace(ddl_text, ' ', '');
+    -- check if table is audited
+    SELECT
+      table_name,
+      schema_name
+    INTO
+      tablename,
+      schemaname
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      table_name = split_part(ddl_text, '.', 2)
+      AND schema_name = split_part(ddl_text, '.', 1)
+      AND upper(txid_range) IS NULL;
 
+    IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
+      ntables := 1;
+    END IF;
+  ELSE
     -- check if table is audited and not ambiguous
     FOR schemaname IN
       SELECT
@@ -692,19 +736,20 @@ BEGIN
     -- table name is found more than once in audit_table_log
     RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
   ELSE
-    -- truncate table to log the data
-    IF cascading THEN
-      EXECUTE format('TRUNCATE '
-        || CASE WHEN schemaname IS NULL THEN '' ELSE (schemaname || '.') END
-        || '%I CASCADE', tablename);
-    ELSE
-      EXECUTE format('TRUNCATE '
-        || CASE WHEN schemaname IS NULL THEN '' ELSE (schemaname || '.') END
-        || '%I', tablename);
-    END IF;
-
     -- log drop table event
-    PERFORM pgmemento.log_ddl_event(tablename, schemaname, 5, 'DROP TABLE');
+    e_id :=  pgmemento.log_ddl_event(tablename, schemaname, 9, 'DROP TABLE');
+
+    -- log the whole content of the dropped table in the row_log table
+    BEGIN
+      EXECUTE format(
+        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+           SELECT $1, t.audit_id, to_jsonb(t.%I) AS content FROM %I.%I t',
+           tablename, schemaname, tablename) USING e_id;
+
+      EXCEPTION
+        WHEN others THEN
+          NULL;
+    END;
   END IF;
 END;
 $$
