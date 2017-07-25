@@ -703,7 +703,7 @@ FROM (
     COALESCE(
       jsonb_agg(a.changes -> 'column_B')
         FILTER (WHERE a.changes ? 'column_B')
-          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING),
+          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND CURRENT ROW),
       to_jsonb(x.column_B),
       NULL
     ) AS value2,
