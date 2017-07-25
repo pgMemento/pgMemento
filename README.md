@@ -226,7 +226,7 @@ More details on the logging behaviour are explained in the next
 sections.
 
 | OP_ID | EVENT                     | REVERSE EVENT                   | LOG CONTENT                    |
-| ----- |:--------------------------|:-------------------------------:|:------------------------------:|
+|:-----:|:--------------------------|:--------------------------------|:-------------------------------|
 | 1     | CREATE TABLE*             | DROP TABLE                      | NULL                           |
 | 2     | ALTER TABLE ADD COLUMN*   | ALTER TABLE DROP COLUMN         | NULL                           |
 | 3     | INSERT                    | DELETE                          | NULL                           |
