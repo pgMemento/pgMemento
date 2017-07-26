@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.5.3     2017-07-26   Improved queries for views                          FKun
 -- 0.5.2     2017-07-25   UNIQUE constraint for audit_id column, new op_ids   FKun
 --                        new column order in audit_column_log
 -- 0.5.1     2017-07-18   add functions un/register_audit_table               FKun
@@ -266,10 +267,10 @@ LANGUAGE sql STABLE STRICT;
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT
-    t.schemaname,
-    t.tablename,
+    n.nspname AS schemaname,
+    c.relname AS tablename,
     b.txid_min,
-    b.txid_max, 
+    b.txid_max,
     CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
       TRUE
     ELSE
@@ -281,11 +282,11 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
     pg_namespace n
     ON c.relnamespace = n.oid
   JOIN
-    pg_tables t
-    ON c.relname = t.tablename
-  JOIN
     pg_attribute a
-    ON c.oid = a.attrelid
+    ON a.attrelid = c.oid
+  JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(c.relname, n.nspname)
+    ) b ON (true)
   LEFT JOIN (
     SELECT
       tgrelid,
@@ -296,13 +297,11 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
       tgname = 'log_transaction_trigger'::name
     ) AS tg
     ON c.oid = tg.tgrelid
-  JOIN LATERAL (
-    SELECT * FROM pgmemento.get_txid_bounds_to_table(t.tablename, t.schemaname)
-    ) b ON (true)
   WHERE
-    n.nspname = t.schemaname 
-    AND t.schemaname != 'pgmemento'
+    n.nspname <> 'pgmemento'
+    AND n.nspname NOT LIKE 'pg_temp%'
     AND a.attname = 'audit_id'
+    AND c.relkind = 'r'
   ORDER BY
     schemaname,
     tablename;
@@ -319,53 +318,84 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
 * to not violate foreign keys.
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
-  WITH RECURSIVE table_dependency(parent, child, schemaname, depth) AS (
-    SELECT DISTINCT ON (tc.table_name)
-      ccu.table_name AS parent,
-      tc.table_name AS child,
-      tc.table_schema AS schemaname,
-      1 AS depth 
-    FROM information_schema.table_constraints AS tc 
-    JOIN information_schema.key_column_usage AS kcu 
-      ON tc.constraint_name = kcu.constraint_name
-    JOIN information_schema.constraint_column_usage AS ccu 
-      ON ccu.constraint_name = tc.constraint_name
-    JOIN pgmemento.audit_tables a
-      ON a.tablename = tc.table_name
-     AND a.schemaname = tc.table_schema
-      WHERE constraint_type = 'FOREIGN KEY' 
-        AND tc.table_name <> ccu.table_name
+  WITH RECURSIVE table_dependency(
+    parent_oid,
+    child_oid,
+    table_name,
+    schema_name,
+    depth
+  ) AS (
+    SELECT DISTINCT ON (c.conrelid)
+      c.confrelid AS parent_oid,
+      c.conrelid AS child_oid,
+      a.table_name,
+      n.nspname AS schema_name,
+      1 AS depth
+    FROM
+      pg_constraint c
+    JOIN
+      pg_namespace n
+      ON n.oid = c.connamespace
+    JOIN pgmemento.audit_table_log a
+      ON a.relid = c.conrelid
+     AND a.schema_name = n.nspname
+    WHERE
+      c.contype = 'f'
+      AND c.conrelid <> c.confrelid
+      AND upper(a.txid_range) IS NULL
     UNION ALL
-      SELECT DISTINCT ON (tc.table_name)
-        ccu.table_name AS parent,
-        tc.table_name AS child,
-        tc.table_schema AS schemaname,
-        t.depth + 1 AS depth
-      FROM information_schema.table_constraints AS tc 
-      JOIN information_schema.key_column_usage AS kcu 
-        ON tc.constraint_name = kcu.constraint_name
-      JOIN information_schema.constraint_column_usage AS ccu 
-        ON ccu.constraint_name = tc.constraint_name
-      JOIN pgmemento.audit_tables a
-        ON a.tablename = tc.table_name
-       AND a.schemaname = tc.table_schema
-      JOIN table_dependency t 
-        ON t.child = ccu.table_name
-        WHERE constraint_type = 'FOREIGN KEY' 
-          AND t.child <> tc.table_name
+      SELECT DISTINCT ON (c.conrelid)
+        c.confrelid AS parent_oid,
+        c.conrelid AS child_oid,
+        a.table_name,
+        n.nspname AS schema_name,
+        d.depth + 1 AS depth
+      FROM
+        pg_constraint c
+      JOIN
+        pg_namespace n
+        ON n.oid = c.connamespace
+      JOIN pgmemento.audit_table_log a
+        ON a.relid = c.conrelid
+       AND a.schema_name = n.nspname
+      JOIN table_dependency d
+        ON d.child_oid = c.confrelid
+      WHERE
+        c.contype = 'f'
+        AND d.child_oid <> c.conrelid
+        AND upper(a.txid_range) IS NULL
   )
-  SELECT schemaname, tablename, depth FROM (
-    SELECT schemaname, child AS tablename, max(depth) AS depth
-      FROM table_dependency
-      GROUP BY schemaname, child
+  SELECT
+    schema_name AS schemaname,
+    table_name AS tablename,
+    depth
+  FROM (
+    SELECT
+      schema_name,
+      table_name,
+      max(depth) AS depth
+    FROM
+      table_dependency
+    GROUP BY
+      schema_name,
+      table_name
     UNION ALL
-      SELECT at.schemaname, at.tablename, 0 AS depth 
-        FROM pgmemento.audit_tables at
-        LEFT JOIN table_dependency d
-          ON d.child = at.tablename
-          WHERE d.child IS NULL
-  ) t
-  ORDER BY schemaname, depth, tablename;
+      SELECT
+        atl.schema_name,
+        atl.table_name,
+        0 AS depth 
+      FROM
+        pgmemento.audit_table_log atl
+      LEFT JOIN
+        table_dependency d
+        ON d.child_oid = atl.relid
+      WHERE
+        d.child_oid IS NULL
+  ) td
+  ORDER BY
+    schemaname,
+    depth,
+    tablename;
 
 
 /**********************************************************
