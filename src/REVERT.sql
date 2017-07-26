@@ -192,7 +192,8 @@ BEGIN
     SELECT
       string_agg(
         'ADD COLUMN '
-        || c_old.column_name || ' '
+        || c_old.column_name
+        || ' '
         || c_old.data_type
         || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END 
         || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
@@ -261,10 +262,11 @@ BEGIN
     SELECT
       string_agg(
         c_old.column_name
-        || ' ' || c_old.data_type
+        || ' '
+        || c_old.data_type
         || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END
         || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
-        ', ' ORDER BY c_old.id
+        ', ' ORDER BY c_old.ordinal_position
       ) INTO stmt
     FROM
       pgmemento.audit_table_log t
