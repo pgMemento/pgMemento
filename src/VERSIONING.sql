@@ -468,9 +468,9 @@ BEGIN
     SELECT
       1
     FROM
-      information_schema.schemata 
+      pg_namespace
     WHERE
-      schema_name = $5
+      nspname = $5
   ) THEN
     EXECUTE format('CREATE SCHEMA %I', $5);
   END IF;
@@ -480,13 +480,15 @@ BEGIN
     SELECT
       1
     FROM
-      information_schema.tables
+      pg_class c,
+      pg_namespace n
     WHERE
-      table_name = $3
-      AND table_schema = $5
+      c.relnamespace = n.oid
+      AND c.relname = $3
+      AND n.nspname = $5
       AND (
-        table_type = 'BASE TABLE'
-        OR table_type = 'VIEW'
+        relkind = 'r'
+        OR relkind = 'v'
       )
   ) THEN
     IF $7 = 1 THEN
@@ -516,9 +518,13 @@ BEGIN
 
   -- check if logging entries exist in the audit_log table
   IF EXISTS (
-    SELECT 1 FROM pgmemento.table_event_log 
-      WHERE table_relid = tab_oid
-      LIMIT 1
+    SELECT
+      1
+    FROM
+      pgmemento.table_event_log 
+    WHERE
+      table_relid = tab_oid
+    LIMIT 1
   ) THEN
     -- let's go back in time - restore a table state for given transaction interval
     IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN

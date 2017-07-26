@@ -801,7 +801,7 @@ JOIN LATERAL (
     jsonb_populate_record(
        null::public.my_table,
        entries
-	)
+    )
 ) p
 ON (true);
 </pre>

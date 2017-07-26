@@ -14,7 +14,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.3.0     2015-06-20   initial commit                                   FKun
+-- 0.2.0     2017-07-26   reflect changes of later pgMemento versions      FKun
+-- 0.1.0     2015-06-20   initial commit                                   FKun
 --
 
 \pset footer off
@@ -22,9 +23,20 @@ SET client_min_messages TO WARNING;
 \set ON_ERROR_STOP ON
 
 \echo
-\echo 'Removing triggers and audit_id columns from audited tables ...'
+\echo 'Removing event triggers ...'
 SELECT pgmemento.drop_schema_event_trigger();
-SELECT pgmemento.drop_table_audit(tablename, schemaname) FROM pgmemento.audit_tables;
+
+\echo
+\echo 'Removing audit_id columns from audited tables ...'
+SELECT
+  pgmemento.drop_table_audit(
+    table_name,
+    schema_name
+  )
+FROM
+  pgmemento.audit_table_log
+WHERE
+  upper(txid_range) IS NULL;
 
 \echo
 \echo 'Removing pgmemento schema ...'
