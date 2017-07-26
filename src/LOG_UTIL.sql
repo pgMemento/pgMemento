@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.4.2     2017-07-26   new function to remove a key from all logs     FKun
 -- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added jsonb_merge   FKun
 -- 0.4.0     2017-03-06   new view for table dependencies                FKun
 -- 0.3.0     2016-04-14   reflected changes in log tables                FKun
@@ -32,6 +33,7 @@
 *
 * FUNCTIONS:
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
+*   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid BIGINT, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(t_id BIGINT) RETURNS BIGINT
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
@@ -61,31 +63,52 @@ CREATE AGGREGATE pgmemento.jsonb_merge(jsonb)
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT AS
 $$
-SELECT t.txid
-  FROM pgmemento.transaction_log t
-  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-  JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = $1;
+SELECT
+  t.txid
+FROM
+  pgmemento.transaction_log t
+JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.txid
+JOIN
+  pgmemento.row_log r
+  ON r.event_id = e.id
+WHERE
+  r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-SELECT min(t.txid)
-  FROM pgmemento.transaction_log t
-  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-  JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = $1;
+SELECT
+  min(t.txid)
+FROM
+  pgmemento.transaction_log t
+JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.txid
+JOIN
+  pgmemento.row_log r
+  ON r.event_id = e.id
+WHERE
+  r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
 $$
-SELECT max(t.txid)
-  FROM pgmemento.transaction_log t
-  JOIN pgmemento.table_event_log e ON e.transaction_id = t.txid
-  JOIN pgmemento.row_log r ON r.event_id = e.id
-    WHERE r.audit_id = $1;
+SELECT
+  max(t.txid)
+FROM
+  pgmemento.transaction_log t
+JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.txid
+JOIN
+  pgmemento.row_log r
+  ON r.event_id = e.id
+WHERE
+  r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
@@ -98,8 +121,12 @@ LANGUAGE sql STABLE STRICT;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(t_id BIGINT) RETURNS BIGINT AS
 $$
-DELETE FROM pgmemento.transaction_log
-  WHERE txid = $1 RETURNING txid;
+DELETE FROM
+  pgmemento.transaction_log
+WHERE
+  txid = $1
+RETURNING
+  txid;
 $$
 LANGUAGE sql STRICT;
 
@@ -110,13 +137,35 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
-DELETE FROM pgmemento.table_event_log e
-  USING pgmemento.audit_table_log a
-  WHERE e.table_relid = a.relid
-    AND e.transaction_id = $1
-    AND a.schema_name = $3 AND a.table_name = $2
-    AND a.txid_range @> $1::numeric
-    RETURNING e.id;
+DELETE FROM
+  pgmemento.table_event_log e
+USING
+  pgmemento.audit_table_log a
+WHERE
+  e.table_relid = a.relid
+  AND e.transaction_id = $1
+  AND a.schema_name = $3
+  AND a.table_name = $2
+  AND a.txid_range @> $1::numeric
+RETURNING
+  e.id;
+$$
+LANGUAGE sql STRICT;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.delete_key(
+  aid BIGINT,
+  key_name TEXT
+  ) RETURNS SETOF BIGINT AS
+$$
+UPDATE
+  pgmemento.row_log
+SET
+  changes = changes - $2
+WHERE
+  audit_id = $1
+RETURNING
+  id;
 $$
 LANGUAGE sql STRICT;
 
@@ -128,19 +177,28 @@ $$
 BEGIN
   -- only allow delete if table has already been dropped
   IF EXISTS (
-    SELECT 1 FROM pgmemento.audit_table_log 
-      WHERE relid = $1
-        AND upper(txid_range) IS NOT NULL
+    SELECT
+      1
+    FROM
+      pgmemento.audit_table_log 
+    WHERE
+      relid = $1
+      AND upper(txid_range) IS NOT NULL
   ) THEN
     -- remove corresponding table events from event log
-    DELETE FROM pgmemento.table_event_log 
-      WHERE table_relid = $1;
+    DELETE FROM
+      pgmemento.table_event_log 
+    WHERE
+      table_relid = $1;
 
     RETURN QUERY
-      DELETE FROM pgmemento.audit_table_log 
-        WHERE relid = $1
-          AND upper(txid_range) IS NOT NULL
-          RETURNING relid;
+      DELETE FROM
+        pgmemento.audit_table_log 
+      WHERE
+        relid = $1
+        AND upper(txid_range) IS NOT NULL
+      RETURNING
+        relid;
   ELSE
     RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', $1; 
   END IF;
