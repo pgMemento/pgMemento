@@ -32,13 +32,17 @@ BEGIN
   SELECT
     count(*) INTO n_tables
   FROM
-    pg_class c,
+    pg_class c
+  JOIN
     pg_namespace n
+    ON c.relnamespace = n.oid
   WHERE
-    c.relnamespace = n.oid
-    AND n.nspname = 'citydb'
-    OR n.nspname = 'citydb_pkg'
-    OR n.nspname = 'public';
+    c.relkind = 'r'
+    AND (
+      n.nspname = 'citydb'
+      OR n.nspname = 'citydb_pkg'
+      OR n.nspname = 'public'
+    );
 
   ASSERT n_tables = 62, 'Error: Restored database is incomplete!';
 END;
