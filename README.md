@@ -46,7 +46,7 @@ the database consistent.
 pgMemento uses triggers to log the changes. The OLD and the NEW version
 of a tuple are accessable inside the corresponding trigger procedures.
 pgMemento only logs the OLD version as the recent state can be queried
-from the table. It pushes this priciple down on a columnar level meaning
+from the table. It breaks this priciple down on a columnar level meaning
 that only deltas between OLD and NEW are stored when UPDATEs occur. Of
 course, this is an overhead but it pays off in saving disk space and in
 making rollbacks easier.
@@ -61,10 +61,17 @@ written to one central table with a JSONB field.
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
 
+To trace different versions of a tuple in the log table a synthetical key
+is created in each audited table called `audit_id`. This is easier than
+relying on a table's primary key which can be defined on multiple tables
+and for different data types. Audit_ids are unique in a (single node)
+database.
+
 pgMemento provides functions to recreate a former table or database state
 in a separate database schema incl. constraints and indexes. As event 
 triggers are capturing any schema changes, the restored table or database
-will have the layout of the past state.
+will have the layout of the past state. Historic versions of tuples and
+tables can also be queried on-the-fly through provided funtcions.
 
 An audit trail like pgMemento is probably not ideal for write-instensive
 databases. However, as only OLD data is logged it will certainly take
@@ -74,8 +81,8 @@ affecting the versioning mechanism.
 
 pgMemento is written in plain PL/pgSQL. Thus, it can be set up on every
 machine with PostgreSQL 9.5 or higher. I tagged a first version of 
-pgMemento (v0.1) that uses the JSON data type and can be used along with
-PostgreSQL 9.3, but it is slower and can not handle very big data as JSON
+pgMemento (v0.1) that works with the JSON data type and can be used along
+with PostgreSQL 9.3. But, it is slower and can not handle very big JSON
 strings. Releases v0.2 and v0.3 require at least PostgreSQL 9.4. The 
 master uses JSONB functions introduced in PostgreSQL 9.5. I recommend to
 always use the newest version of pgMemento.
@@ -90,9 +97,9 @@ always use the newest version of pgMemento.
 
 The auditing approach of pgMemento is nothing new. Define triggers to log
 changes in your database is a well known practice. There are other tools 
-out there which can also be used. When I started the development for 
-pgMemento I wasn't aware of that there are so many solutions out there
-(and new ones popping up every once in while).
+which can also be used. When I started the development for pgMemento I
+wasn't aware of that there are so many solutions out there (and new ones
+popping up every once in while).
 
 If you want a clearer table structure for logged data, say a history
 table for each audited table, have a look at [tablelog](http://pgfoundry.org/projects/tablelog/) 
@@ -163,15 +170,16 @@ To enable auditing for an entire database schema simply run the `INIT.sql`
 script. First, you are requested to specify the target schema. For the 
 second parameter you can define a set of tables you want to exclude from
 auditing (comma-separated list). As for the third parameter you can decide
-to log already existing data as inserted. This is highly recommended in
-order to have a proper baseline the versioning can reflect on. Finally,
-you can choose if newly created tables shall be enabled for auditing
-automatically. `INIT.sql` also creates event triggers for the database to
-track schema changes of audited tables.
+to log already existing data as inserted (by passing the number 1). This
+is highly recommended in order to have a proper baseline the versioning
+can reflect on. Finally, you can choose if newly created tables shall be
+enabled for auditing automatically (again using the number 1). `INIT.sql`
+creates event triggers for the database to track schema changes of
+audited tables.
 
-Auditing can also be enabled manually for single tables using the 
-following function, which adds an additional `audit_id` column to the table
-and creates triggers that are fired during DML changes.
+Auditing can also be enabled manually for single tables using the following
+function, which adds an additional `audit_id` column to the table and
+creates triggers that are fired during DML changes.
 
 <pre>
 SELECT pgmemento.create_table_audit(
@@ -186,9 +194,9 @@ For each row in the audited tables another row will be written to the
 `row_log` table telling the system that it has been 'inserted' at the 
 timestamp the procedure has been executed. Depending on the number of 
 tables to alter and on the amount of data that has to be defined as 
-INSERTed this process can take a while. With 0 nothing is logged in
-the first place. If you change your mind later, you can still call
-`pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
+INSERTed this process can take a while. By passing the number 0 nothing
+is logged in the first place. If you change your mind later, you can
+still call `pgmemento.log_table_state` (or `pgmemento.log_schema_state`). 
 
 **HINT:** When setting up a new database I would recommend to start 
 pgMemento after bulk imports. Otherwise the import will be slower and 
@@ -922,8 +930,8 @@ you can find some prerequisites here and there in the code.
   schema. This sets the foundation for intitializing a branch. Probably
   I should use `CREATE TABLE ... LIKE` to copy also constraints, indexes,
   triggers etc.
-* There are a couple of functions to add constraints, column definitions,
-  indexes and sequences to a restored state (see next chapter).
+* There are a couple of functions to add constraints, indexes and
+  sequences to a restored state (see next chapter).
 * Code from `revert_transaction` might be useful for merging changes
   (ergo logs) into another branch.
 * The `audit_tables` VIEW was intended to help for switching the
@@ -950,7 +958,7 @@ their metadata is not yet logged by pgMemento.
 ## 10. Future Plans
 
 Here are some plans I have for the next release:
-* Have a test logic for all procedures to enable continious integration
+* Extend test logic to all functions of pgMemento
 * Have log tables for primary keys, constraints, indexes etc.
 * Have a view to store metadata of additional created schemas
   for former table / database states.
@@ -975,6 +983,12 @@ https://www.youtube.com/watch?v=EqLkLNyI6Yk
 I gave another presentation in FOSSGIS-NA 2016:
 http://slides.com/fxku/pgmemento_foss4gna16
 
+I will talk about database auditing at the FOSS4G 2017 in Boston.
+
+A demo paper about pgMemento got accepted at the 15th International
+Symposium for Spatial and Temporal Databases (SSTD) in Arlington, VA.
+I will reference the paper here as soon as a link is available.
+
 
 ## 12. Developers
 
@@ -993,9 +1007,8 @@ felix-kunde@gmx.de
 * Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
 * Christophe Pettus (PGX) --> recommend to only log changes
 * Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
-* Ollyc (Stackoverflow) --> Query to list all foreign keys of a table
-* Denis de Bernardy (Stackoverflow, mesoconcepts) --> Query to list all indexes of a table
 * Ugur Yilmaz --> feedback and suggestions
+* Maximilian Allies --> For setting up Travis yml script
 
 
 ## 15. Disclaimer
