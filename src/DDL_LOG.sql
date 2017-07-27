@@ -374,18 +374,21 @@ BEGIN
   -- truncate tables to log the data
   FOR rec IN 
     SELECT
-      p.schemaname,
-      p.tablename 
+      n.nspname AS schemaname,
+      c.relname AS tablename 
     FROM
-      pg_tables p
+      pg_class c
+    JOIN
+      pg_namespace n
+      ON n.oid = c.relnamespace
     JOIN
       pgmemento.audit_tables_dependency d
-      ON p.schemaname = d.schemaname
-      AND p.tablename = d.tablename
+      ON d.schemaname = n.nspname
+      AND d.tablename = c.relname
     WHERE
-      p.schemaname = schema_name
+      n.nspname = schema_name
     ORDER BY
-      p.schemaname,
+      n.oid,
       d.depth DESC
   LOOP
     -- log drop table event

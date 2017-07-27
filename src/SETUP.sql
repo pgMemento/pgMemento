@@ -602,12 +602,14 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_log_trigger(tablename, $1)
+  pgmemento.create_table_log_trigger(c.relname, $1)
 FROM
-  pg_tables 
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -634,12 +636,14 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_log_trigger(tablename, $1)
+  pgmemento.drop_table_log_trigger(c.relname, $1)
 FROM
-  pg_tables 
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -683,12 +687,14 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit_id(tablename, $1)
+  pgmemento.create_table_audit_id(c.relname, $1)
 FROM
-  pg_tables 
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -731,12 +737,14 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit_id(tablename, $1)
+  pgmemento.drop_table_audit_id(c.relname, $1)
 FROM
-  pg_tables
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
 
@@ -1066,12 +1074,14 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit(tablename, $1, $2)
+  pgmemento.create_table_audit(c.relname, $1, $2)
 FROM
-  pg_tables
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($3,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
 LANGUAGE sql;
 
@@ -1098,11 +1108,13 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit(tablename, $1)
+  pgmemento.drop_table_audit(c.relname, $1)
 FROM
-  pg_tables
+  pg_class c,
+  pg_namespace n
 WHERE
-  schemaname = schema_name 
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  c.relnamespace = n.oid
+  AND n.nspname = $1
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
