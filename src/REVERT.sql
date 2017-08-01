@@ -252,8 +252,6 @@ BEGIN
         WHEN unique_violation THEN
           -- merge changes with recent version of table record and update row
           PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
-        WHEN others THEN
-          NULL;
     END;
 
   -- DROP TABLE case

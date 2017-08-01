@@ -487,8 +487,8 @@ BEGIN
       AND c.relname = $3
       AND n.nspname = $5
       AND (
-        relkind = 'r'
-        OR relkind = 'v'
+        c.relkind = 'r'
+        OR c.relkind = 'v'
       )
   ) THEN
     IF $7 = 1 THEN

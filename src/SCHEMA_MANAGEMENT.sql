@@ -112,6 +112,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
 LANGUAGE sql;
@@ -213,6 +214,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
 LANGUAGE sql;
@@ -249,7 +251,7 @@ BEGIN
       AND i.indisprimary = 'f'
   LOOP
     BEGIN
-      EXECTE stmt;
+      EXECUTE stmt;
 
       EXCEPTION
         WHEN OTHERS THEN
@@ -275,6 +277,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
 LANGUAGE sql;
@@ -402,6 +405,7 @@ BEGIN
   WHERE
     c.relnamespace = n.oid
     AND n.nspname = $2
+    AND c.relkind = 'r'
     AND c.relname <> ALL (COALESCE($3,'{}')); 
  
   -- remove old schema if data were not copied but moved
@@ -472,6 +476,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}')); 
 $$
 LANGUAGE sql;

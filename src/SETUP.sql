@@ -609,6 +609,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
@@ -643,6 +644,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
@@ -694,6 +696,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
@@ -744,6 +747,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
@@ -1081,6 +1085,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
 LANGUAGE sql;
@@ -1115,6 +1120,7 @@ FROM
 WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
+  AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
