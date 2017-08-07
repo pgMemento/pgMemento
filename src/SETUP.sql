@@ -854,13 +854,11 @@ BEGIN
     AND op_id = 3;
 
   -- log inserted row ('changes' column can be left blank)
-  IF NEW IS NOT NULL THEN
-    INSERT INTO pgmemento.row_log
-      (event_id, audit_id)
-    VALUES
-      (e_id, NEW.audit_id);
-  END IF;
-
+  INSERT INTO pgmemento.row_log
+    (event_id, audit_id)
+  VALUES
+    (e_id, NEW.audit_id);
+			 
   RETURN NULL;
 END;
 $$
@@ -887,29 +885,27 @@ BEGIN
   FROM
     pgmemento.table_event_log 
   WHERE
-    transaction_id = txid_current()
+    transaction_id = txid_current() 
     AND table_relid = TG_RELID
     AND op_id = 4;
 
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
-  IF NEW IS NOT NULL THEN
-    SELECT COALESCE(
-      (SELECT
-         ('{' || string_agg(to_json(key) || ':' || value, ',') || '}')
-       FROM
-         jsonb_each(to_jsonb(OLD))
-       WHERE
-         NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
-      ),
-      '{}')::jsonb INTO jsonb_diff;
+  SELECT COALESCE(
+    (SELECT
+       ('{' || string_agg(to_json(key) || ':' || value, ',') || '}') 
+     FROM
+       jsonb_each(to_jsonb(OLD))
+     WHERE
+       NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
+    ),
+    '{}')::jsonb INTO jsonb_diff;
 
-    IF jsonb_diff <> '{}'::jsonb THEN
-      INSERT INTO pgmemento.row_log
-        (event_id, audit_id, changes)
-      VALUES 
-        (e_id, NEW.audit_id, jsonb_diff);
-    END IF;
+  IF jsonb_diff <> '{}'::jsonb THEN
+    INSERT INTO pgmemento.row_log
+      (event_id, audit_id, changes)
+    VALUES 
+      (e_id, NEW.audit_id, jsonb_diff);
   END IF;
 
   RETURN NULL;
@@ -942,12 +938,10 @@ BEGIN
     AND op_id = 7;
 
   -- log content of the entire row in the row_log table
-  IF OLD IS NOT NULL THEN
-    INSERT INTO pgmemento.row_log
-      (event_id, audit_id, changes)
-    VALUES
-      (e_id, OLD.audit_id, to_jsonb(OLD));
-  END IF;
+  INSERT INTO pgmemento.row_log
+    (event_id, audit_id, changes)
+  VALUES
+    (e_id, OLD.audit_id, to_jsonb(OLD));
 
   RETURN NULL;
 END;
