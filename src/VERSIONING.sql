@@ -422,7 +422,7 @@ BEGIN
   -- create temp table
   IF stmt IS NOT NULL THEN
     EXECUTE format(
-      'CREATE TEMPORARY TABLE %I ('
+      'CREATE TEMPORARY TABLE IF NOT EXISTS %I ('
          || stmt
          || ', audit_id bigint DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
          || ') '

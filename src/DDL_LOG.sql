@@ -745,16 +745,10 @@ BEGIN
     e_id :=  pgmemento.log_ddl_event(tablename, schemaname, 9, 'DROP TABLE');
 
     -- log the whole content of the dropped table in the row_log table
-    BEGIN
-      EXECUTE format(
-        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-           SELECT $1, t.audit_id, to_jsonb(t.%I) AS content FROM %I.%I t',
-           tablename, schemaname, tablename) USING e_id;
-
-      EXCEPTION
-        WHEN others THEN
-          NULL;
-    END;
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
+         tablename, schemaname, tablename) USING e_id;
   END IF;
 END;
 $$
