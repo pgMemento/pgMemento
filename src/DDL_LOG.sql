@@ -716,6 +716,8 @@ BEGIN
       ntables := 1;
     END IF;
   ELSE
+    tablename := ddl_text;
+
     -- check if table is audited and not ambiguous
     FOR schemaname IN
       SELECT
