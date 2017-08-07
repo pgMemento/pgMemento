@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.5.1     2017-08-07   sort reverts by row_log ID and not audit_id     FKun
 -- 0.5.0     2017-07-25   add revert support for DDL events               FKun
 -- 0.4.1     2017-04-11   improved revert_distinct_transaction(s)         FKun
 -- 0.4.0     2017-03-08   integrated table dependencies                   FKun
@@ -121,7 +122,7 @@ BEGIN
   -- UPDATE case
   WHEN $4 = 4 THEN
     -- update the row with values from changes
-    IF $3 IS NOT NULL AND $3 <> '{}'::jsonb THEN
+    IF $2 IS NOT NULL AND $3 <> '{}'::jsonb THEN
       -- create SET part
       SELECT
         string_agg(key || '=' || quote_nullable(value),', ') INTO stmt
@@ -172,19 +173,15 @@ BEGIN
       AND c_old.ordinal_position = c_new.ordinal_position
       AND c_old.data_type <> c_new.data_type;
 
-    BEGIN
-      -- try to execute ALTER TABLE command
-      IF stmt IS NOT NULL THEN
-        EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
-      END IF;
+    -- alter table if it has not been done, yet
+    IF stmt IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
+    END IF;
 
-      -- fill in data with an UPDATE statement
+    -- fill in data with an UPDATE statement if audit_id is set
+    IF $2 IS NOT NULL THEN
       PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
-
-      EXCEPTION
-        WHEN others THEN
-          RAISE NOTICE 'Could not revert ALTER COLUMN event for table %.% : %', $6, $5, SQLERRM;
-    END;
+    END IF;
 
   -- DROP COLUMN case
   WHEN $4 = 6 THEN
@@ -223,15 +220,17 @@ BEGIN
       AND c_new.column_name IS NULL
       AND t.table_name = $5
       AND t.schema_name = $6;
-
+	  
     BEGIN
       -- try to execute ALTER TABLE command
       IF stmt IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
       END IF;
 
-      -- fill in data with an UPDATE statement
-      PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+      -- fill in data with an UPDATE statement if audit_id is set
+      IF $2 IS NOT NULL THEN
+        PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+      END IF;
 
       EXCEPTION
         WHEN duplicate_column THEN
@@ -241,18 +240,20 @@ BEGIN
 
   -- DELETE or TRUNCATE case
   WHEN $4 = 7 OR $4 = 8 THEN
-    BEGIN
-      EXECUTE format(
-        'INSERT INTO %I.%I SELECT * FROM jsonb_populate_record(null::%I.%I, $1)',
-        $6, $5, $6, $5)
-        USING $3;
+    IF $2 IS NOT NULL THEN
+      BEGIN
+        EXECUTE format(
+          'INSERT INTO %I.%I SELECT * FROM jsonb_populate_record(null::%I.%I, $1)',
+          $6, $5, $6, $5)
+          USING $3;
 
-      -- row has already been re-inserted, so update it based on the values of this deleted version
-      EXCEPTION
-        WHEN unique_violation THEN
-          -- merge changes with recent version of table record and update row
-          PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
-    END;
+        -- row has already been re-inserted, so update it based on the values of this deleted version
+        EXCEPTION
+          WHEN unique_violation THEN
+            -- merge changes with recent version of table record and update row
+            PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+      END;
+    END IF;
 
   -- DROP TABLE case
   WHEN $4 = 9 THEN
@@ -290,18 +291,14 @@ BEGIN
       AND t.schema_name = $6;
 
     -- try to create table
-    BEGIN
-      IF stmt IS NOT NULL THEN
-        EXECUTE format('CREATE TABLE %I.%I (' || stmt || ')', $6, $5);
-      END IF;
+    IF stmt IS NOT NULL THEN
+      EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I (' || stmt || ')', $6, $5);
+    END IF;
 
-      -- fill in truncated data
+    -- fill in truncated data with an INSERT statement if audit_id is set
+    IF $2 IS NOT NULL THEN
       PERFORM pgmemento.recover_audit_version($1, $2, $3, 8, $5, $6);
-
-      EXCEPTION
-        WHEN others THEN
-          RAISE NOTICE 'Could not revert CREATE TABLE event for table %.% : %', $6, $5, SQLERRM;
-    END;
+    END IF;
 
   END CASE;
 END;
@@ -330,11 +327,7 @@ BEGIN
       e.op_id, 
       a.table_name,
       a.schema_name,
-      CASE WHEN e.op_id > 4 THEN
-        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC, r.id DESC)
-      ELSE
-        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC, r.id DESC)
-      END AS audit_order,
+      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -384,11 +377,7 @@ BEGIN
       e.op_id,
       a.table_name,
       a.schema_name,
-      CASE WHEN e.op_id > 4 THEN
-        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id ASC, r.id DESC)
-      ELSE
-        rank() OVER (PARTITION BY r.event_id ORDER BY r.audit_id DESC, r.id DESC)
-      END AS audit_order,
+      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -446,11 +435,7 @@ BEGIN
       q.changes, 
       a.table_name,
       a.schema_name,
-      CASE WHEN q.op_id > 4 THEN
-        rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id ASC)
-      ELSE
-        rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id DESC)
-      END AS audit_order,
+      rank() OVER (PARTITION BY q.event_id ORDER BY q.id DESC) AS audit_order,
       CASE WHEN q.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -459,6 +444,7 @@ BEGIN
     FROM (
       SELECT DISTINCT ON (r.audit_id)
         t.txid,
+        r.id,
         r.audit_id,
         r.event_id,
         e.table_relid,
@@ -510,11 +496,7 @@ BEGIN
       q.changes, 
       a.table_name,
       a.schema_name,
-      CASE WHEN q.op_id > 4 THEN
-        rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id ASC)
-      ELSE
-        rank() OVER (PARTITION BY q.event_id ORDER BY q.audit_id DESC)
-      END AS audit_order,
+      rank() OVER (PARTITION BY q.event_id ORDER BY q.id DESC) AS audit_order,
       CASE WHEN q.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -523,6 +505,7 @@ BEGIN
     FROM (
       SELECT DISTINCT ON (r.audit_id)
         t.txid,
+        r.id,
         r.audit_id,
         r.event_id,
         e.table_relid,
