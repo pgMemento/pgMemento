@@ -16,7 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.5.1     2017-08-07   sort reverts by row_log ID and not audit_id     FKun
+-- 0.5.1     2017-08-08   sort reverts by row_log ID and not audit_id     FKun
+--                        improved revert_distinct_transaction(s)
 -- 0.5.0     2017-07-25   add revert support for DDL events               FKun
 -- 0.4.1     2017-04-11   improved revert_distinct_transaction(s)         FKun
 -- 0.4.0     2017-03-08   integrated table dependencies                   FKun
@@ -429,49 +430,61 @@ DECLARE
 BEGIN
   FOR rec IN 
     SELECT
-      q.txid,
+      $1 AS txid,
       q.audit_id,
-      q.op_id, 
+      CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY q.event_id ORDER BY q.id DESC) AS audit_order,
-      CASE WHEN q.op_id > 4 THEN
+      rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
+      CASE WHEN e1.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
     FROM (
-      SELECT DISTINCT ON (r.audit_id)
-        t.txid,
-        r.id,
+      SELECT
         r.audit_id,
-        r.event_id,
         e.table_relid,
-        e.op_id,
-        pgmemento.jsonb_merge(r.changes) OVER () AS changes
+        min(e.id) AS first_event,
+        max(e.id) AS last_event,
+        min(r.id) AS row_log_id,
+        pgmemento.jsonb_merge(r.changes ORDER BY r.id DESC) AS changes
       FROM
-        pgmemento.transaction_log t 
-      JOIN
         pgmemento.table_event_log e
-        ON e.transaction_id = t.txid
       LEFT JOIN
         pgmemento.row_log r
         ON r.event_id = e.id
       WHERE
-        t.txid = $1
-      ORDER BY
+        e.transaction_id = $1
+      GROUP BY
         r.audit_id,
-        r.id
+        e.table_relid
     ) q
-    JOIN pgmemento.audit_table_log a
+    JOIN
+      pgmemento.table_event_log e1
+      ON e1.id = q.first_event
+    JOIN
+      pgmemento.table_event_log e2
+      ON e2.id = q.last_event
+    JOIN
+      pgmemento.audit_table_log a
       ON a.relid = q.table_relid
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
       AND d.schemaname = a.schema_name
+    WHERE
+      NOT (
+        e1.op_id = 1
+        AND e2.op_id = 9
+      )
+      AND NOT (
+        e1.op_id = 3
+        AND e2.op_id > 6
+      )
     ORDER BY
       dependency_order,
-      q.event_id DESC,
+      e1.id DESC,
       audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
@@ -492,47 +505,60 @@ BEGIN
     SELECT
       q.txid,
       q.audit_id,
-      q.op_id, 
+      CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY q.event_id ORDER BY q.id DESC) AS audit_order,
-      CASE WHEN q.op_id > 4 THEN
+      rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
+      CASE WHEN e1.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
     FROM (
-      SELECT DISTINCT ON (r.audit_id)
-        t.txid,
-        r.id,
+      SELECT
         r.audit_id,
-        r.event_id,
         e.table_relid,
-        e.op_id,
-        pgmemento.jsonb_merge(r.changes) OVER () AS changes
+        min(e.transaction_id) AS txid,
+        min(e.id) AS first_event,
+        max(e.id) AS last_event,
+        min(r.id) AS row_log_id,
+        pgmemento.jsonb_merge(r.changes ORDER BY r.id DESC) AS changes
       FROM
-        pgmemento.transaction_log t 
-      JOIN
         pgmemento.table_event_log e
-        ON e.transaction_id = t.txid
       LEFT JOIN
         pgmemento.row_log r
         ON r.event_id = e.id
       WHERE
-        t.txid BETWEEN $1 AND $2
-      ORDER BY
+        e.transaction_id BETWEEN $1 AND $2
+      GROUP BY
         r.audit_id,
-        r.id
+        e.table_relid
     ) q
-    JOIN pgmemento.audit_table_log a
+    JOIN
+      pgmemento.table_event_log e1
+      ON e1.id = q.first_event
+    JOIN
+      pgmemento.table_event_log e2
+      ON e2.id = q.last_event
+    JOIN
+      pgmemento.audit_table_log a
       ON a.relid = q.table_relid
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.tablename = a.table_name
       AND d.schemaname = a.schema_name
+    WHERE
+      NOT (
+        e1.op_id = 1
+        AND e2.op_id = 9
+      )
+      AND NOT (
+        e1.op_id = 3
+        AND e2.op_id > 6
+      )
     ORDER BY
       dependency_order,
-      q.event_id DESC,
+      e1.id DESC,
       audit_order
   LOOP
     PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);

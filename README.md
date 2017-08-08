@@ -182,11 +182,7 @@ function, which adds an additional `audit_id` column to the table and
 creates triggers that are fired during DML changes.
 
 <pre>
-SELECT pgmemento.create_table_audit(
-  'table_A',
-  'public',
-  1
-);
+SELECT pgmemento.create_table_audit('table_A', 'public', 1);
 </pre>
 
 With the last argument you define, if existing data is logged or not. 
@@ -314,7 +310,7 @@ the audit tables but data is not logged. The same applies to `ADD COLUMN`
 events. As noted in 5.2., `CREATE TABLE` will only fire a trigger if it
 has been enabled previously.
 
-**NOTE:**: For correct parsing of DDL command, comments inside query
+**NOTE**: For correct parsing of DDL command, comments inside query
 strings that fire event triggers are forbidden and will raise an
 exception. At least, since v0.5 DDL changes executed from inside
 functions can be extracted correctly.
@@ -326,23 +322,30 @@ The logged information can already be of use, e.g. list all transactions
 that had an effect on a certain column by using the `?` operator:
 
 <pre>
-SELECT t.txid 
-  FROM pgmemento.transaction_log t
-  JOIN pgmemento.table_event_log e ON t.txid = e.transaction_id
-  JOIN pgmemento.row_log r ON r.event_id = e.id
-  WHERE 
-    r.audit_id = 4 
-  AND 
-    (r.changes ? 'column_B');
+SELECT
+  t.txid 
+FROM
+  pgmemento.transaction_log t
+JOIN
+  pgmemento.table_event_log e
+  ON t.txid = e.transaction_id
+JOIN
+  pgmemento.row_log r
+  ON r.event_id = e.id
+WHERE 
+  r.audit_id = 4 
+  AND (r.changes ? 'column_B');
 </pre>
 
 List all rows that once had a certain value by using the `@>` operator:
 
 <pre>
-SELECT DISTINCT audit_id 
-  FROM pgmemento.row_log
-  WHERE 
-    changes @> '{"column_B": "old_value"}'::jsonb;
+SELECT DISTINCT
+  audit_id 
+FROM
+  pgmemento.row_log
+WHERE 
+  changes @> '{"column_B": "old_value"}'::jsonb;
 </pre>
 
 To get all changes per `audit_id` of one transaction as one row of
@@ -353,10 +356,13 @@ ID it is possible to see the first or the last changes per field.
 <pre>
 SELECT DISTINCT ON (r.audit_id)
   pgmemento.jsonb_merge(r.changes) OVER () AS changes
-FROM pgmemento.row_log r
-JOIN pgmemento.table_event_log e 
+FROM
+  pgmemento.row_log r
+JOIN
+  pgmemento.table_event_log e 
   ON e.id = r.event_id
-JOIN pgmemento.transaction_log t
+JOIN
+  pgmemento.transaction_log t
   ON t.txid = e.transaction_id
 WHERE
   t.txid = 1000000
@@ -373,10 +379,10 @@ The logged information can be used to revert certain transactions that
 happened in the past. Reinsert deleted rows, remove imported data, 
 reverse updates etc. The procedure is called `revert_transaction`. It
 loops over each row that was affected by the given transaction. For data
-integrity reasons the order of operations and audit_ids is important.
-Imagine three tables A, B and C, with B and C referencing A. Deleting
-entries in A requires deleting depending rows in B and C. The order of
-events in one transaction can look like this:
+integrity reasons the order of operations and entries in the `row_log`
+table is important. Imagine three tables A, B and C, with B and C 
+referencing A. Deleting entries in A requires deleting depending rows
+in B and C. The order of events in one transaction can look like this:
 
 <pre>
 Txid 1000
@@ -408,19 +414,17 @@ Revert Txid 1000
 3. INSERT into C
 </pre>
 
-For INSERTs and UPDATEs the reverse depth order is used. The same
-distinction is used when resolving self-references on tables. A parent
-element must be inserted before the tuples that are referencing it. 
-The parent naturally has got a lower `audit_id` value. When reverting
-INSERTs (younger) tuples with a higher `audit_id` need to be deleted
-first. When reverting DELETEs (older) tuples with a lower `audit_id`
-need to be reinserted first. The ordering of audit_ids is partitioned
-by the diffenrent events.
+For INSERTs and UPDATEs the reverse depth order is used. Reverting also
+works if foreign keys are set to `ON UPDATE CASCADE` or `ON DELETE CASCADE`
+because the `audit_tables_dependency` produces the correct order anyway.
 
-Reverting also works if foreign keys are set to `ON UPDATE CASCADE` or
-`ON DELETE CASCADE` because the `audit_tables_dependency` produces the
-correct order anyway and cross-referencing tuples in one table would
-belong to the same event.
+**NOTE**: Until v0.4, pgMemento tried to revert operations in tables
+with self-references through an ordering of audit_ids. But, since this
+concept would only work if hierachies have the same order, the idea was
+dropped. Now, the ID from the `row_log` table is used. This allows for
+reverting operation against any hierarchies, but **ONLY** if non-cascading
+foreign keys are used. Otherwise, the user has to write his own revert
+script and flip the audit_order.
 
 A range of transactions can be reverted by calling:
 
@@ -437,6 +441,12 @@ the revert process faster. It is also provided for transaction ranges.
 <pre>
 SELECT pgmemento.revert_distinct_transactions(lower_txid, upper_txid);
 </pre>
+
+**NOTE**: If tables are created and dropped again during one transaction
+or a range of transactions `revert_distinct_transaction` is the better
+choice. Otherwise, the `txid_range` columns in tables `audit_table_log`
+and `audit_column_log` will be empty (but only if CREATE TABLE events
+are logged automatically).
 
 
 ## 8. Restore a past states of tuples, tables and schemas
@@ -477,11 +487,13 @@ get the next transaction id found after a given timestamp with this
 query:
 
 <pre>
-SELECT txid
-  FROM pgmemento.transaction_log
-    WHERE stmt_date >= '2017-02-22 16:00:00'
-    LIMIT 1
-) t;
+SELECT
+  min(txid)
+FROM
+  pgmemento.transaction_log
+WHERE
+  stmt_date >= '2017-02-22 16:00:00'
+LIMIT 1;
 </pre>
 
 
@@ -562,8 +574,8 @@ FROM (
     r.audit_id,
     e.id DESC
 ) f
-WHERE f.op_id < 7
-)
+WHERE
+  f.op_id < 7
 </pre>
 
 For `audit_id` 555 this query would tell us that the row did exist before
@@ -672,8 +684,7 @@ JOIN LATERAL (
        ) AS value
     ) q2,
     ...
-)
-  ON (true)
+) p ON (true)
 </pre>
 
 Since v0.4 pgMemento uses a window function with `FILTER` clauses 
@@ -727,7 +738,10 @@ FROM (
     ON x.audit_id = f.audit_id
   WHERE
     f.op_id < 7
-    ORDER BY a.audit_id, x.audit_id, a.id
+  ORDER BY
+    a.audit_id,
+    x.audit_id,
+    a.id
 ) q
 </pre>
 
@@ -810,8 +824,7 @@ JOIN LATERAL (
        null::public.my_table,
        entries
     )
-) p
-ON (true);
+) p ON (true);
 </pre>
 
 With the following query, it is possible to look at all revisions of 
@@ -850,8 +863,7 @@ JOIN LATERAL (
       null::public.my_table,
       log.entry
     )
-) p
-  ON (true); 
+) p ON (true); 
 </pre>
 
 
