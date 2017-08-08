@@ -354,22 +354,19 @@ or window function. When combining it with an ordering by the `row_log`
 ID it is possible to see the first or the last changes per field.
 
 <pre>
-SELECT DISTINCT ON (r.audit_id)
-  pgmemento.jsonb_merge(r.changes) OVER () AS changes
+SELECT
+  r.audit_id,
+  pgmemento.jsonb_merge(r.changes ORDER BY r.id) AS first_changes,
+  pgmemento.jsonb_merge(r.changes ORDER BY r.id DESC) AS last_changes
 FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e 
   ON e.id = r.event_id
-JOIN
-  pgmemento.transaction_log t
-  ON t.txid = e.transaction_id
 WHERE
-  t.txid = 1000000
-ORDER BY
-  r.audit_id,
-  r.id -- this would give you the oldest changes/logs per field
-;
+  e.transaction_id = 1000000
+GROUP BY
+  r.audit_id;
 </pre> 
 
 
