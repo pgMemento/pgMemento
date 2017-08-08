@@ -239,7 +239,7 @@ sections.
 | 6     | ALTER TABLE DROP COLUMN*  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
 | 7     | DELETE                    | INSERT                          | all fields of deleted rows     |
 | 8     | TRUNCATE                  | INSERT                          | all fields of table            |
-| 9     | DROP TABLE*               | CREATE TABLE + INSERT           | all fields of table            |
+| 9     | DROP TABLE*               | CREATE TABLE                    | all fields of table            |
 
 
 ### 6.2. DML logging
@@ -371,6 +371,26 @@ ORDER BY
   r.id -- this would give you the oldest changes/logs per field
 ;
 </pre> 
+
+
+### 6.5. Delete logs and data correction
+
+To delete entries in the audit table pgMemento offers a simple API to
+remove logs caused by one transaction (`delete_txid_log`) or one event
+(`delete_table_event_log`). The function `delete_audit_table_log`
+removes entries from the tables `audit_table_log` and `audit_column_log`.
+
+One has to be sure that deleting logs changes the audit trail of the
+data. Historic versions of tuples and tables will get lost. Sometimes,
+this is intended, e.g. if there are semantic errors in the data. In this
+case the user should be able to see a corrected version of the data also
+when querying previous table states. In order to apply corrections
+against the complete audit trail call `delete_key` and pass the audit_id
+and column name where the correction shall be applied. This removes all
+corresponding key-value pairs from the JSONB logs so that the corrected
+value will be the only value of the given column for the entire audit
+trail. Keep in mind that this action can also produce emtpy logs in the
+`row_log` table.
 
 
 ## 7. Revert certain transactions
