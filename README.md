@@ -1016,7 +1016,7 @@ I will talk about database auditing at the FOSS4G 2017 in Boston.
 
 A demo paper about pgMemento got accepted at the 15th International
 Symposium for Spatial and Temporal Databases (SSTD) in Arlington, VA.
-I will reference the paper here as soon as a link is available.
+You can find the publication [here](https://link.springer.com/chapter/10.1007/978-3-319-64367-0_27).
 
 
 ## 12. Developers
