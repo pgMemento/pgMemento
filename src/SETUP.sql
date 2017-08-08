@@ -343,6 +343,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       c.contype = 'f'
       AND c.conrelid <> c.confrelid
       AND upper(a.txid_range) IS NULL
+      AND lower(a.txid_range) IS NOT NULL
     UNION ALL
       SELECT DISTINCT ON (c.conrelid)
         c.confrelid AS parent_oid,
@@ -364,6 +365,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         c.contype = 'f'
         AND d.child_oid <> c.conrelid
         AND upper(a.txid_range) IS NULL
+        AND lower(a.txid_range) IS NOT NULL
   )
   SELECT
     schema_name AS schemaname,
@@ -421,6 +423,7 @@ BEGIN
     table_name = $1
     AND schema_name = $2
     AND upper(txid_range) IS NULL
+    AND lower(txid_range) IS NOT NULL
   RETURNING
     id INTO tab_id;
 
@@ -432,7 +435,8 @@ BEGIN
       txid_range = numrange(lower(txid_range), txid_current(), '[)') 
     WHERE
       audit_table_id = tab_id
-      AND upper(txid_range) IS NULL;
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
   END IF;
 END;
 $$
@@ -466,7 +470,8 @@ BEGIN
     WHERE
       table_name = $1
       AND schema_name = $2
-      AND upper(txid_range) IS NULL;
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
 
     IF tab_id IS NULL THEN
       -- check if table exists in 'audit_table_log' with another name (and open range)
@@ -477,7 +482,8 @@ BEGIN
         pgmemento.audit_table_log 
       WHERE
         relid = ($2 || '.' || $1)::regclass::oid
-        AND upper(txid_range) IS NULL;
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
 
       -- now register table and corresponding columns in audit tables
       INSERT INTO pgmemento.audit_table_log
@@ -1038,7 +1044,8 @@ WHERE
   AND a.table_name = d.tablename
   AND a.schema_name = $1
   AND d.schemaname = $1
-  AND upper(txid_range) IS NULL
+  AND upper(a.txid_range) IS NULL
+  AND lower(a.txid_range) IS NOT NULL
 ORDER BY
   d.depth;
 $$

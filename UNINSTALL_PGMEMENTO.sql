@@ -36,7 +36,8 @@ SELECT
 FROM
   pgmemento.audit_table_log
 WHERE
-  upper(txid_range) IS NULL;
+  upper(txid_range) IS NULL
+  AND lower(txid_range) IS NOT NULL;
 
 \echo
 \echo 'Removing pgmemento schema ...'

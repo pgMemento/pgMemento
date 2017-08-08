@@ -133,7 +133,8 @@ BEGIN
       pgmemento.audit_table_log 
     WHERE
       relid = log_tab_oid
-      AND upper(txid_range) IS NULL;
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
   END IF;
 
   -- if not, set new_tab_* attributes, as we need them later
@@ -249,7 +250,8 @@ BEGIN
         audit_table_id = new_tab_id
         AND ordinal_position = log_column.ordinal_position
         AND data_type = log_column.data_type
-        AND upper(txid_range) IS NULL;
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
     END IF;
 
     IF new_tab_upper_txid IS NOT NULL OR new_column_name IS NULL THEN

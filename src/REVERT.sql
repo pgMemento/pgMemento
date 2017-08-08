@@ -88,6 +88,7 @@ BEGIN
     WHERE
       lower(c.txid_range) = $1
       AND upper(c.txid_range) IS NULL
+      AND lower(c.txid_range) IS NOT NULL
       AND t.table_name = $5
       AND t.schema_name = $6;
 
@@ -214,6 +215,7 @@ BEGIN
         atl.table_name = t.table_name
         AND atl.schema_name = t.schema_name
         AND upper(c.txid_range) IS NULL
+        AND lower(c.txid_range) IS NOT NULL
       ) c_new
       ON c_old.column_name = c_new.column_name
     WHERE
@@ -281,7 +283,8 @@ BEGIN
       WHERE
         atl.table_name = t.table_name
         AND atl.schema_name = t.schema_name
-        AND upper(txid_range) IS NULL
+        AND upper(atl.txid_range) IS NULL
+        AND lower(atl.txid_range) IS NOT NULL
       ) t_new
       ON t.table_name = t_new.table_name
     WHERE

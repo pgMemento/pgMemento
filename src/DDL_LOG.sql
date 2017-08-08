@@ -188,7 +188,9 @@ BEGIN
           WHERE
             a.id = tab_id
             AND upper(a.txid_range) IS NULL
+            AND lower(a.txid_range) IS NOT NULL
             AND upper(c.txid_range) IS NULL
+            AND lower(c.txid_range) IS NOT NULL
           ) acl
           ON acl.column_name = a.attname
         WHERE
@@ -235,7 +237,9 @@ BEGIN
         a.id = tab_id
         AND col.column_name IS NULL
         AND upper(a.txid_range) IS NULL
+        AND lower(a.txid_range) IS NOT NULL
         AND upper(c.txid_range) IS NULL
+        AND lower(c.txid_range) IS NOT NULL
     )
     UPDATE
       pgmemento.audit_column_log acl
@@ -288,7 +292,9 @@ BEGIN
         WHERE
           a.id = tab_id
           AND upper(a.txid_range) IS NULL
+          AND lower(a.txid_range) IS NOT NULL
           AND upper(c.txid_range) IS NULL
+          AND lower(c.txid_range) IS NOT NULL
         ) acl
         ON col.column_name = acl.column_name
         AND col.table_name = acl.table_name
@@ -512,7 +518,8 @@ BEGIN
       WHERE
         table_name = split_part(table_ident, '.', 2)
         AND schema_name = split_part(table_ident, '.', 1)
-        AND upper(txid_range) IS NULL;
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
 
       IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
         ntables := 1;
@@ -529,6 +536,7 @@ BEGIN
         WHERE
           table_name = tablename
           AND upper(txid_range) IS NULL
+          AND lower(txid_range) IS NOT NULL
       LOOP
         ntables := ntables + 1;
       END LOOP;
@@ -569,6 +577,7 @@ BEGIN
               AND a.table_name = tablename
               AND a.schema_name = schemaname
               AND upper(c.txid_range) IS NULL
+              AND lower(c.txid_range) IS NOT NULL
           ) THEN
             -- try to log corresponding table event
             IF altering THEN
@@ -713,7 +722,8 @@ BEGIN
     WHERE
       table_name = split_part(ddl_text, '.', 2)
       AND schema_name = split_part(ddl_text, '.', 1)
-      AND upper(txid_range) IS NULL;
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
 
     IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
       ntables := 1;
@@ -730,6 +740,7 @@ BEGIN
       WHERE
         table_name = tablename
         AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL
     LOOP
       ntables := ntables + 1;
     END LOOP;
