@@ -712,7 +712,7 @@ BEGIN
   IF EXISTS (
     SELECT
       1
-	FROM
+    FROM
       pg_attribute
     WHERE
       attrelid = ($2 || '.' || $1)::regclass::oid
@@ -775,9 +775,9 @@ BEGIN
   -- assign id for operation type
   CASE TG_OP
     WHEN 'INSERT' THEN operation_id := 3;
-	WHEN 'UPDATE' THEN operation_id := 4;
+    WHEN 'UPDATE' THEN operation_id := 4;
     WHEN 'DELETE' THEN operation_id := 7;
-	WHEN 'TRUNCATE' THEN operation_id := 8;
+    WHEN 'TRUNCATE' THEN operation_id := 8;
   END CASE;
 
   -- try to log corresponding table event
@@ -1009,6 +1009,8 @@ BEGIN
 
       IF pkey_columns IS NOT NULL THEN
         pkey_columns := ' ORDER BY ' || pkey_columns;
+      ELSE
+        pkey_columns := ' ORDER BY audit_id';
       END IF;
 
       EXECUTE format(

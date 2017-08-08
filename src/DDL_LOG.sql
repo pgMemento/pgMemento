@@ -14,16 +14,17 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                 | Author
--- 0.5.0     2017-07-25   improved processing of DDL events             FKun
--- 0.4.1     2017-07-18   now using register functions from SETUP       FKun
--- 0.4.0     2017-07-12   reflect changes to audit_column_log table     FKun
--- 0.3.2     2017-04-10   log also CREATE/DROP TABLE and ADD COLUMN     FKun
+-- Version | Date       | Description                                    | Author
+-- 0.5.1     2017-08-08   DROP TABLE/SCHEMA events log data as truncated   FKun
+-- 0.5.0     2017-07-25   improved processing of DDL events                FKun
+-- 0.4.1     2017-07-18   now using register functions from SETUP          FKun
+-- 0.4.0     2017-07-12   reflect changes to audit_column_log table        FKun
+-- 0.3.2     2017-04-10   log also CREATE/DROP TABLE and ADD COLUMN        FKun
 --                        event in log tables (no data logging)
--- 0.3.1     2017-03-31   data logging before ALTER COLUMN events       FKun
--- 0.3.0     2017-03-15   data logging before DDL drop events           FKun
--- 0.2.0     2017-03-11   update to Pg9.5 and adding more trigger       FKun
--- 0.1.0     2016-04-14   initial commit                                FKun
+-- 0.3.1     2017-03-31   data logging before ALTER COLUMN events          FKun
+-- 0.3.0     2017-03-15   data logging before DDL drop events              FKun
+-- 0.2.0     2017-03-11   update to Pg9.5 and adding more trigger          FKun
+-- 0.1.0     2016-04-14   initial commit                                   FKun
 --
 
 /**********************************************************
@@ -391,14 +392,16 @@ BEGIN
       n.oid,
       d.depth DESC
   LOOP
-    -- log drop table event
-    e_id :=  pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 9, 'DROP TABLE');
+    -- log the whole content of the dropped table as truncated
+    e_id :=  pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 8, 'TRUNCATE');
 
-    -- log the whole content of the dropped table in the row_log table
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
+         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
          rec.tablename, rec.schemaname, rec.tablename) USING e_id;
+
+    -- now log drop table event
+    PERFORM pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 9, 'DROP TABLE');
 
     -- unregister table from log tables
     PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
@@ -741,14 +744,16 @@ BEGIN
     -- table name is found more than once in audit_table_log
     RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
   ELSE
-    -- log drop table event
-    e_id :=  pgmemento.log_ddl_event(tablename, schemaname, 9, 'DROP TABLE');
+    -- log the whole content of the dropped table as truncated
+    e_id :=  pgmemento.log_ddl_event(tablename, schemaname, 8, 'TRUNCATE');
 
-    -- log the whole content of the dropped table in the row_log table
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
+         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
          tablename, schemaname, tablename) USING e_id;
+
+    -- now log drop table event
+    PERFORM pgmemento.log_ddl_event(tablename, schemaname, 9, 'DROP TABLE');
   END IF;
 END;
 $$
