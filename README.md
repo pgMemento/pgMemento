@@ -231,15 +231,15 @@ sections.
 
 | OP_ID | EVENT                     | REVERSE EVENT                   | LOG CONTENT                    |
 |:-----:|:--------------------------|:--------------------------------|:-------------------------------|
-| 1     | CREATE TABLE*             | DROP TABLE                      | NULL                           |
-| 2     | ALTER TABLE ADD COLUMN*   | ALTER TABLE DROP COLUMN         | NULL                           |
+| 1     | CREATE TABLE*             | DROP TABLE                      | -                              |
+| 2     | ALTER TABLE ADD COLUMN*   | ALTER TABLE DROP COLUMN         | -                              |
 | 3     | INSERT                    | DELETE                          | NULL                           |
 | 4     | UPDATE                    | UPDATE                          | changed fields of changed rows |
 | 5     | ALTER TABLE ALTER COLUMN* | ALTER TABLE ALTER COLUMN        | all rows of altered columns    |
 | 6     | ALTER TABLE DROP COLUMN*  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
 | 7     | DELETE                    | INSERT                          | all fields of deleted rows     |
 | 8     | TRUNCATE                  | INSERT                          | all fields of table            |
-| 9     | DROP TABLE*               | CREATE TABLE                    | all fields of table            |
+| 9     | DROP TABLE*               | CREATE TABLE                    | all fields of table (TRUNCATE) |
 
 
 ### 6.2. DML logging
@@ -855,11 +855,11 @@ SELECT
 FROM (
   SELECT
     pgmemento.generate_log_entry(
-      1
+      1,
       e.transaction_id,
       'my_table',
       'public',
-      r.audit_id,
+      r.audit_id
     ) AS entry
   FROM 
     pgmemento.row_log r
