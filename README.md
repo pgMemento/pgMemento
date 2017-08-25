@@ -225,22 +225,25 @@ script.
 
 The following table provides an overview what DML and DDL events are
 logged and which command is applied when reverting the event (see
-chapter 7). Events marked with * are captured by event triggers.
-More details on the logging behaviour are explained in the next
-sections.
+chapter 7).
 
 | OP_ID | EVENT                     | REVERSE EVENT                   | LOG CONTENT                    |
 |:-----:|:--------------------------|:--------------------------------|:-------------------------------|
-| 1     | CREATE TABLE*             | DROP TABLE                      | -                              |
-| 2     | ALTER TABLE ADD COLUMN*   | ALTER TABLE DROP COLUMN         | -                              |
+| 1     | CREATE TABLE'             | DROP TABLE                      | -                              |
+| 2     | ALTER TABLE ADD COLUMN'   | ALTER TABLE DROP COLUMN         | -                              |
 | 3     | INSERT                    | DELETE                          | NULL                           |
 | 4     | UPDATE                    | UPDATE                          | changed fields of changed rows |
-| 5     | ALTER TABLE ALTER COLUMN* | ALTER TABLE ALTER COLUMN        | all rows of altered columns    |
-| 6     | ALTER TABLE DROP COLUMN*  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
+| 5     | ALTER TABLE ALTER COLUMN' | ALTER TABLE ALTER COLUMN        | all rows of altered columns''  |
+| 6     | ALTER TABLE DROP COLUMN'  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
 | 7     | DELETE                    | INSERT                          | all fields of deleted rows     |
 | 8     | TRUNCATE                  | INSERT                          | all fields of table            |
-| 9     | DROP TABLE*               | CREATE TABLE                    | all fields of table (TRUNCATE) |
+| 9     | DROP TABLE'               | CREATE TABLE                    | all fields of table (TRUNCATE) |
 
+' Captured by event triggers
+'' Only if USING is found in the ALTER COLUMN command 
+
+More details on the logging behaviour are explained in the next
+sections.
 
 ### 6.2. DML logging
 
