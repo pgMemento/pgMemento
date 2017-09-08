@@ -17,10 +17,11 @@
 -- 0.1.0     2017-07-20   initial commit                                   FKun
 --
 
--- restore dumped database
+-- get test number
+SELECT nextval('pgmemento.test_seq') AS n \gset
 
 \echo
-\echo 'TEST 2: pgMemento setup'
+\echo 'TEST ':n': pgMemento setup'
 
 DO
 $$
@@ -69,7 +70,8 @@ BEGIN
   WHERE
     c.relnamespace = n.oid
     AND n.nspname = 'pgmemento'
-    AND c.relkind = 'S';
+    AND c.relkind = 'S'
+    AND c.relname <> 'test_seq';
 
   ASSERT array_length(pgm_objects,1) = 6, 'Error: Incorrect number of sequences!';
   ASSERT pgm_objects[1] = 'audit_column_log_id_seq', 'Error: audit_column_log_id_seq not found!';
@@ -167,4 +169,4 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST 2: pgMemento setup correct!'
+\echo 'TEST ':n': pgMemento setup correct!'

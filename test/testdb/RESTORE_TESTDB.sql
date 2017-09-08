@@ -17,8 +17,11 @@
 -- 0.1.0     2017-07-20   initial commit                                   FKun
 --
 
+-- get test number
+SELECT nextval('pgmemento.test_seq') AS n \gset
+
 \echo
-\echo 'TEST 1: TestDB setup'
+\echo 'TEST ':n': TestDB setup', 
 
 \echo
 \echo 'Restore dumped 3DCityDB instance'
@@ -50,4 +53,4 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST 1: TestDB setup correct'
+\echo 'TEST ':n' TestDB setup correct'

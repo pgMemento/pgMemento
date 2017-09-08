@@ -1,4 +1,4 @@
--- RESTORE_TESTDB.sql
+-- TEST_INIT.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -8,21 +8,65 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that initializes pgMemento on test database and checks if 
+-- Script that initializes pgMemento for a single table in the test database
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2017-09-08   moved drop parts to TEST_UNINSTALL.sql           FKun
 -- 0.1.0     2017-07-20   initial commit                                   FKun
 --
 
-\echo
-\echo 'TEST 3: pgMemento initializaton'
-SELECT pgmemento.create_schema_event_trigger(1);
+-- get test number
+SELECT nextval('pgmemento.test_seq') AS n \gset
 
 \echo
-\echo 'TEST 3.1: Create log trigger'
+\echo 'TEST ':n': pgMemento initializaton'
+
+\echo
+\echo 'TEST ':n'.1: Create event trigger'
+DO
+$$
+BEGIN
+  -- create the event triggers
+  PERFORM pgmemento.create_schema_event_trigger(1);
+
+  -- query for event triggers
+  ASSERT (
+    SELECT NOT EXISTS (
+      SELECT
+        1
+      FROM (
+        VALUES
+          ('schema_drop_pre_trigger'),
+          ('table_alter_post_trigger'),
+          ('table_alter_pre_trigger'),
+          ('table_create_post_trigger'),
+          ('table_drop_post_trigger'),
+          ('table_drop_pre_trigger')
+        ) AS p (pgm_event_trigger)
+      LEFT JOIN (
+        SELECT
+          evtname
+        FROM
+          pg_event_trigger
+        ) t
+        ON t.evtname = p.pgm_event_trigger
+      WHERE
+        t.evtname IS NULL
+    )
+  ), 'Error: Did not find all necessary event trigger!';
+END;
+$$
+LANGUAGE plpgsql;
+
+\echo
+\echo 'TEST ':n'.1: Create event trigger correct'
+
+
+\echo
+\echo 'TEST ':n'.2: Create log trigger'
 DO
 $$
 DECLARE
@@ -64,10 +108,10 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST 3.1: Create log trigger correct'
+\echo 'TEST ':n'.2: Create log trigger correct'
 
 \echo
-\echo 'TEST 3.2: Create audit_id column'
+\echo 'TEST ':n'.3: Create audit_id column'
 DO
 $$
 DECLARE
@@ -121,81 +165,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST 3.2: Create audit_id column correct'
+\echo 'TEST ':n'.3: Create audit_id column correct'
 
 \echo
-\echo 'TEST 3.3: Drop audit_id column'
-DO
-$$
-DECLARE
-  tab TEXT := 'cityobject';
-BEGIN
-  -- drop audit_id column. It should fire a DDL trigger to fill audit tables and update audit_column_log
-  PERFORM pgmemento.drop_table_audit_id(tab, 'citydb');
-
-  -- test if audit_id column has been dropped
-  ASSERT (
-    SELECT NOT EXISTS(
-      SELECT
-        1
-      FROM
-        pg_attribute
-      WHERE
-        attrelid = ('citydb.' || tab)::regclass
-        AND attnum > 0
-        AND NOT attisdropped
-        AND attname = 'audit_id'
-    )
-  ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
-END;
-$$
-LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST 3.3: Drop audit_id column correct'
-
-\echo
-\echo 'TEST 3.4: Drop log trigger'
-DO
-$$
-DECLARE
-  tab TEXT := 'cityobject';
-BEGIN
-  -- drop logging triggers
-  PERFORM pgmemento.drop_table_log_trigger(tab, 'citydb');
-
-  -- query for log trigger
-  ASSERT (
-    SELECT NOT EXISTS (
-      SELECT
-        1
-      FROM (
-        VALUES
-          ('log_delete_trigger'),
-          ('log_insert_trigger'),
-          ('log_transaction_trigger'),
-          ('log_truncate_trigger'),
-          ('log_update_trigger')
-        ) AS p (pgm_trigger)
-      JOIN (
-        SELECT
-          tg.tgname
-        FROM
-          pg_trigger tg,
-          pg_class c
-        WHERE
-          tg.tgrelid = c.oid
-          AND c.relname = 'cityobject'
-        ) t
-        ON t.tgname = p.pgm_trigger
-    )
-  ), 'Error: Some log trigger still exist for % table. Drop function did not work properly!', tab;
-END;
-$$
-LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST 3.4: Drop log trigger correct'
-
-\echo
-\echo 'TEST 3: pgMemento initializaton correct'
+\echo 'TEST ':n': pgMemento initializaton correct'

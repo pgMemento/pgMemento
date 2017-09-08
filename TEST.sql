@@ -22,31 +22,34 @@ SET client_min_messages TO WARNING;
 \set ON_ERROR_STOP ON
 
 -- prepare test database
-
-\echo
-\echo 'Add test schema'
-\i test/testdb/RESTORE_TESTDB.sql
-
 \echo
 \echo 'Install pgMemento'
 \i INSTALL_PGMEMENTO.sql
 
-\echo
-\echo 'Check for pgMemento elements'
-\i test/setup/TEST_INSTALL.sql
+-- set test counter
+CREATE SEQUENCE pgmemento.test_seq;
 
 \echo
-\echo 'Test if pgMemento has been initialized correctly'
+\i test/testdb/RESTORE_TESTDB.sql
+
+\echo
+\i test/setup/TEST_INSTALL.sql
+
+-- test setup functions
+\echo
 \i test/setup/TEST_INIT.sql
 
 \echo
+\i test/setup/TEST_UNINSTALL.sql
+
+\echo
 \echo 'Uninstall pgMemento'
-\i UNINSTALL_PGMEMENTO.sql
+DROP SCHEMA pgmemento CASCADE;
 
 \echo
 \echo 'Uninstall test database'
-DROP SCHEMA CITYDB_PKG CASCADE;
-DROP SCHEMA CITYDB CASCADE;
+DROP SCHEMA citydb_pkg CASCADE;
+DROP SCHEMA citydb CASCADE;
 SET search_path TO pg_catalog,public;
 
 \echo
