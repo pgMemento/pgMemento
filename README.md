@@ -1012,10 +1012,11 @@ PostgreSQL.
 I gave a presentation in german at FOSSGIS 2015:
 https://www.youtube.com/watch?v=EqLkLNyI6Yk
 
-I gave another presentation in FOSSGIS-NA 2016:
+I gave another presentation at FOSSGIS-NA 2016:
 http://slides.com/fxku/pgmemento_foss4gna16
 
-I will talk about database auditing at the FOSS4G 2017 in Boston.
+I presented a more general take on database versioning at FOSS4G 2017 in Boston:
+http://slides.com/fxku/foss4g17_dbversion
 
 A demo paper about pgMemento got accepted at the 15th International
 Symposium for Spatial and Temporal Databases (SSTD) in Arlington, VA.
