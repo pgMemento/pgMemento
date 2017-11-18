@@ -39,6 +39,11 @@ CREATE SEQUENCE pgmemento.test_seq;
 \echo
 \i test/setup/TEST_INIT.sql
 
+-- test DML logging
+\echo
+\i test/dml_log/TEST_INSERT.sql
+
+-- test uninstalling everything
 \echo
 \i test/setup/TEST_UNINSTALL.sql
 

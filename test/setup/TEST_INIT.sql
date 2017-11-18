@@ -62,7 +62,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.1: Create event trigger correct'
+\echo 'TEST ':n'.1: Create event trigger - correct'
 
 
 \echo
@@ -108,7 +108,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.2: Create log trigger correct'
+\echo 'TEST ':n'.2: Create log trigger - correct'
 
 \echo
 \echo 'TEST ':n'.3: Create audit_id column'
@@ -165,7 +165,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.3: Create audit_id column correct'
+\echo 'TEST ':n'.3: Create audit_id column - correct'
 
 \echo
 \echo 'TEST ':n': pgMemento initializaton correct'

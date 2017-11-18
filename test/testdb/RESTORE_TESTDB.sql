@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that restores a 3DCityDB instance and checks for correct number of tables
+-- Script that restores a 3DCityDB instance and checks for - correct number of tables
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
@@ -53,4 +53,4 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n' TestDB setup correct'
+\echo 'TEST ':n' TestDB setup - correct'

@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that tests for correct installation of pgMemento
+-- Script that tests for - correct installation of pgMemento
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
@@ -169,4 +169,4 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n': pgMemento setup correct!'
+\echo 'TEST ':n': pgMemento setup - correct!'
