@@ -24,7 +24,65 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo 'TEST ':n': pgMemento audit UPDATE events'
 
 \echo
-\echo 'TEST ':n'.1: Log UPDATE command'
+\echo 'TEST ':n'.1: Log UPDATE command, that does not change anything'
+DO
+$$
+DECLARE
+  update_audit_id INTEGER; 
+  test_txid BIGINT := txid_current();
+  test_event INTEGER;
+BEGIN
+  -- UPDATE entry that has been inserted during INSERT test
+  UPDATE citydb.cityobject SET lineage = 'pgm_insert_test'
+    WHERE lineage = 'pgm_insert_test'
+    RETURNING audit_id INTO update_audit_id;
+
+  -- query for logged transaction
+  ASSERT (
+    SELECT EXISTS (
+      SELECT
+        txid
+      FROM
+        pgmemento.transaction_log
+      WHERE
+        txid = test_txid
+    )
+  ), 'Error: Did not find test entry in transaction_log table!';
+
+  -- query for logged table event
+  SELECT
+    id
+  INTO
+    test_event
+  FROM
+    pgmemento.table_event_log
+  WHERE
+    transaction_id = test_txid
+    AND op_id = 4;
+
+  ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
+
+  -- there shall be not entry in row_log table
+  ASSERT (
+    SELECT NOT EXISTS (
+      SELECT
+        id
+      FROM
+        pgmemento.row_log
+      WHERE
+        audit_id = update_audit_id
+        AND event_id = test_event
+    )
+  ), 'Error: Found entry in row_log table, even though UPDATE command did not change anything.';
+END;
+$$
+LANGUAGE plpgsql;
+
+\echo
+\echo 'TEST ':n'.1: Log UPDATE command, that does not change anything - correct'
+
+\echo
+\echo 'TEST ':n'.2: Log UPDATE command'
 DO
 $$
 DECLARE
@@ -80,65 +138,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.1: Log UPDATE command - correct'
-
-\echo
-\echo 'TEST ':n'.2: Log UPDATE command, that does not change anything'
-DO
-$$
-DECLARE
-  update_audit_id INTEGER; 
-  test_txid BIGINT := txid_current();
-  test_event INTEGER;
-BEGIN
-  -- UPDATE entry that has been inserted during INSERT test
-  UPDATE citydb.cityobject SET lineage = 'pgm_insert_test'
-    WHERE lineage = 'pgm_insert_test'
-    RETURNING audit_id INTO update_audit_id;
-
-  -- query for logged transaction
-  ASSERT (
-    SELECT EXISTS (
-      SELECT
-        txid
-      FROM
-        pgmemento.transaction_log
-      WHERE
-        txid = test_txid
-    )
-  ), 'Error: Did not find test entry in transaction_log table!';
-
-  -- query for logged table event
-  SELECT
-    id
-  INTO
-    test_event
-  FROM
-    pgmemento.table_event_log
-  WHERE
-    transaction_id = test_txid
-    AND op_id = 4;
-
-  ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
-
-  -- there shall be not entry in row_log table
-  ASSERT (
-    SELECT NOT EXISTS (
-      SELECT
-        id
-      FROM
-        pgmemento.row_log
-      WHERE
-        audit_id = update_audit_id
-        AND event_id = test_event
-    )
-  ), 'Error: Found entry in row_log table, even though UPDATE command did not change anything.';
-END;
-$$
-LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.2: Log UPDATE command, that does not change anything - correct'
+\echo 'TEST ':n'.2: Log UPDATE command - correct'
 
 \echo
 \echo 'TEST ':n': pgMemento audit UPDATE events - correct'
