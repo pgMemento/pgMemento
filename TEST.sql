@@ -29,22 +29,17 @@ SET client_min_messages TO WARNING;
 -- set test counter
 CREATE SEQUENCE pgmemento.test_seq;
 
-\echo
 \i test/testdb/RESTORE_TESTDB.sql
-
-\echo
 \i test/setup/TEST_INSTALL.sql
 
 -- test setup functions
-\echo
 \i test/setup/TEST_INIT.sql
 
 -- test DML logging
-\echo
 \i test/dml_log/TEST_INSERT.sql
+\i test/dml_log/TEST_UPDATE.sql
 
 -- test uninstalling everything
-\echo
 \i test/setup/TEST_UNINSTALL.sql
 
 \echo
