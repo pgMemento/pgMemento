@@ -33,8 +33,8 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
-  UPDATE citydb.cityobject SET lineage = 'pgm_insert_test'
-    WHERE lineage = 'pgm_insert_test'
+  UPDATE citydb.cityobject SET lineage = 'pgm_upsert_test'
+    WHERE lineage = 'pgm_upsert_test'
     RETURNING audit_id INTO update_audit_id;
 
   -- query for logged transaction
@@ -93,7 +93,7 @@ DECLARE
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
   UPDATE citydb.cityobject SET lineage = 'pgm_update_test'
-    WHERE lineage = 'pgm_insert_test'
+    WHERE lineage = 'pgm_upsert_test'
     RETURNING audit_id INTO update_audit_id;
 
   -- query for logged transaction
@@ -132,7 +132,7 @@ BEGIN
     audit_id = update_audit_id
     AND event_id = test_event;
 
-  ASSERT jsonb_log = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT jsonb_log = '{"lineage":"pgm_upsert_test"}'::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;
