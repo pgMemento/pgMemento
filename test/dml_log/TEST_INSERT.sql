@@ -139,7 +139,7 @@ BEGIN
     audit_id = insert_audit_id
     AND event_id = test_event;
 
-  ASSERT jsonb_log IS NULL, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT jsonb_log IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;
@@ -202,7 +202,7 @@ BEGIN
     pgmemento.table_event_log
   WHERE
     transaction_id = test_txid
-    AND op_id = 3 OR op_id = 4;
+    AND (op_id = 3 OR op_id = 4);
 
   ASSERT array_length(test_events, 1) = 2, 'Error: Did not find entries in table_event_log table!';
 
@@ -217,8 +217,8 @@ BEGIN
     pgmemento.row_log r
     ON e.e_id = r.event_id;
 
-  ASSERT jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %' jsonb_log[1];
-  ASSERT jsonb_log[2] = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log[2];
+  ASSERT jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %', jsonb_log[1];
+  ASSERT jsonb_log[2] = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong content in row_log table: %', jsonb_log[2];
 END;
 $$
 LANGUAGE plpgsql;
