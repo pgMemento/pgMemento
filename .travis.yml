@@ -4,9 +4,13 @@ sudo: true
 
 addons:
   postgresql: "9.5"
+  apt:
+    packages:
+      - postgresql-9.5-postgis-2.3
 
-before_script:
+before_install:
     - psql -c 'create database pgmemento_testdb;' -U postgres
+    - psql -U postgres -c 'create extension postgis;'
     - psql --version
 
 script:
