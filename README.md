@@ -1009,17 +1009,16 @@ PostgreSQL.
 
 ## 11. Media
 
-I gave a presentation in german at FOSSGIS 2015:
-https://www.youtube.com/watch?v=EqLkLNyI6Yk
+I presented pgMemento at [FOSSGIS 2015](https://www.youtube.com/watch?v=EqLkLNyI6Yk) (in german)
+and at [FOSSGIS-NA 2016](http://slides.com/fxku/pgmemento_foss4gna16) .
+At [FOSS4G 2017](http://slides.com/fxku/foss4g17_dbversion) I gave a more general overview on database versioning techniques.
 
-I gave another presentation at FOSSGIS-NA 2016:
-http://slides.com/fxku/pgmemento_foss4gna16
+Slides of the most up-to-date presentation (which are hopefully even easier to follow) can be found
+[here](https://www.postgresql.eu/events/pgconfde2018/schedule/session/1963-auditing-mit-jsonb-pro-und-kontra/).
+I gave the talk at the german PostgreSQL conference 2018, but the slides are in english.
 
-I presented a more general take on database versioning at FOSS4G 2017 in Boston:
-http://slides.com/fxku/foss4g17_dbversion
-
-A demo paper about pgMemento got accepted at the 15th International
-Symposium for Spatial and Temporal Databases (SSTD) in Arlington, VA.
+A demo paper about pgMemento has been accepted at the 15th International
+Symposium for Spatial and Temporal Databases (SSTD) 2017 in Arlington, VA.
 You can find the publication [here](https://link.springer.com/chapter/10.1007/978-3-319-64367-0_27).
 
 
