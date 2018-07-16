@@ -40,7 +40,7 @@ CREATE SEQUENCE pgmemento.test_seq;
 \i test/dml_log/TEST_UPDATE.sql
 \i test/dml_log/TEST_DELETE.sql
 \i test/dml_log/TEST_TRUNCATE.sql
-
+/*
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
 
@@ -53,6 +53,6 @@ DROP SCHEMA pgmemento CASCADE;
 DROP SCHEMA citydb_pkg CASCADE;
 DROP SCHEMA citydb CASCADE;
 SET search_path TO pg_catalog,public;
-
+*/
 \echo
 \echo 'pgMemento test completed!'

@@ -66,7 +66,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = test_txid
+    transaction_id = current_setting('pgmemento.' || test_txid)::int
     AND op_id = 8;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';

@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.0     2018-07-16   reflect changes in transaction_id handling          FKun
 -- 0.5.1     2017-07-26   reflect changes of updated logging behaviour        FKun
 -- 0.5.0     2017-07-12   reflect changes to audit_column_log table           FKun
 -- 0.4.4     2017-04-07   split up restore code to different functions        FKun
@@ -35,16 +36,16 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   audit_table_check(IN tid BIGINT, IN tab_name TEXT, IN tab_schema TEXT,
+*   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
 *     OUT log_tab_oid OID, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
 *     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER, OUT recent_tab_upper_txid NUMERIC) RETURNS RECORD
-*   create_restore_template(tid BIGINT, template_name TEXT, table_name TEXT, schema_name TEXT, preserve_template INTEGER DEFAULT 0) RETURNS SETOF VOID
-*   generate_log_entries(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT) RETURNS SETOF jsonb
-*   generate_log_entry(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT, aid BIGINT) RETURNS jsonb
-*   restore_query(start_from_tid BIGINT, end_at_tid BIGINT, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL) RETURNS TEXT
-*   restore_schema_state(start_from_tid BIGINT, end_at_tid BIGINT, original_schema_name TEXT, target_schema_name TEXT, 
+*   create_restore_template(tid INTEGER, template_name TEXT, table_name TEXT, schema_name TEXT, preserve_template INTEGER DEFAULT 0) RETURNS SETOF VOID
+*   generate_log_entries(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS SETOF jsonb
+*   generate_log_entry(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT) RETURNS jsonb
+*   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL) RETURNS TEXT
+*   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state INTEGER DEFAULT '0') RETURNS SETOF VOID
-*   restore_table_state(start_from_tid BIGINT, end_at_tid BIGINT, original_table_name TEXT, original_schema_name TEXT, 
+*   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW') RETURNS SETOF VOID
 ***********************************************************/
 
@@ -55,7 +56,7 @@
 * before tid happened and if the name has named 
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
-  IN tid BIGINT,
+  IN tid INTEGER,
   IN tab_name TEXT,
   IN tab_schema TEXT,
   OUT log_tab_oid OID,
@@ -158,8 +159,8 @@ LANGUAGE plpgsql STABLE STRICT;
 * single or multiple log entries (depends if aid is given)
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_query(
-  start_from_tid BIGINT,
-  end_at_tid BIGINT,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
   aid BIGINT DEFAULT NULL
@@ -301,8 +302,8 @@ BEGIN
     || E'    SELECT DISTINCT ON (r.audit_id) r.audit_id, r.event_id, e.op_id\n'
     || E'      FROM pgmemento.row_log r\n'
     || E'      JOIN pgmemento.table_event_log e ON e.id = r.event_id\n'
-    || E'      JOIN pgmemento.transaction_log t ON t.txid = e.transaction_id\n'
-    || format(E'        WHERE t.txid >= %L AND t.txid < %L\n', $1, $2)
+    || E'      JOIN pgmemento.transaction_log t ON t.id = e.transaction_id\n'
+    || format(E'        WHERE t.id >= %L AND t.id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
          format(E'          AND e.table_relid = %L\n', tab_oid)
        ELSE
@@ -345,8 +346,8 @@ LANGUAGE plpgsql IMMUTABLE;
 * transaction range
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entry(
-  start_from_tid BIGINT,
-  end_at_tid BIGINT,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
   aid BIGINT
@@ -365,8 +366,8 @@ $$
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.generate_log_entries(
-  start_from_tid BIGINT,
-  end_at_tid BIGINT,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT
   ) RETURNS SETOF jsonb AS
@@ -390,7 +391,7 @@ LANGUAGE plpgsql STRICT;
 * jsonb_populate_record function 
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_restore_template(
-  tid BIGINT,
+  tid INTEGER,
   template_name TEXT,
   table_name TEXT,
   schema_name TEXT,
@@ -444,8 +445,8 @@ LANGUAGE plpgsql STRICT;
 * The user can choose if it will appear as a TABLE or VIEW.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
-  start_from_tid BIGINT,
-  end_at_tid BIGINT,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   original_table_name TEXT,
   original_schema_name TEXT,
   target_schema_name TEXT,
@@ -570,8 +571,8 @@ LANGUAGE plpgsql STRICT;
 
 -- perform restore_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
-  start_from_tid BIGINT,
-  end_at_tid BIGINT,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   original_schema_name TEXT,
   target_schema_name TEXT, 
   target_table_type TEXT DEFAULT 'VIEW',

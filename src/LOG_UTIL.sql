@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.0     2018-07-16   reflect changes in transaction_id handling     FKun
 -- 0.4.2     2017-07-26   new function to remove a key from all logs     FKun
 -- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added jsonb_merge   FKun
 -- 0.4.0     2017-03-06   new view for table dependencies                FKun
@@ -34,11 +35,11 @@
 * FUNCTIONS:
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
-*   delete_table_event_log(tid BIGINT, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
-*   delete_txid_log(t_id BIGINT) RETURNS BIGINT
-*   get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
-*   get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT
-*   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT
+*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_txid_log(tid INTEGER) RETURNS INTEGER
+*   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
+*   get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
+*   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER
 *
 ***********************************************************/
 
@@ -61,15 +62,15 @@ CREATE AGGREGATE pgmemento.jsonb_merge(jsonb)
 * Simple functions to return the transaction_id related to
 * certain database entities 
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF BIGINT AS
+CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER AS
 $$
 SELECT
-  t.txid
+  t.id
 FROM
   pgmemento.transaction_log t
 JOIN
   pgmemento.table_event_log e
-  ON e.transaction_id = t.txid
+  ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
   ON r.event_id = e.id
@@ -78,15 +79,15 @@ WHERE
 $$
 LANGUAGE sql STABLE STRICT;
 
-CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
+CREATE OR REPLACE FUNCTION pgmemento.get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER AS
 $$
 SELECT
-  min(t.txid)
+  min(t.id)
 FROM
   pgmemento.transaction_log t
 JOIN
   pgmemento.table_event_log e
-  ON e.transaction_id = t.txid
+  ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
   ON r.event_id = e.id
@@ -95,15 +96,15 @@ WHERE
 $$
 LANGUAGE sql STABLE STRICT;
 
-CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS BIGINT AS
+CREATE OR REPLACE FUNCTION pgmemento.get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER AS
 $$
 SELECT
-  max(t.txid)
+  max(t.id)
 FROM
   pgmemento.transaction_log t
 JOIN
   pgmemento.table_event_log e
-  ON e.transaction_id = t.txid
+  ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
   ON r.event_id = e.id
@@ -119,20 +120,20 @@ LANGUAGE sql STABLE STRICT;
 * Delete log information of a given transaction, event or
 * audited tables / columns
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(t_id BIGINT) RETURNS BIGINT AS
+CREATE OR REPLACE FUNCTION pgmemento.delete_txid_log(tid INTEGER) RETURNS INTEGER AS
 $$
 DELETE FROM
   pgmemento.transaction_log
 WHERE
-  txid = $1
+  id = $1
 RETURNING
-  txid;
+  id;
 $$
 LANGUAGE sql STRICT;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
-  tid BIGINT,
+  tid INTEGER,
   table_name TEXT,
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS

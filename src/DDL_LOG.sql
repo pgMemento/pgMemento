@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.0     2018-07-16   now calling log_table_event for ddl events       FKun
 -- 0.5.1     2017-08-08   DROP TABLE/SCHEMA events log data as truncated   FKun
 -- 0.5.0     2017-07-25   improved processing of DDL events                FKun
 -- 0.4.1     2017-07-18   now using register functions from SETUP          FKun
@@ -34,7 +35,7 @@
 *   create_schema_event_trigger(trigger_create_table INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
-*   log_ddl_event(table_name TEXT, schema_name TEXT, op_type INTEGER, op_text TEXT) RETURNS INTEGER
+*   log_table_event(table_name TEXT, schema_name TEXT, op_type INTEGER, op_text TEXT) RETURNS INTEGER
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
 *
 * TRIGGER FUNCTIONS:
@@ -88,52 +89,6 @@ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 
 /**********************************************************
-* LOG DDL EVENT
-*
-* Function that write information of ddl events into
-* transaction_log and table_event_log and returns the
-* ID of the latter table
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.log_ddl_event(
-  table_name TEXT,
-  schema_name TEXT,
-  op_type INTEGER,
-  op_text TEXT
-  ) RETURNS INTEGER AS
-$$
-DECLARE
-  e_id INTEGER;
-  table_oid OID;
-BEGIN
-  -- log transaction of ddl event
-  -- on conflict do nothing
-  INSERT INTO pgmemento.transaction_log 
-    (txid, stmt_date, user_name, client_name)
-  VALUES
-    (txid_current(), statement_timestamp(), current_user, inet_client_addr())
-  ON CONFLICT (txid)
-    DO NOTHING;
-
-  IF table_name IS NOT NULL AND schema_name IS NOT NULL THEN
-    table_oid := ($2 || '.' || $1)::regclass::oid;
-  END IF;
-
-  -- try to log corresponding table event
-  -- on conflict do dummy update to get event_id
-  INSERT INTO pgmemento.table_event_log 
-    (transaction_id, op_id, table_operation, table_relid) 
-  VALUES
-    (txid_current(), $3, $4, table_oid)
-  ON CONFLICT (transaction_id, table_relid, op_id)
-    DO UPDATE SET op_id = $3 RETURNING id INTO e_id;
-
-  RETURN e_id;
-END;
-$$
-LANGUAGE plpgsql;
-
-
-/**********************************************************
 * MODIFY DDL LOGS
 *
 * Helper function to update tables audit_table_log and 
@@ -170,7 +125,7 @@ BEGIN
           ) AS data_type,
           d.adsrc AS column_default,
           a.attnotnull AS not_null,
-          numrange(txid_current(), NULL, '[)') AS txid_range
+          numrange(current_setting('pgmemento.' || txid_current())::int, NULL, '[)') AS txid_range
         FROM
           pg_attribute a
         LEFT JOIN
@@ -207,7 +162,7 @@ BEGIN
 
     -- log add column event
     IF column_ids IS NOT NULL AND array_length(column_ids, 1) > 0 THEN
-      PERFORM pgmemento.log_ddl_event(tablename, schemaname, 2, 'ADD COLUMN');
+      PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ADD COLUMN');
     END IF;
 
     -- EVENT: Column dropped
@@ -244,7 +199,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), txid_current(), '[)') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::int, '[)') 
     FROM
       dropped_columns dc
     WHERE
@@ -316,7 +271,7 @@ BEGIN
           data_type,
           column_default,
           not_null,
-          numrange(txid_current(), NULL, '[)') AS txid_range
+          numrange(current_setting('pgmemento.' || txid_current())::int, NULL, '[)') AS txid_range
         FROM
           updated_columns
       )
@@ -324,7 +279,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), txid_current(), '[)') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::int, '[)') 
     FROM
       updated_columns uc
     WHERE
@@ -399,7 +354,7 @@ BEGIN
       d.depth DESC
   LOOP
     -- log the whole content of the dropped table as truncated
-    e_id :=  pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 8, 'TRUNCATE');
+    e_id := pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'TRUNCATE');
 
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
@@ -407,7 +362,7 @@ BEGIN
          rec.tablename, rec.schemaname, rec.tablename) USING e_id;
 
     -- now log drop table event
-    PERFORM pgmemento.log_ddl_event(rec.tablename, rec.schemaname, 9, 'DROP TABLE');
+    PERFORM pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'DROP TABLE');
 
     -- unregister table from log tables
     PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
@@ -581,9 +536,9 @@ BEGIN
           ) THEN
             -- try to log corresponding table event
             IF altering THEN
-              e_id := pgmemento.log_ddl_event(tablename, schemaname, 5, 'ALTER COLUMN');
+              e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
             ELSE
-              e_id := pgmemento.log_ddl_event(tablename, schemaname, 6, 'DROP COLUMN');
+              e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
             END IF;
 
             -- log data of entire column
@@ -628,9 +583,6 @@ BEGIN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
-      -- log create table event
-      PERFORM pgmemento.log_ddl_event(split_part(obj.object_identity, '.' ,2), obj.schema_name, 1, 'CREATE TABLE');
-
       -- start auditing for new table
       PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, 0);
     END IF;
@@ -756,7 +708,7 @@ BEGIN
     RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
   ELSE
     -- log the whole content of the dropped table as truncated
-    e_id :=  pgmemento.log_ddl_event(tablename, schemaname, 8, 'TRUNCATE');
+    e_id :=  pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'TRUNCATE');
 
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
@@ -764,7 +716,7 @@ BEGIN
          tablename, schemaname, tablename) USING e_id;
 
     -- now log drop table event
-    PERFORM pgmemento.log_ddl_event(tablename, schemaname, 9, 'DROP TABLE');
+    PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP TABLE');
   END IF;
 END;
 $$

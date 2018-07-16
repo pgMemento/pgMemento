@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.0     2018-07-16   reflect changes in transaction_id handling      FKun
 -- 0.5.1     2017-08-08   sort reverts by row_log ID and not audit_id     FKun
 --                        improved revert_distinct_transaction(s)
 -- 0.5.0     2017-07-25   add revert support for DDL events               FKun
@@ -34,12 +35,12 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   recover_audit_version(tid BIGINT, aid BIGINT, changes JSONB, table_op INTEGER,
+*   recover_audit_version(tid INTEGER, aid BIGINT, changes JSONB, table_op INTEGER,
 *     table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   revert_distinct_transaction(tid BIGINT) RETURNS SETOF VOID
-*   revert_distinct_transactions(start_from_tid BIGINT, end_at_tid BIGINT) RETURNS SETOF VOID
-*   revert_transaction(tid BIGINT) RETURNS SETOF VOID
-*   revert_transactions(start_from_tid BIGINT, end_at_tid BIGINT) RETURNS SETOF VOID
+*   revert_distinct_transaction(tid INTEGER) RETURNS SETOF VOID
+*   revert_distinct_transactions(start_from_tid INTEGER, end_at_tid INTEGER) RETURNS SETOF VOID
+*   revert_transaction(tid INTEGER) RETURNS SETOF VOID
+*   revert_transactions(start_from_tid INTEGER, end_at_tid INTEGER) RETURNS SETOF VOID
 ***********************************************************/
 
 /**********************************************************
@@ -48,7 +49,7 @@
 * Procedure to apply DML operations recovered from the logs
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
-  tid BIGINT,
+  tid INTEGER,
   aid BIGINT, 
   changes JSONB,
   table_op INTEGER,
@@ -318,14 +319,14 @@ LANGUAGE plpgsql;
 * order of table dependencies so no foreign keys should be 
 * violated.
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid BIGINT) RETURNS SETOF VOID AS
+CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid INTEGER) RETURNS SETOF VOID AS
 $$
 DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN
     SELECT
-      t.txid,
+      t.id,
       r.audit_id, 
       r.changes,
       e.op_id, 
@@ -341,7 +342,7 @@ BEGIN
       pgmemento.transaction_log t 
     JOIN
       pgmemento.table_event_log e
-      ON e.transaction_id = t.txid
+      ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
@@ -353,21 +354,21 @@ BEGIN
       pgmemento.row_log r
       ON r.event_id = e.id
     WHERE
-      t.txid = $1
+      t.id = $1
     ORDER BY
       dependency_order,
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_transactions(
-  start_from_tid BIGINT, 
-  end_at_tid BIGINT
+  start_from_tid INTEGER, 
+  end_at_tid INTEGER
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -375,7 +376,7 @@ DECLARE
 BEGIN
   FOR rec IN
     SELECT
-      t.txid,
+      t.id,
       r.audit_id, 
       r.changes,
       e.op_id,
@@ -391,7 +392,7 @@ BEGIN
       pgmemento.transaction_log t 
     JOIN
       pgmemento.table_event_log e
-      ON e.transaction_id = t.txid
+      ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
@@ -403,14 +404,14 @@ BEGIN
       pgmemento.row_log r
       ON r.event_id = e.id
     WHERE
-      t.txid BETWEEN $1 AND $2
+      t.id BETWEEN $1 AND $2
     ORDER BY
       t.id DESC,
       dependency_order,
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
@@ -426,14 +427,14 @@ LANGUAGE plpgsql STRICT;
 * This can be a fallback method for revert_transaction if
 * foreign key violations are occurring.
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transaction(tid BIGINT) RETURNS SETOF VOID AS
+CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transaction(tid INTEGER) RETURNS SETOF VOID AS
 $$
 DECLARE
   rec RECORD;
 BEGIN
   FOR rec IN 
     SELECT
-      $1 AS txid,
+      $1 AS tid,
       q.audit_id,
       CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
@@ -490,15 +491,15 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transactions(
-  start_from_tid BIGINT, 
-  end_at_tid BIGINT
+  start_from_tid INTEGER, 
+  end_at_tid INTEGER
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -506,7 +507,7 @@ DECLARE
 BEGIN
   FOR rec IN 
     SELECT
-      q.txid,
+      q.tid,
       q.audit_id,
       CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
@@ -522,7 +523,7 @@ BEGIN
       SELECT
         r.audit_id,
         e.table_relid,
-        min(e.transaction_id) AS txid,
+        min(e.transaction_id) AS tid,
         min(e.id) AS first_event,
         max(e.id) AS last_event,
         min(r.id) AS row_log_id,
@@ -564,7 +565,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.txid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 

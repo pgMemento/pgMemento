@@ -56,7 +56,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = test_txid
+    transaction_id = current_setting('pgmemento.' || test_txid)::int
     AND op_id = 3;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
@@ -123,7 +123,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = test_txid
+    transaction_id = current_setting('pgmemento.' || test_txid)::int
     AND op_id = 3;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
@@ -201,7 +201,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = test_txid
+    transaction_id = current_setting('pgmemento.' || test_txid)::int
     AND (op_id = 3 OR op_id = 4);
 
   ASSERT array_length(test_events, 1) = 2, 'Error: Did not find entries in table_event_log table!';
