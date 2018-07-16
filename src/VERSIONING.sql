@@ -186,9 +186,23 @@ DECLARE
 BEGIN
   -- set variables
   SELECT
-    log_tab_oid, log_tab_name, log_tab_schema, log_tab_id, recent_tab_name, recent_tab_schema, recent_tab_id, recent_tab_upper_txid
+    log_tab_oid,
+    log_tab_name,
+    log_tab_schema,
+    log_tab_id,
+    recent_tab_name,
+    recent_tab_schema,
+    recent_tab_id,
+    recent_tab_upper_txid
   INTO
-    tab_oid, tab_name, tab_schema, tab_id, new_tab_name, new_tab_schema, new_tab_id, new_tab_upper_txid
+    tab_oid,
+    tab_name,
+    tab_schema,
+    tab_id,
+    new_tab_name,
+    new_tab_schema,
+    new_tab_id,
+    new_tab_upper_txid
   FROM
     pgmemento.audit_table_check($2,$3,$4);
 

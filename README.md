@@ -227,17 +227,17 @@ The following table provides an overview what DML and DDL events are
 logged and which command is applied when reverting the event (see
 chapter 7).
 
-| OP_ID | EVENT                     | REVERSE EVENT                   | LOG CONTENT                    |
-|:-----:|:--------------------------|:--------------------------------|:-------------------------------|
-| 1     | CREATE TABLE'             | DROP TABLE                      | -                              |
-| 2     | ALTER TABLE ADD COLUMN'   | ALTER TABLE DROP COLUMN         | -                              |
-| 3     | INSERT                    | DELETE                          | NULL                           |
-| 4     | UPDATE                    | UPDATE                          | changed fields of changed rows |
-| 5     | ALTER TABLE ALTER COLUMN' | ALTER TABLE ALTER COLUMN        | all rows of altered columns''  |
-| 6     | ALTER TABLE DROP COLUMN'  | ALTER TABLE ADD COLUMN + UPDATE | all rows of dropped columns    |
-| 7     | DELETE                    | INSERT                          | all fields of deleted rows     |
-| 8     | TRUNCATE                  | INSERT                          | all fields of table            |
-| 9     | DROP TABLE'               | CREATE TABLE                    | all fields of table (TRUNCATE) |
+| OP_ID | EVENT                       | REVERSE EVENT                     | LOG CONTENT                    |
+|:-----:|:----------------------------|:----------------------------------|:-------------------------------|
+| 1     | CREATE TABLE'               | DROP TABLE                        | -                              |
+| 2     | (ALTER TABLE) ADD COLUMN'   | (ALTER TABLE) DROP COLUMN         | -                              |
+| 3     | INSERT                      | DELETE                            | NULL                           |
+| 4     | UPDATE                      | UPDATE                            | changed fields of changed rows |
+| 5     | (ALTER TABLE) ALTER COLUMN' | (ALTER TABLE) ALTER COLUMN        | all rows of altered columns''  |
+| 6     | (ALTER TABLE) DROP COLUMN'  | (ALTER TABLE) ADD COLUMN + UPDATE | all rows of dropped columns    |
+| 7     | DELETE                      | INSERT                            | all fields of deleted rows     |
+| 8     | TRUNCATE                    | INSERT                            | all fields of table            |
+| 9     | DROP TABLE'                 | CREATE TABLE                      | all fields of table (TRUNCATE) |
 
 ' Captured by event triggers
 '' Only if USING is found in the ALTER COLUMN command 
@@ -249,26 +249,28 @@ sections.
 
 pgMemento uses two logging stages. The first trigger is fired before 
 each statement on each audited table. Every transaction is only logged 
-once in the `transaction_log` table. Within the trigger procedure the 
-corresponding table operations are logged as well in the `table_event_log`
-table. A type of table operation (e.g. INSERT, UPDATE, DELETE etc.) is
-only logged once per table per transaction. For two or more operations
-of the same kind logged data of subsequent events are referenced to the
-first first event that has been inserted into `table_event_log`. In the
-next chapter you will see why this doesn't produce consistency issues.
+once in the `transaction_log` table. The ID of the entry is stored in
+a local transaction variable.
 
-The second logging stage is related two the data that has changed. 
-Row-level triggers are fired after each operations on the audited tables. 
-Within the trigger procedure the corresponding INSERT, UPDATE, DELETE or
-TRUNCATE event for the current transaction is queried and each row is 
-referenced to it.
+Within the trigger procedure the corresponding table operations are
+logged as well in the `table_event_log` table. A type of table operation
+(e.g. INSERT, UPDATE, DELETE etc.) is only logged once per table per
+transaction. For two or more operations of the same kind logged data of
+subsequent events are referenced to the first first event that has been
+inserted into `table_event_log`. In the next chapter you will see why
+this doesn't produce consistency issues. Again, the ID is saved to a
+transaction variable.
+
+The second logging stage is related to the data that has changed. 
+Row-level triggers are fired after each operations on the audited tables.
+Each row is referenced to an event ID saved in the first step.
 
 For example, an UPDATE command on `table_A` changing the value of some 
 rows of `column_B` to `new_value` will appear in the log tables like this:
 
 TRANSACTION_LOG
 
-| ID  | txid_id  | stmt_date                | user_name  | client address  |
+| ID  | txid     | stmt_date                | user_name  | client address  |
 | --- |:-------- |:------------------------:|:----------:|:---------------:|
 | 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128         |
 
@@ -276,7 +278,7 @@ TABLE_EVENT_LOG
 
 | ID  | transaction_id | op_id | table_operation | schema_name | table_name  | table_relid |
 | --- |:--------------:|:-----:|:---------------:|:-----------:|:-----------:|:-----------:|
-| 1   | 1000000        | 4     | UPDATE          | public      | table_A     | 44444444    |
+| 1   | 1              | 4     | UPDATE          | public      | table_A     | 44444444    |
 
 ROW_LOG
 
@@ -326,12 +328,12 @@ that had an effect on a certain column by using the `?` operator:
 
 <pre>
 SELECT
-  t.txid 
+  t.id 
 FROM
   pgmemento.transaction_log t
 JOIN
   pgmemento.table_event_log e
-  ON t.txid = e.transaction_id
+  ON t.id = e.transaction_id
 JOIN
   pgmemento.row_log r
   ON r.event_id = e.id
@@ -405,7 +407,7 @@ referencing A. Deleting entries in A requires deleting depending rows
 in B and C. The order of events in one transaction can look like this:
 
 <pre>
-Txid 1000
+Transaction ID 1000
 1. DELETE from C
 2. DELETE from A
 3. DELETE from B
@@ -417,7 +419,7 @@ reverting the events in reverse order won't work here. An INSERT in B
 requires exitsing entries in A.
 
 <pre>
-Revert Txid 1000
+Revert Transaction ID 1000
 1. INSERT into B <-- ERROR: foreign key violation
 2. INSERT into A
 3. INSERT into C
@@ -428,7 +430,7 @@ correct revert order without violating foreign key constraints. B and C
 have a higher depth than A. The order will be:
 
 <pre>
-Revert Txid 1000
+Revert Transaction ID 1000
 1. INSERT into A
 2. INSERT into B
 3. INSERT into C
@@ -490,16 +492,16 @@ and intuitive like the shadow table design. pgMemento offers two ways:
 
 To address different versions of your data with pgMemento you have to
 think in transactions, not timestamps. Although, each transaction is
-logged with a timestamp, you still need to know the txid to filter the
+logged with a timestamp, you still need to know its ID to filter the
 data changes. Especially when dealing with concurrent edits filtering
 only by timestamps could produce inconsistent views. Establishing
 versions based on transactions will produce a state of the data as the
 user has seen it when he applied the changes.
 
 **So, when pgMemento provides a function where the user can determine
-the state he wants to restore by passing a transaction id (txid) it
-addresses the version BEFORE the transaction excluding the changes of
-this transaction!**
+the state he wants to restore by passing a transaction id it addresses
+the version BEFORE the transaction excluding the changes of this
+transaction!**
 
 Nevertheless, as most users of an audit trail solution probably want
 to use timestamps to query the history of their database, they could
@@ -508,7 +510,7 @@ query:
 
 <pre>
 SELECT
-  min(txid)
+  min(id)
 FROM
   pgmemento.transaction_log
 WHERE
@@ -586,9 +588,9 @@ FROM (
     ON e.id = r.event_id
   JOIN 
     pgmemento.transaction_log t
-    ON t.txid = e.transaction_id
+    ON t.id = e.transaction_id
   WHERE
-    t.txid >= 0 AND t.txid < 5
+    t.id >= 0 AND t.id < 5
     AND e.table_relid = 'public.table_a'::regclass::oid
   ORDER BY 
     r.audit_id,
@@ -801,9 +803,9 @@ FROM (
 
 To get the whole query described in the last chapters call
 `pgmemento.restore_query`. As for the first two arguments it takes two
-txids specifying the transaction range you are interested in. Then you
-need to name the table and the schema, optionally followed by an 
-`audit_id`, if you are only interested in a certain tuple. But, this 
+transaction IDs specifying the transaction range you are interested in.
+Then you need to name the table and the schema, optionally followed by
+an `audit_id`, if you are only interested in a certain tuple. But, this 
 function only returns the query string. You should use it along with
 `pgmemento.generate_log_entry` to return single tuples as JSONB objects
 or `pgmemento.generate_log_entries` to return a setof JSONB records

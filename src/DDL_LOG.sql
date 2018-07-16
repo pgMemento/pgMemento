@@ -35,7 +35,6 @@
 *   create_schema_event_trigger(trigger_create_table INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
-*   log_table_event(table_name TEXT, schema_name TEXT, op_type INTEGER, op_text TEXT) RETURNS INTEGER
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
 *
 * TRIGGER FUNCTIONS:
