@@ -582,6 +582,9 @@ BEGIN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
+      -- log as 'create table' event
+      PERFORM pgmemento.log_table_event(txid_current(),(obj.schema_name || '.' || split_part(obj.object_identity, '.' ,2))::regclass::oid, 'CREATE TABLE');
+
       -- start auditing for new table
       PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, 0);
     END IF;
