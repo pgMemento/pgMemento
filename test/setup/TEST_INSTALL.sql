@@ -167,6 +167,3 @@ BEGIN
 END
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n': pgMemento setup - correct!'

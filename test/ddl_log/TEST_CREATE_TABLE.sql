@@ -72,8 +72,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.1: Log CREATE TABLE command - correct'
 
 \echo
 \echo 'TEST ':n'.2: Check entries audit_table_log'
@@ -112,8 +110,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.2: Check entries audit_table_log - correct'
 
 \echo
 \echo 'TEST ':n'.3: Check entries audit_column_log'
@@ -160,9 +156,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.3: Check entries audit_column_log - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento audit CREATE TABLE events - correct'

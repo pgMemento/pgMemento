@@ -78,8 +78,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.1: Log UPDATE command, that does not change anything - correct'
 
 \echo
 \echo 'TEST ':n'.2: Log UPDATE command'
@@ -136,9 +134,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.2: Log UPDATE command - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento audit UPDATE events - correct'

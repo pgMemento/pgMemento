@@ -89,9 +89,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.1: Log TRUNCATE command - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento audit TRUNCATE event - correct'

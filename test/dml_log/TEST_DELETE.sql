@@ -80,9 +80,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.1: Log DELETE command - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento audit DELETE events - correct'

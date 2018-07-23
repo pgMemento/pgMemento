@@ -80,8 +80,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.1: Log content as inserted - correct'
 
 \echo
 \echo 'TEST ':n'.2: Log INSERT command'
@@ -143,9 +141,6 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.2: Log INSERT command - correct'
 
 
 \echo
@@ -222,9 +217,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.3: Log UPSERT command - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento audit INSERT events - correct'

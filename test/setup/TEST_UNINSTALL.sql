@@ -51,8 +51,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.1: Drop audit_id column - correct'
 
 \echo
 \echo 'TEST ':n'.2: Drop log trigger'
@@ -94,8 +92,6 @@ END;
 $$
 LANGUAGE plpgsql;
 
-\echo
-\echo 'TEST ':n'.2: Drop log trigger - correct'
 
 \echo
 \echo 'TEST ':n'.3: Drop event trigger'
@@ -131,9 +127,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n'.3: Drop event trigger - correct'
-
-\echo
-\echo 'TEST ':n': pgMemento drop log components - correct'
