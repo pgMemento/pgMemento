@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.1     2018-07-23   schema parts of SETUP.sql moved to SCHEMA.sql    FKun
 -- 0.3.0     2015-06-20   initial commit                                   FKun
 --
 
@@ -23,6 +24,7 @@ SET client_min_messages TO WARNING;
 
 \echo
 \echo 'Creating pgMemento schema, tables and functions ...'
+\i src/SCHEMA.sql
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql
