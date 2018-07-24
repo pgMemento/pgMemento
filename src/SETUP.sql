@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.1     2018-07-23   moved schema parts in its own file                  FKun
 -- 0.6.0     2018-07-14   additional columns in transaction_log table and     FKun
 --                        better handling for internal txid cycles
 -- 0.5.3     2017-07-26   Improved queries for views                          FKun
@@ -40,34 +41,9 @@
 /**********************************************************
 * C-o-n-t-e-n-t:
 *
-* PGMEMENTO SCHEMA
-*   Addtional schema that contains the log tables and
-*   all functions to enable versioning of the database.
-*
-* TABLES:
-*   audit_column_log
-*   audit_table_log
-*   row_log
-*   table_event_log
-*   transaction_log
-*
 * VIEWS:
 *   audit_tables
 *   audit_tables_dependency
-*
-* INDEXES:
-*   column_log_column_idx
-*   column_log_range_idx
-*   column_log_table_idx
-*   row_log_audit_idx
-*   row_log_changes_idx
-*   row_log_event_idx
-*   table_event_log_unique_idx
-*   table_log_idx
-*   table_log_range_idx
-*   transaction_log_date_idx
-*   transaction_log_session_idx
-*   transaction_log_txid_idx
 *
 * FUNCTIONS:
 *   create_schema_audit(schema_name TEXT DEFAULT 'public', log_state INTEGER DEFAULT 1, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -97,153 +73,6 @@
 *   log_update() RETURNS trigger
 *
 ***********************************************************/
-DROP SCHEMA IF EXISTS pgmemento CASCADE;
-CREATE SCHEMA pgmemento;
-
-/***********************************************************
-CREATE TABLES
-
-***********************************************************/
--- transaction metadata is logged into the transaction_log table
-DROP TABLE IF EXISTS pgmemento.transaction_log CASCADE;
-CREATE TABLE pgmemento.transaction_log
-(
-  id SERIAL,
-  txid BIGINT NOT NULL,
-  stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
-  process_id INTEGER,
-  user_name TEXT,
-  client_ip TEXT,
-  client_port INTEGER,
-  application_name TEXT,
-  session_info JSONB
-);
-
-ALTER TABLE pgmemento.transaction_log
-  ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
-  ADD CONSTRAINT transaction_log_unique_txid UNIQUE (txid, stmt_date);
-
--- event on tables are logged into the table_event_log table
-DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
-CREATE TABLE pgmemento.table_event_log
-(
-  id SERIAL,
-  transaction_id INTEGER NOT NULL,
-  op_id SMALLINT NOT NULL,
-  table_operation VARCHAR(12),
-  table_relid OID NOT NULL
-);
-
-ALTER TABLE pgmemento.table_event_log
-  ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
-
--- all row changes are logged into the row_log table
-DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
-CREATE TABLE pgmemento.row_log
-(
-  id BIGSERIAL,
-  event_id INTEGER NOT NULL,
-  audit_id BIGINT NOT NULL,
-  changes JSONB
-);
-
-ALTER TABLE pgmemento.row_log
-  ADD CONSTRAINT row_log_pk PRIMARY KEY (id);
-
--- liftime of audited tables is logged in the audit_table_log table
-CREATE TABLE pgmemento.audit_table_log (
-  id SERIAL,
-  relid OID,
-  schema_name TEXT NOT NULL,
-  table_name TEXT NOT NULL,
-  txid_range numrange  
-);
-
-ALTER TABLE pgmemento.audit_table_log
-  ADD CONSTRAINT audit_table_log_pk PRIMARY KEY (id);
-
--- lifetime of columns of audited tables is logged in the audit_column_log table
-CREATE TABLE pgmemento.audit_column_log (
-  id SERIAL,
-  audit_table_id INTEGER NOT NULL,
-  column_name TEXT NOT NULL,
-  ordinal_position INTEGER,
-  data_type TEXT,
-  column_default TEXT,
-  not_null BOOLEAN,
-  txid_range numrange
-); 
-
-ALTER TABLE pgmemento.audit_column_log
-  ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);
-
--- create foreign key constraints
-ALTER TABLE pgmemento.table_event_log
-  ADD CONSTRAINT table_event_log_txid_fk
-    FOREIGN KEY (transaction_id)
-    REFERENCES pgmemento.transaction_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
-ALTER TABLE pgmemento.row_log
-  ADD CONSTRAINT row_log_table_fk 
-    FOREIGN KEY (event_id)
-    REFERENCES pgmemento.table_event_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
-ALTER TABLE pgmemento.audit_column_log
-  ADD CONSTRAINT audit_column_log_fk
-    FOREIGN KEY (audit_table_id)
-    REFERENCES pgmemento.audit_table_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
--- create indexes on all columns that are queried later
-DROP INDEX IF EXISTS transaction_log_txid_idx;
-DROP INDEX IF EXISTS transaction_log_date_idx;
-DROP INDEX IF EXISTS transaction_log_session_idx;
-DROP INDEX IF EXISTS table_event_log_unique_idx;
-DROP INDEX IF EXISTS row_log_event_idx;
-DROP INDEX IF EXISTS row_log_audit_idx;
-DROP INDEX IF EXISTS row_log_changes_idx;
-DROP INDEX IF EXISTS table_log_idx;
-DROP INDEX IF EXISTS table_log_range_idx;
-DROP INDEX IF EXISTS column_log_table_idx;
-DROP INDEX IF EXISTS column_log_column_idx;
-DROP INDEX IF EXISTS column_log_range_idx;
-
-CREATE INDEX transaction_log_txid_idx ON pgmemento.transaction_log USING BTREE (txid);
-CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
-CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
-CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_relid, op_id);
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
-CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
-CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
-CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
-CREATE INDEX table_log_range_idx ON pgmemento.audit_table_log USING GIST (txid_range);
-CREATE INDEX column_log_table_idx ON pgmemento.audit_column_log USING BTREE (audit_table_id);
-CREATE INDEX column_log_column_idx ON pgmemento.audit_column_log USING BTREE (column_name);
-CREATE INDEX column_log_range_idx ON pgmemento.audit_column_log USING GIST (txid_range);
-
-
-/***********************************************************
-CREATE SEQUENCE
-
-***********************************************************/
-DROP SEQUENCE IF EXISTS pgmemento.audit_id_seq;
-CREATE SEQUENCE pgmemento.audit_id_seq
-  INCREMENT BY 1
-  MINVALUE 0
-  MAXVALUE 2147483647
-  START WITH 1
-  CACHE 1
-  NO CYCLE
-  OWNED BY NONE;
-
 
 /***********************************************************
 * GET TXID BOUNDS TO TABLE
@@ -378,21 +207,25 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         AND lower(a.txid_range) IS NOT NULL
   )
   SELECT
+    child_oid AS relid,
     schema_name AS schemaname,
     table_name AS tablename,
     depth
   FROM (
     SELECT
+      child_oid,
       schema_name,
       table_name,
       max(depth) AS depth
     FROM
       table_dependency
     GROUP BY
+      child_oid,
       schema_name,
       table_name
     UNION ALL
       SELECT
+        atl.relid,
         atl.schema_name,
         atl.table_name,
         0 AS depth 
@@ -403,6 +236,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         ON d.child_oid = atl.relid
       WHERE
         d.child_oid IS NULL
+        AND upper(atl.txid_range) IS NULL
+        AND lower(atl.txid_range) IS NOT NULL
   ) td
   ORDER BY
     schemaname,
@@ -823,7 +658,9 @@ BEGIN
   -- assign id for operation type
   CASE $3
     WHEN 'CREATE TABLE' THEN operation_id := 1;
+    WHEN 'RENAME TABLE' THEN operation_id := 12;
     WHEN 'ADD COLUMN' THEN operation_id := 2;
+    WHEN 'RENAME COLUMN' THEN operation_id := 22;
     WHEN 'INSERT' THEN operation_id := 3;
     WHEN 'UPDATE' THEN operation_id := 4;
     WHEN 'ALTER COLUMN' THEN operation_id := 5;
