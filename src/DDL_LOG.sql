@@ -568,7 +568,6 @@ BEGIN
             -- try to log corresponding table event
             e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, event_type || ' COLUMN');
 
-            PERFORM set_config()
             IF event_type <> 'RENAME' THEN
               -- log data of entire column
               EXECUTE format(
