@@ -63,6 +63,7 @@ LANGUAGE plpgsql;
 \echo
 \echo 'Alter tables and recreate functions'
 \i ctl/UPGRADE.sql
+\i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql
 \i src/VERSIONING.sql
