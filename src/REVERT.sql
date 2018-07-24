@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.1     2018-07-24   support for RENAME events & improved queries    FKun
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling      FKun
 -- 0.5.1     2017-08-08   sort reverts by row_log ID and not audit_id     FKun
 --                        improved revert_distinct_transaction(s)
@@ -72,28 +73,56 @@ BEGIN
           RAISE NOTICE 'Could not revert CREATE TABLE event for table %.%: %', $6, $5, SQLERRM;
     END;
 
+  -- RENAME TABLE case
+  WHEN $4 = 12 THEN
+    BEGIN
+      -- collect information of renamed table
+      SELECT
+        t_new.table_name
+      INTO
+        stmt
+      FROM
+        pgmemento.audit_table_log t_old,
+        pgmemento.audit_table_log t_new
+      WHERE
+        t_old.relid = t_new.relid
+        AND t_old.table_name = $5
+        AND t_old.schema_name = $6
+        AND upper(t_new.txid_range) = $1
+        AND lower(t_old.txid_range) = $1;
+
+      -- try to re-rename table
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', $6, $5, stmt);
+      END IF;
+
+      EXCEPTION
+        WHEN undefined_table THEN
+          RAISE NOTICE 'Could not revert RENAME TABLE event for table %.%: %', $6, $5, SQLERRM;
+    END;
+
   -- ADD COLUMN case
   WHEN $4 = 2 THEN
-    -- collect added columns
-    SELECT
-      string_agg(
-        'DROP COLUMN '
-        || c.column_name,
-        ', ' ORDER BY c.id DESC
-      ) INTO stmt
-    FROM
-      pgmemento.audit_column_log c
-    JOIN
-      pgmemento.audit_table_log t
-      ON c.audit_table_id = t.id
-    WHERE
-      lower(c.txid_range) = $1
-      AND upper(c.txid_range) IS NULL
-      AND lower(c.txid_range) IS NOT NULL
-      AND t.table_name = $5
-      AND t.schema_name = $6;
-
     BEGIN
+      -- collect added columns
+      SELECT
+        string_agg(
+          'DROP COLUMN '
+          || c.column_name,
+          ', ' ORDER BY c.id DESC
+        ) INTO stmt
+      FROM
+        pgmemento.audit_column_log c
+      JOIN
+        pgmemento.audit_table_log t
+        ON c.audit_table_id = t.id
+      WHERE
+        lower(c.txid_range) = $1
+        AND upper(c.txid_range) IS NULL
+        AND lower(c.txid_range) IS NOT NULL
+        AND t.table_name = $5
+        AND t.schema_name = $6;
+
       -- try to execute ALTER TABLE command
       IF stmt IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
@@ -102,6 +131,37 @@ BEGIN
       EXCEPTION
         WHEN others THEN
           RAISE NOTICE 'Could not revert ADD COLUMN event for table %.%: %', $6, $5, SQLERRM;
+    END;
+
+  -- RENAME COLUMN case
+  WHEN $4 = 22 THEN
+    BEGIN
+      -- collect information of renamed table
+      SELECT
+        'RENAME COLUMN ' || c_old.column_name ||
+        ' TO ' || c_new.column_name
+      INTO
+        stmt
+      FROM
+        pgmemento.audit_table_log t,
+        pgmemento.audit_column_log c_old,
+        pgmemento.audit_column_log c_new
+      WHERE
+        t.relid = ($6 || '.' || $5)::regclass::oid
+        AND c_old.audit_table_id = t.id
+        AND c_new.audit_table_id = t.id
+        AND c_old.ordinal_position = c_new.ordinal_position
+        AND upper(c_new.txid_range) = $1
+        AND lower(c_old.txid_range) = $1;
+
+      -- try to re-rename table
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I ' || stmt, $6, $5);
+      END IF;
+
+      EXCEPTION
+        WHEN undefined_table THEN
+          RAISE NOTICE 'Could not revert RENAME COLUMN event for table %.%: %', $6, $5, SQLERRM;
     END;
 
   -- INSERT case
@@ -126,13 +186,13 @@ BEGIN
   WHEN $4 = 4 THEN
     -- update the row with values from changes
     IF $2 IS NOT NULL AND $3 <> '{}'::jsonb THEN
-      -- create SET part
-      SELECT
-        string_agg(key || '=' || quote_nullable(value),', ') INTO stmt
-      FROM
-        jsonb_each_text($3);
-
       BEGIN
+        -- create SET part
+        SELECT
+          string_agg(key || '=' || quote_nullable(value),', ') INTO stmt
+        FROM
+          jsonb_each_text($3);
+
         -- try to execute UPDATE command
         EXECUTE format(
           'UPDATE %I.%I t SET ' || stmt || ' WHERE t.audit_id = $1',
@@ -162,14 +222,13 @@ BEGIN
         ', ' ORDER BY c_new.id
       ) INTO stmt
     FROM
+      pgmemento.audit_table_log t,
       pgmemento.audit_column_log c_old,
-      pgmemento.audit_column_log c_new,
-      pgmemento.audit_table_log t
+      pgmemento.audit_column_log c_new
     WHERE
-      c_old.audit_table_id = t.id
+      t.relid = ($6 || '.' || $5)::regclass::oid
+      AND c_old.audit_table_id = t.id
       AND c_new.audit_table_id = t.id
-      AND t.table_name = $5
-      AND t.schema_name = $6
       AND upper(c_old.txid_range) = $1
       AND lower(c_new.txid_range) = $1
       AND upper(c_new.txid_range) IS NULL
@@ -188,44 +247,44 @@ BEGIN
 
   -- DROP COLUMN case
   WHEN $4 = 6 THEN
-    -- collect information of dropped columns
-    SELECT
-      string_agg(
-        'ADD COLUMN '
-        || c_old.column_name
-        || ' '
-        || c_old.data_type
-        || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END 
-        || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
-        ', ' ORDER BY c_old.id
-      ) INTO stmt
-    FROM
-      pgmemento.audit_table_log t
-    JOIN
-      pgmemento.audit_column_log c_old
-      ON c_old.audit_table_id = t.id
-    LEFT JOIN LATERAL (
-      SELECT
-        c.column_name
-      FROM
-        pgmemento.audit_table_log atl
-      JOIN
-        pgmemento.audit_column_log c
-        ON c.audit_table_id = atl.id
-      WHERE
-        atl.table_name = t.table_name
-        AND atl.schema_name = t.schema_name
-        AND upper(c.txid_range) IS NULL
-        AND lower(c.txid_range) IS NOT NULL
-      ) c_new
-      ON c_old.column_name = c_new.column_name
-    WHERE
-      upper(c_old.txid_range) = $1
-      AND c_new.column_name IS NULL
-      AND t.table_name = $5
-      AND t.schema_name = $6;
-	  
     BEGIN
+      -- collect information of dropped columns
+      SELECT
+        string_agg(
+          'ADD COLUMN '
+          || c_old.column_name
+          || ' '
+          || c_old.data_type
+          || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END 
+          || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
+          ', ' ORDER BY c_old.id
+        ) INTO stmt
+      FROM
+        pgmemento.audit_table_log t
+      JOIN
+        pgmemento.audit_column_log c_old
+        ON c_old.audit_table_id = t.id
+      LEFT JOIN LATERAL (
+        SELECT
+          c.column_name
+        FROM
+          pgmemento.audit_table_log atl
+        JOIN
+          pgmemento.audit_column_log c
+          ON c.audit_table_id = atl.id
+        WHERE
+          atl.table_name = t.table_name
+          AND atl.schema_name = t.schema_name
+          AND upper(c.txid_range) IS NULL
+          AND lower(c.txid_range) IS NOT NULL
+        ) c_new
+        ON c_old.column_name = c_new.column_name
+      WHERE
+        upper(c_old.txid_range) = $1
+        AND c_new.column_name IS NULL
+        AND t.table_name = $5
+        AND t.schema_name = $6;
+
       -- try to execute ALTER TABLE command
       IF stmt IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
@@ -348,13 +407,13 @@ BEGIN
       ON a.relid = e.table_relid
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.tablename = a.table_name
-     AND d.schemaname = a.schema_name
+      ON d.relid = e.table_relid
     LEFT JOIN
       pgmemento.row_log r
       ON r.event_id = e.id
     WHERE
       t.id = $1
+      AND t.id::numeric <@ a.txid_range
     ORDER BY
       dependency_order,
       e.id DESC,
@@ -398,13 +457,13 @@ BEGIN
       ON a.relid = e.table_relid
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.tablename = a.table_name
-     AND d.schemaname = a.schema_name
+      ON d.relid = e.table_relid
     LEFT JOIN
       pgmemento.row_log r
       ON r.event_id = e.id
     WHERE
       t.id BETWEEN $1 AND $2
+      AND numrange($1::numeric, $2::numeric, '[)') && a.txid_range
     ORDER BY
       t.id DESC,
       dependency_order,
@@ -475,8 +534,7 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.tablename = a.table_name
-      AND d.schemaname = a.schema_name
+      ON d.relid = q.table_relid
     WHERE
       NOT (
         e1.op_id = 1
@@ -484,8 +542,9 @@ BEGIN
       )
       AND NOT (
         e1.op_id = 3
-        AND e2.op_id > 6
+        AND (e2.op_id > 6 AND e2.op_id < 10)
       )
+      AND q.tid::numeric <@ a.txid_range
     ORDER BY
       dependency_order,
       e1.id DESC,
@@ -549,8 +608,7 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.tablename = a.table_name
-      AND d.schemaname = a.schema_name
+      ON d.relid = q.table_relid
     WHERE
       NOT (
         e1.op_id = 1
@@ -558,8 +616,9 @@ BEGIN
       )
       AND NOT (
         e1.op_id = 3
-        AND e2.op_id > 6
+        AND (e2.op_id > 6 AND e2.op_id < 10)
       )
+      AND numrange($1::numeric, $2::numeric, '[)') && a.txid_range
     ORDER BY
       dependency_order,
       e1.id DESC,
