@@ -415,7 +415,6 @@ BEGIN
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    RAISE NOTICE 'table = %', split_part(obj.object_identity, '.' ,2);
     PERFORM pgmemento.modify_ddl_log_tables(split_part(obj.object_identity, '.' ,2), obj.schema_name);
   END LOOP;
 END;
