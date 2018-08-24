@@ -227,17 +227,19 @@ The following table provides an overview what DML and DDL events are
 logged and which command is applied when reverting the event (see
 chapter 7).
 
-| OP_ID | EVENT                       | REVERSE EVENT                     | LOG CONTENT                    |
-|:-----:|:----------------------------|:----------------------------------|:-------------------------------|
-| 1     | CREATE TABLE'               | DROP TABLE                        | -                              |
-| 2     | (ALTER TABLE) ADD COLUMN'   | (ALTER TABLE) DROP COLUMN         | -                              |
-| 3     | INSERT                      | DELETE                            | NULL                           |
-| 4     | UPDATE                      | UPDATE                            | changed fields of changed rows |
-| 5     | (ALTER TABLE) ALTER COLUMN' | (ALTER TABLE) ALTER COLUMN        | all rows of altered columns''  |
-| 6     | (ALTER TABLE) DROP COLUMN'  | (ALTER TABLE) ADD COLUMN + UPDATE | all rows of dropped columns    |
-| 7     | DELETE                      | INSERT                            | all fields of deleted rows     |
-| 8     | TRUNCATE                    | INSERT                            | all fields of table            |
-| 9     | DROP TABLE'                 | CREATE TABLE                      | all fields of table (TRUNCATE) |
+| OP_ID | EVENT                        | REVERSE EVENT                     | LOG CONTENT                    |
+|:-----:|:-----------------------------|:----------------------------------|:-------------------------------|
+| 1     | CREATE TABLE'                | DROP TABLE                        | -                              |
+| 12    | (ALTER TABLE) RENAME TABLE   | (ALTER TABLE) RENAME TABLE        | -                              |
+| 2     | (ALTER TABLE) ADD COLUMN'    | (ALTER TABLE) DROP COLUMN         | -                              |
+| 22    | (ALTER TABLE) RENAME COLUMN' | (ALTER TABLE) RENAME COLUMN'      | -                              |
+| 3     | INSERT                       | DELETE                            | NULL                           |
+| 4     | UPDATE                       | UPDATE                            | changed fields of changed rows |
+| 5     | (ALTER TABLE) ALTER COLUMN'  | (ALTER TABLE) ALTER COLUMN        | all rows of altered columns''  |
+| 6     | (ALTER TABLE) DROP COLUMN'   | (ALTER TABLE) ADD COLUMN + UPDATE | all rows of dropped columns    |
+| 7     | DELETE                       | INSERT                            | all fields of deleted rows     |
+| 8     | TRUNCATE                     | INSERT                            | all fields of table            |
+| 9     | DROP TABLE'                  | CREATE TABLE                      | all fields of table (TRUNCATE) |
 
 ' Captured by event triggers
 '' Only if USING is found in the ALTER COLUMN command 
@@ -249,17 +251,17 @@ sections.
 
 pgMemento uses two logging stages. The first trigger is fired before 
 each statement on each audited table. Every transaction is only logged 
-once in the `transaction_log` table. The ID of the entry is stored in
-a local transaction variable.
+once in the `transaction_log` table. The row ID is stored in a local
+transaction variable.
 
 Within the trigger procedure the corresponding table operations are
 logged as well in the `table_event_log` table. A type of table operation
 (e.g. INSERT, UPDATE, DELETE etc.) is only logged once per table per
-transaction. For two or more operations of the same kind logged data of
+transaction. For two or more operations of the same kind, logged data of
 subsequent events are referenced to the first first event that has been
 inserted into `table_event_log`. In the next chapter you will see why
-this doesn't produce consistency issues. Again, the ID is saved to a
-transaction variable.
+this doesn't produce consistency issues. The event ID is written into a
+transaction variable, too.
 
 The second logging stage is related to the data that has changed. 
 Row-level triggers are fired after each operations on the audited tables.
@@ -270,9 +272,9 @@ rows of `column_B` to `new_value` will appear in the log tables like this:
 
 TRANSACTION_LOG
 
-| ID  | txid     | stmt_date                | user_name  | client address  |
-| --- |:-------- |:------------------------:|:----------:|:---------------:|
-| 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128         |
+| ID  | txid     | stmt_date                | user_name  | client_ip  | application_name  | session_info  |
+| --- |:-------- |:------------------------:|:----------:|:----------:|:-----------------:|:-------------:|
+| 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128    | psql              | NULL          |
 
 TABLE_EVENT_LOG
 
@@ -321,7 +323,12 @@ exception. At least, since v0.5 DDL changes executed from inside
 functions can be extracted correctly.
 
 
-### 6.4. Query the logs
+### 6.4. User-defined session infos to log
+
+
+
+
+### 6.5. Query the logs
 
 The logged information can already be of use, e.g. list all transactions 
 that had an effect on a certain column by using the `?` operator:
@@ -375,7 +382,7 @@ GROUP BY
 </pre> 
 
 
-### 6.5. Delete logs and data correction
+### 6.6. Delete logs and data correction
 
 To delete entries in the audit table pgMemento offers a simple API to
 remove logs caused by one transaction (`delete_txid_log`) or one event

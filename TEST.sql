@@ -30,6 +30,11 @@ SET client_min_messages TO WARNING;
 CREATE SEQUENCE pgmemento.test_seq;
 
 \i test/testdb/RESTORE_TESTDB.sql
+
+-- set search_path
+--ALTER DATABASE pgmemento_testdb SET search_path TO citydb, citydb_pkg, public, pgmemento;
+
+-- test schema
 \i test/setup/TEST_INSTALL.sql
 
 -- test setup functions
@@ -40,6 +45,10 @@ CREATE SEQUENCE pgmemento.test_seq;
 \i test/dml_log/TEST_UPDATE.sql
 \i test/dml_log/TEST_DELETE.sql
 \i test/dml_log/TEST_TRUNCATE.sql
+
+-- test DDL logging
+--\i test/ddl_log/TEST_CREATE_TABLE.sql
+--\i test/ddl_log/TEST_ALTER_TABLE.sql
 
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
