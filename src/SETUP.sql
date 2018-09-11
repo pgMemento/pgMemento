@@ -108,8 +108,7 @@ CREATE TABLE pgmemento.transaction_log
   txid BIGINT NOT NULL,
   stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
   user_name TEXT,
-  client_name TEXT,
-  application_name TEXT
+  client_name TEXT
 );
 
 ALTER TABLE pgmemento.transaction_log
@@ -399,25 +398,6 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     schemaname,
     depth,
     tablename;
- 
-CREATE OR REPLACE VIEW pgmemento.audit_full AS
- SELECT t1.audit_id,
-    t1.changes,
-    t2.transaction_id,
-    t2.table_operation,
-    t2.table_relid,
-    t3.schema_name,
-    t3.table_name,
-    t4.stmt_date,
-    t4.user_name,
-    t4.client_name,
-    t4.application_name
-   FROM pgmemento.row_log t1
-     LEFT JOIN pgmemento.table_event_log t2 ON t2.id = t1.event_id
-     LEFT JOIN pgmemento.audit_table_log t3 ON t3.relid = t2.table_relid
-     LEFT JOIN pgmemento.transaction_log t4 ON t2.transaction_id = t4.txid
-  ORDER BY t4.stmt_date DESC;
-
 
 /**********************************************************
 * UN/REGISTER TABLE
@@ -791,9 +771,9 @@ DECLARE
 BEGIN
   -- try to log corresponding transaction
   INSERT INTO pgmemento.transaction_log 
-    (txid, stmt_date, user_name, client_name, application_name)
+    (txid, stmt_date, user_name, client_name)
   VALUES 
-    (txid_current(), statement_timestamp(), current_user, inet_client_addr(), current_setting('application_name'))
+    (txid_current(), statement_timestamp(), current_user, inet_client_addr())
   ON CONFLICT (txid)
     DO NOTHING;
 
