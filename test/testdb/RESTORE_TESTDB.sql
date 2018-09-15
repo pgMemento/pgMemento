@@ -27,6 +27,9 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo 'Restore dumped 3DCityDB instance'
 \i test/testdb/testdb_dump.sql
 
+-- set search_path
+ALTER DATABASE pgmemento_testdb SET search_path TO citydb, citydb_pkg, public, pgmemento;
+
 DO
 $$
 DECLARE
