@@ -45,7 +45,7 @@ CREATE SEQUENCE pgmemento.test_seq;
 
 -- test DDL logging
 \i test/ddl_log/TEST_CREATE_TABLE.sql
---\i test/ddl_log/TEST_ALTER_TABLE.sql
+\i test/ddl_log/TEST_ALTER_TABLE.sql
 
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
