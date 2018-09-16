@@ -484,7 +484,7 @@ BEGIN
         END IF;
       END IF;
     END LOOP;
-	
+
     -- get table and schema name
     IF table_ident LIKE '%.%' THEN
       -- check if table is audited

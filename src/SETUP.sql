@@ -294,6 +294,8 @@ CREATE OR REPLACE FUNCTION pgmemento.register_audit_table(
 $$
 DECLARE
   tab_id INTEGER;
+  old_table_name TEXT;
+  old_schema_name TEXT;
 BEGIN
   -- first check if table is audited
   IF NOT EXISTS (
@@ -320,15 +322,23 @@ BEGIN
 
     IF tab_id IS NULL THEN
       -- check if table exists in 'audit_table_log' with another name (and open range)
-      -- if so, unregister first before making new inserts
-      PERFORM
-        pgmemento.unregister_audit_table(table_name, schema_name)
+      SELECT
+        table_name,
+        schema_name
+      INTO
+        old_table_name,
+        old_schema_name
       FROM
         pgmemento.audit_table_log 
       WHERE
         relid = ($2 || '.' || $1)::regclass::oid
         AND upper(txid_range) IS NULL
         AND lower(txid_range) IS NOT NULL;
+
+      -- if so, unregister first before making new inserts
+      IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
+        PERFORM pgmemento.unregister_audit_table(old_table_name, old_schema_name);
+      END IF;
 
       -- now register table and corresponding columns in audit tables
       INSERT INTO pgmemento.audit_table_log
@@ -366,6 +376,12 @@ BEGIN
           AND NOT a.attisdropped
           ORDER BY a.attnum
       );
+
+      -- rename unique constraint for audit_id column
+      IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I_audit_id_key TO %I_audit_id_key',
+          $2, $1, old_table_name, $1);
+      END IF;
     END IF;
   END IF;
 

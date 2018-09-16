@@ -139,7 +139,7 @@ BEGIN
     pgmemento.audit_column_log
   WHERE
     audit_table_id = current_setting('pgmemento.create_table_test2')::int;
-  RAISE NOTICE 'defaults: %', defaults[1];
+
   ASSERT colnames[1] = 'id', 'Did not find column ''id'' in audit_column_log, but % instead', colnames[1];
   ASSERT datatypes[1] = 'integer', 'Incorrect datatype for integer-based ''id'' column in audit_column_log: %', datatypes[1];
   --ASSERT defaults[1] = E'nextval(\'citydb.test_id_seq\'::regclass)', 'Incorrect default value for serial column ''id'' in audit_column_log: %', defaults[1];  
