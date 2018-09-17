@@ -244,7 +244,6 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     depth,
     tablename;
 
-
 /**********************************************************
 * UN/REGISTER TABLE
 *
@@ -788,7 +787,8 @@ BEGIN
      FROM
        jsonb_each(to_jsonb(OLD))
      WHERE
-       NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
+      to_jsonb(NEW) ->> key != to_jsonb(OLD) ->> key
+       --NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
     ),
     '{}')::jsonb INTO jsonb_diff;
 
