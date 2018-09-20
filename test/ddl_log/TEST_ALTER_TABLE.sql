@@ -140,7 +140,7 @@ DECLARE
 BEGIN
   test_transaction := current_setting('pgmemento.rename_table_test')::int;
 
-  -- get audit_id of inserted row
+  -- get column information of renamed table
   SELECT
     array_agg(column_name ORDER BY id),
     array_agg(data_type ORDER BY id),
