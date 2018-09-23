@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.2     2018-09-23   improved reverts when column type is altered    FKun
 -- 0.6.1     2018-07-24   support for RENAME events & improved queries    FKun
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling      FKun
 -- 0.5.1     2017-08-08   sort reverts by row_log ID and not audit_id     FKun
@@ -211,14 +212,8 @@ BEGIN
     -- collect information of altered columns
     SELECT
       string_agg(
-        'ALTER COLUMN '
-        || c_new.column_name
-        || ' SET DATA TYPE '
-        || c_old.data_type
-        || ' USING '
-        || c_new.column_name
-        || '::'
-        || c_old.data_type,
+        format('ALTER COLUMN %I SET DATA TYPE %I USING pgmemento.restore_change(%L, audit_id, %L, NULL::%I)',
+          c_new.column_name, c_old.data_type, $1, c_old.column_name, c_old.data_type),
         ', ' ORDER BY c_new.id
       ) INTO stmt
     FROM
@@ -231,18 +226,12 @@ BEGIN
       AND c_new.audit_table_id = t.id
       AND upper(c_old.txid_range) = $1
       AND lower(c_new.txid_range) = $1
-      AND upper(c_new.txid_range) IS NULL
       AND c_old.ordinal_position = c_new.ordinal_position
       AND c_old.data_type <> c_new.data_type;
 
     -- alter table if it has not been done, yet
     IF stmt IS NOT NULL THEN
       EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
-    END IF;
-
-    -- fill in data with an UPDATE statement if audit_id is set
-    IF $2 IS NOT NULL THEN
-      PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
     END IF;
 
   -- DROP COLUMN case
@@ -413,7 +402,7 @@ BEGIN
       ON r.event_id = e.id
     WHERE
       t.id = $1
-      AND t.id::numeric <@ a.txid_range
+      AND a.txid_range @> t.id::numeric
     ORDER BY
       dependency_order,
       e.id DESC,
@@ -544,7 +533,7 @@ BEGIN
         e1.op_id = 3
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
-      AND q.tid::numeric <@ a.txid_range
+      AND a.txid_range @> q.tid::numeric
     ORDER BY
       dependency_order,
       e1.id DESC,
