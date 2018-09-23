@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.1     2018-09-22   new functions to retrieve the value of a single     FKun
+--                        columns from the logs
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling          FKun
 -- 0.5.1     2017-07-26   reflect changes of updated logging behaviour        FKun
 -- 0.5.0     2017-07-12   reflect changes to audit_column_log table           FKun
@@ -42,12 +44,94 @@
 *   create_restore_template(tid INTEGER, template_name TEXT, table_name TEXT, schema_name TEXT, preserve_template INTEGER DEFAULT 0) RETURNS SETOF VOID
 *   generate_log_entries(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS SETOF jsonb
 *   generate_log_entry(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT) RETURNS jsonb
+*   jsonb_populate_value(jsonb_log JSONB, column_name TEXT, INOUT template anyelement) RETURNS anyelement
+*   restore_change(during_tid INTEGER, aid BIGINT, column_name TEXT, INOUT restored_value anyelement) RETURNS anyelement
 *   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL) RETURNS TEXT
 *   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state INTEGER DEFAULT '0') RETURNS SETOF VOID
 *   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW') RETURNS SETOF VOID
+*   restore_value(until_tid INTEGER, aid BIGINT, column_name TEXT, INOUT restored_value anyelement) RETURNS anyelement
 ***********************************************************/
+
+
+/**********************************************************
+* RESTORE VALUE
+*
+* Returns the historic value before a given transaction_id
+* and given audit_id with the correct data type.
+* - jsonb_populate_value is used for casting
+* - restore_value returns the historic column value <= tid
+* - restor_change returns the historic column value in case
+*   it was changed during given tid (NULL otherwise)
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.jsonb_populate_value(
+  jsonb_log JSONB,
+  column_name TEXT,
+  INOUT template anyelement
+  ) RETURNS anyelement AS
+$$
+BEGIN
+  IF $1 IS NOT NULL THEN
+    EXECUTE format('SELECT ($1->>$2)::%I', pg_typeof($3))
+      INTO template USING $1, $2;
+  ELSE
+    EXECUTE format('SELECT NULL::%I', pg_typeof($3))
+      INTO template;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.restore_value(
+  until_tid INTEGER,
+  aid BIGINT,
+  column_name TEXT,
+  INOUT restored_value anyelement
+  ) RETURNS anyelement AS
+$$
+SELECT
+  jsonb_populate_value(r.changes, $3, $4) AS restored_value
+FROM
+  pgmemento.row_log r
+JOIN
+  pgmemento.table_event_log e
+  ON r.event_id = e.id
+WHERE
+  r.audit_id = $2
+  AND r.changes ? $3
+  AND e.transaction_id <= $1
+ORDER BY
+  e.id DESC
+LIMIT 1;
+$$
+LANGUAGE sql;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.restore_change(
+  during_tid INTEGER,
+  aid BIGINT,
+  column_name TEXT,
+  INOUT restored_value anyelement
+  ) RETURNS anyelement AS
+$$
+SELECT
+  jsonb_populate_value(r.changes, $3, $4) AS restored_value
+FROM
+  pgmemento.row_log r
+JOIN
+  pgmemento.table_event_log e
+  ON r.event_id = e.id
+WHERE
+  r.audit_id = $2
+  AND e.transaction_id = $1
+ORDER BY
+  e.id DESC
+LIMIT 1;
+$$
+LANGUAGE sql;
+
 
 /**********************************************************
 * AUDIT TABLE CHECK
