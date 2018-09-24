@@ -42,6 +42,7 @@ CREATE SEQUENCE pgmemento.test_seq;
 \i test/ddl_log/TEST_ALTER_TABLE.sql
 \i test/ddl_log/TEST_ADD_COLUMN.sql
 \i test/ddl_log/TEST_ALTER_COLUMN.sql
+\i test/ddl_log/TEST_DROP_COLUMN.sql
 
 -- test DML logging
 \i test/dml_log/TEST_INSERT.sql

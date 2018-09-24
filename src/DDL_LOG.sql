@@ -575,7 +575,7 @@ BEGIN
               WHEN 'ALTER' THEN
                 altered_columns := array_append(altered_columns, columnname);
               WHEN 'DROP' THEN
-                dropped_columns := array_append(altered_columns, columnname);
+                dropped_columns := array_append(dropped_columns, columnname);
               ELSE
                 RAISE NOTICE 'Event type % unknown', event_type;
             END CASE;
