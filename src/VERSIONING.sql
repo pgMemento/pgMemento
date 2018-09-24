@@ -73,10 +73,10 @@ CREATE OR REPLACE FUNCTION pgmemento.jsonb_populate_value(
 $$
 BEGIN
   IF $1 IS NOT NULL THEN
-    EXECUTE format('SELECT ($1->>$2)::%I', pg_typeof($3))
+    EXECUTE format('SELECT ($1->>$2)::%s', pg_typeof($3))
       INTO template USING $1, $2;
   ELSE
-    EXECUTE format('SELECT NULL::%I', pg_typeof($3))
+    EXECUTE format('SELECT NULL::%s', pg_typeof($3))
       INTO template;
   END IF;
 END;
