@@ -178,7 +178,7 @@ BEGIN
       END IF;
   END;
 
-  -- check if the table existed when tid happened
+  -- check if the table has existed before tid happened
   -- save schema and name in case it was renamed
   SELECT
     id,
@@ -197,7 +197,7 @@ BEGIN
     AND txid_range @> $1::numeric;
 
   IF NOT FOUND THEN
-    RAISE NOTICE 'Table ''%'' did not exist for requested txid range.', $3;
+    RAISE NOTICE 'Table ''%'' does not exist for requested before transaction %.', $2, $1;
     RETURN;
   END IF;
 
@@ -290,6 +290,10 @@ BEGIN
   FROM
     pgmemento.audit_table_check($2,$3,$4);
 
+  IF new_tab_name IS NULL THEN
+    RETURN NULL;
+  END IF;
+
   -- start building the SQL command
   query_text := 'SELECT jsonb_build_object(';
 
@@ -336,37 +340,40 @@ BEGIN
            log_column.column_name, log_column.column_name
          );
 
-    -- if column is not found in the row_log table, recent state has to be queried if table exists
-    -- additionally, check if column still exists (not necessary for audit_id column)
-    IF log_column.column_name = 'audit_id' THEN
-      new_column_name := 'audit_id';
-    ELSE
-      SELECT
-        column_name INTO new_column_name
-      FROM
-        pgmemento.audit_column_log
-      WHERE
-        audit_table_id = new_tab_id
-        AND ordinal_position = log_column.ordinal_position
-        AND data_type = log_column.data_type
-        AND upper(txid_range) IS NULL
-        AND lower(txid_range) IS NOT NULL;
-    END IF;
-
-    IF new_tab_upper_txid IS NOT NULL OR new_column_name IS NULL THEN
-      -- there is either no existing table or column
-      IF tab_name <> new_tab_name THEN
-        RAISE NOTICE 'No matching field found for column ''%'' in active table ''%.%'' (formerly known as ''%.%'').',
-                        log_column.column_name, new_tab_schema, new_tab_name, tab_schema, tab_name;
+    -- if column is not found in the row_log table, recent state has to be queried
+    -- but only if table exists
+    IF new_tab_upper_txid IS NULL THEN
+      -- additionally, check if column still exists (not necessary for audit_id column)
+      IF log_column.column_name = 'audit_id' THEN
+        new_column_name := 'audit_id';
       ELSE
-        RAISE NOTICE 'No matching field found for column ''%'' in active table ''%.%''.',
-                        log_column.column_name, new_tab_schema, new_tab_name;
+        SELECT
+          column_name INTO new_column_name
+        FROM
+          pgmemento.audit_column_log
+        WHERE
+          audit_table_id = new_tab_id
+          AND ordinal_position = log_column.ordinal_position
+          AND data_type = log_column.data_type
+          AND upper(txid_range) IS NULL
+          AND lower(txid_range) IS NOT NULL;
       END IF;
-    ELSE
-      -- take current value from matching column (and hope that the data is really fitting)
-      find_logs := find_logs 
-        || format(E'      to_jsonb(x.%I),\n', new_column_name);
-      join_recent_state := TRUE;
+
+      IF new_column_name IS NULL THEN
+        -- there is either no existing table or column
+        IF tab_name <> new_tab_name THEN
+          RAISE NOTICE 'No matching field found for column ''%'' in active table ''%.%'' (formerly known as ''%.%'').',
+                          log_column.column_name, new_tab_schema, new_tab_name, tab_schema, tab_name;
+        ELSE
+          RAISE NOTICE 'No matching field found for column ''%'' in active table ''%.%''.',
+                          log_column.column_name, new_tab_schema, new_tab_name;
+        END IF;
+      ELSE
+        -- take current value from matching column (and hope that the data is really fitting)
+        find_logs := find_logs 
+          || format(E'      to_jsonb(x.%I),\n', new_column_name);
+        join_recent_state := TRUE;
+      END IF;
     END IF;
 
     -- if nothing is found in the logs or in the recent state value will be NULL
@@ -499,13 +506,14 @@ $$
 DECLARE
   stmt TEXT;
 BEGIN
-  -- get columns that exist at transaction with id end_at_tid
+  -- get columns that exist before transaction with id end_at_tid
   SELECT
     string_agg(
       c.column_name
       || ' '
       || c.data_type
-      || CASE WHEN c.column_default IS NOT NULL THEN ' DEFAULT ' || c.column_default ELSE '' END
+      || CASE WHEN c.column_default IS NOT NULL AND c.column_default NOT LIKE '%::regclass%'
+         THEN ' DEFAULT ' || c.column_default ELSE '' END
       || CASE WHEN c.not_null THEN ' NOT NULL' ELSE '' END,
       ', ' ORDER BY c.ordinal_position
     ) INTO stmt
