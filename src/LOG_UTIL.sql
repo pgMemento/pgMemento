@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.1     2018-09-24   new function column_array_to_column_list       FKun
 -- 0.5.0     2018-07-16   reflect changes in transaction_id handling     FKun
 -- 0.4.2     2017-07-26   new function to remove a key from all logs     FKun
 -- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added jsonb_merge   FKun
@@ -33,6 +34,7 @@
 *   jsonb_merge(jsonb)
 *
 * FUNCTIONS:
+*   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
@@ -206,3 +208,16 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql STRICT;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
+$$
+SELECT
+  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
+FROM
+  unnest($1) k,
+  unnest($1) v
+WHERE
+  k = v;
+$$
+LANGUAGE sql STRICT;
