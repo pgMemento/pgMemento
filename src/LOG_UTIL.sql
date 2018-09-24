@@ -143,10 +143,10 @@ $$
 DELETE FROM
   pgmemento.table_event_log
 WHERE
-  e.transaction_id = $1
-  AND e.table_relid = ($3 || '.' || $2)::regclass::oid
+  transaction_id = $1
+  AND table_relid = ($3 || '.' || $2)::regclass::oid
 RETURNING
-  e.id;
+  id;
 $$
 LANGUAGE sql STRICT;
 
