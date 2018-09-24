@@ -141,15 +141,10 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
-  pgmemento.table_event_log e
-USING
-  pgmemento.audit_table_log a
+  pgmemento.table_event_log
 WHERE
-  e.table_relid = a.relid
-  AND e.transaction_id = $1
-  AND a.schema_name = $3
-  AND a.table_name = $2
-  AND a.txid_range @> $1::numeric
+  e.transaction_id = $1
+  AND e.table_relid = ($3 || '.' || $2)::regclass::oid
 RETURNING
   e.id;
 $$

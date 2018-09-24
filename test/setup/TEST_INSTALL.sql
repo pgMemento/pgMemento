@@ -135,7 +135,7 @@ BEGIN
   ASSERT pgm_objects[33] = 'index_schema_state;SETOF void;target_schema_name text, original_schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[34] = 'index_table_state;SETOF void;table_name text, target_schema_name text, original_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[35] = 'jsonb_merge;jsonb;jsonb', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[36] = 'jsonb_populate_value;anyelement;jsonb_log jsonb, column_name text, INOUT template anyelement', , 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[36] = 'jsonb_populate_value;anyelement;jsonb_log jsonb, column_name text, INOUT template anyelement', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[37] = 'log_delete;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[38] = 'log_insert;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[39] = 'log_schema_state;SETOF void;schemaname text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
