@@ -16,7 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.6.2     2018-09-23   improved reverts when column type is altered    FKun
+-- 0.6.2     2018-09-24   improved reverts when column type is altered    FKun
 -- 0.6.1     2018-07-24   support for RENAME events & improved queries    FKun
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling      FKun
 -- 0.5.1     2017-08-08   sort reverts by row_log ID and not audit_id     FKun
@@ -209,30 +209,37 @@ BEGIN
 
   -- ALTER COLUMN case
   WHEN $4 = 5 THEN
-    -- collect information of altered columns
-    SELECT
-      string_agg(
-        format('ALTER COLUMN %I SET DATA TYPE %I USING pgmemento.restore_change(%L, audit_id, %L, NULL::%I)',
-          c_new.column_name, c_old.data_type, $1, c_old.column_name, c_old.data_type),
-        ', ' ORDER BY c_new.id
-      ) INTO stmt
-    FROM
-      pgmemento.audit_table_log t,
-      pgmemento.audit_column_log c_old,
-      pgmemento.audit_column_log c_new
-    WHERE
-      t.relid = ($6 || '.' || $5)::regclass::oid
-      AND c_old.audit_table_id = t.id
-      AND c_new.audit_table_id = t.id
-      AND upper(c_old.txid_range) = $1
-      AND lower(c_new.txid_range) = $1
-      AND c_old.ordinal_position = c_new.ordinal_position
-      AND c_old.data_type <> c_new.data_type;
+    BEGIN
+      -- collect information of altered columns
+      SELECT
+        string_agg(
+          format('ALTER COLUMN %I SET DATA TYPE %s USING pgmemento.restore_change(%L, audit_id, %L, NULL::%s)',
+            c_new.column_name, c_old.data_type, $1, c_old.column_name, c_old.data_type),
+          ', ' ORDER BY c_new.id
+        ) INTO stmt
+      FROM
+        pgmemento.audit_table_log t,
+        pgmemento.audit_column_log c_old,
+        pgmemento.audit_column_log c_new
+      WHERE
+        t.relid = ($6 || '.' || $5)::regclass::oid
+        AND c_old.audit_table_id = t.id
+        AND c_new.audit_table_id = t.id
+        AND upper(c_old.txid_range) = $1
+        AND upper(c_new.txid_range) IS NULL
+        AND c_old.ordinal_position = c_new.ordinal_position
+        AND c_old.data_type <> c_new.data_type;
 
-    -- alter table if it has not been done, yet
-    IF stmt IS NOT NULL THEN
-      EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
-    END IF;
+      -- alter table if it has not been done, yet
+      IF stmt IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
+      END IF;
+
+      -- it did not work for some reason
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert ALTER COLUMN event for table %.%: %', $6, $5, SQLERRM;
+    END;
 
   -- DROP COLUMN case
   WHEN $4 = 6 THEN
@@ -399,7 +406,7 @@ BEGIN
       ON d.relid = e.table_relid
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id
+      ON r.event_id = e.id AND e.op_id <> 5
     WHERE
       t.id = $1
       AND a.txid_range @> t.id::numeric
@@ -449,7 +456,7 @@ BEGIN
       ON d.relid = e.table_relid
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id
+      ON r.event_id = e.id AND e.op_id <> 5
     WHERE
       t.id BETWEEN $1 AND $2
       AND numrange($1::numeric, $2::numeric, '[)') && a.txid_range
@@ -482,7 +489,6 @@ DECLARE
 BEGIN
   FOR rec IN 
     SELECT
-      $1 AS tid,
       q.audit_id,
       CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
@@ -496,6 +502,7 @@ BEGIN
       END AS dependency_order
     FROM (
       SELECT
+        e.transaction_id,
         r.audit_id,
         e.table_relid,
         min(e.id) AS first_event,
@@ -506,7 +513,7 @@ BEGIN
         pgmemento.table_event_log e
       LEFT JOIN
         pgmemento.row_log r
-        ON r.event_id = e.id
+        ON r.event_id = e.id AND e.op_id <> 5
       WHERE
         e.transaction_id = $1
       GROUP BY
@@ -533,13 +540,13 @@ BEGIN
         e1.op_id = 3
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
-      AND a.txid_range @> q.tid::numeric
+      AND a.txid_range @> q.transaction_id::numeric
     ORDER BY
       dependency_order,
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.transaction_id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$
@@ -569,23 +576,34 @@ BEGIN
       END AS dependency_order
     FROM (
       SELECT
-        r.audit_id,
-        e.table_relid,
-        min(e.transaction_id) AS tid,
-        min(e.id) AS first_event,
-        max(e.id) AS last_event,
-        min(r.id) AS row_log_id,
-        pgmemento.jsonb_merge(r.changes ORDER BY r.id DESC) AS changes
-      FROM
-        pgmemento.table_event_log e
-      LEFT JOIN
-        pgmemento.row_log r
-        ON r.event_id = e.id
-      WHERE
-        e.transaction_id BETWEEN $1 AND $2
+        audit_id,
+        table_relid,
+        min(transaction_id) AS tid,
+        min(event_id) AS first_event,
+        max(event_id) AS last_event,
+        min(id) AS row_log_id,
+        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+      FROM (
+        SELECT
+          r.id,
+          r.audit_id,
+          r.changes,
+          e.id AS event_id,
+          e.table_relid,
+          e.transaction_id,
+          CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
+        FROM
+          pgmemento.table_event_log e
+        LEFT JOIN
+          pgmemento.row_log r
+          ON r.event_id = e.id AND e.op_id <> 5
+        WHERE
+          e.transaction_id BETWEEN $1 AND $2
+      ) s
       GROUP BY
-        r.audit_id,
-        e.table_relid
+        audit_id,
+        table_relid,
+        ddl_event
     ) q
     JOIN
       pgmemento.table_event_log e1
