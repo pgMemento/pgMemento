@@ -401,6 +401,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
+     AND (a.txid_range @> t.id::numeric 
+      OR (upper(a.txid_range) = t.id::numeric AND e.op_id <> 12))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.relid = e.table_relid
@@ -409,7 +411,6 @@ BEGIN
       ON r.event_id = e.id AND e.op_id <> 5
     WHERE
       t.id = $1
-      AND a.txid_range @> t.id::numeric
     ORDER BY
       dependency_order,
       e.id DESC,
@@ -451,6 +452,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
+     AND (a.txid_range @> t.id::numeric
+      OR (upper(a.txid_range) = t.id::numeric AND e.op_id <> 12))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.relid = e.table_relid
@@ -459,7 +462,6 @@ BEGIN
       ON r.event_id = e.id AND e.op_id <> 5
     WHERE
       t.id BETWEEN $1 AND $2
-      AND numrange($1::numeric, $2::numeric, '[)') && a.txid_range
     ORDER BY
       t.id DESC,
       dependency_order,
@@ -489,6 +491,7 @@ DECLARE
 BEGIN
   FOR rec IN 
     SELECT
+      q.tid,
       q.audit_id,
       CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
       q.changes, 
@@ -502,23 +505,35 @@ BEGIN
       END AS dependency_order
     FROM (
       SELECT
-        e.transaction_id,
-        r.audit_id,
-        e.table_relid,
-        min(e.id) AS first_event,
-        max(e.id) AS last_event,
-        min(r.id) AS row_log_id,
-        pgmemento.jsonb_merge(r.changes ORDER BY r.id DESC) AS changes
-      FROM
-        pgmemento.table_event_log e
-      LEFT JOIN
-        pgmemento.row_log r
-        ON r.event_id = e.id AND e.op_id <> 5
-      WHERE
-        e.transaction_id = $1
+        audit_id,
+        table_relid,
+        transaction_id AS tid,
+        min(event_id) AS first_event,
+        max(event_id) AS last_event,
+        min(id) AS row_log_id,
+        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+      FROM (
+        SELECT
+          r.id,
+          r.audit_id,
+          r.changes,
+          e.id AS event_id,
+          e.table_relid,
+          e.transaction_id,
+          CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
+        FROM
+          pgmemento.table_event_log e
+        LEFT JOIN
+          pgmemento.row_log r
+          ON r.event_id = e.id AND e.op_id <> 5
+        WHERE
+          e.transaction_id = $1
+      ) s
       GROUP BY
-        r.audit_id,
-        e.table_relid
+        audit_id,
+        table_relid,
+        ddl_event,
+        transaction_id
     ) q
     JOIN
       pgmemento.table_event_log e1
@@ -529,6 +544,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
+     AND (a.txid_range @> q.tid::numeric
+      OR (upper(a.txid_range) = q.tid::numeric AND e1.op_id <> 12))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.relid = q.table_relid
     WHERE
@@ -540,13 +557,12 @@ BEGIN
         e1.op_id = 3
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
-      AND a.txid_range @> q.transaction_id::numeric
     ORDER BY
       dependency_order,
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.transaction_id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$
@@ -614,6 +630,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
+     AND (a.txid_range @> q.tid::numeric
+      OR (upper(a.txid_range) = q.tid::numeric AND e1.op_id <> 12))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.relid = q.table_relid
     WHERE
@@ -625,7 +643,6 @@ BEGIN
         e1.op_id = 3
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
-      AND numrange($1::numeric, $2::numeric, '[)') && a.txid_range
     ORDER BY
       dependency_order,
       e1.id DESC,
