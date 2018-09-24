@@ -193,7 +193,7 @@ BEGIN
   ASSERT colnames[1] = 'test_tsrange_column', 'Did not find column ''%'' in audit_column_log', colnames[1];
   ASSERT colnames[2] = 'test_tstzrange_column', 'Did not find column ''%'' in audit_column_log', colnames[2];
   ASSERT datatypes[1] = datatypes[2], 'Error: Logged data types of renamed column in audit_column_log is not identical.';
-  ASSERT upper(tid_ranges[1]) = test_transaction, 'Error: Upper transaction id % does not match the id % of ALTER COLUMN event', lower(tid_ranges[1]), test_transaction;
+  ASSERT upper(tid_ranges[1]) = test_transaction, 'Error: Upper transaction id % does not match the id % of ALTER COLUMN event', upper(tid_ranges[1]), test_transaction;
   ASSERT lower(tid_ranges[2]) = test_transaction, 'Error: Starting transaction id % does not match the id % of ALTER COLUMN event', lower(tid_ranges[2]), test_transaction;
 END;
 $$
@@ -221,7 +221,7 @@ BEGIN
   WHERE
     event_id = test_event;
 
-  ASSERT jsonb_log IS NOT NULL, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT jsonb_log IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;

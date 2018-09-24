@@ -54,6 +54,3 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-\echo
-\echo 'TEST ':n' TestDB setup - correct'
