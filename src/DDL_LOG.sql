@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.2     2018-09-24   altering or dropping multiple columns at once    FKun
+--                        produces only one JSONB log
 -- 0.6.1     2018-07-24   RENAME events now appear in table_event_log      FKun
 -- 0.6.0     2018-07-16   now calling log_table_event for ddl events       FKun
 -- 0.5.1     2017-08-08   DROP TABLE/SCHEMA events log data as truncated   FKun
@@ -441,6 +443,8 @@ DECLARE
   objs TEXT[];
   columnname TEXT;
   event_type TEXT;
+  altered_columns TEXT[] := '{}'::text[];
+  dropped_columns TEXT[] := '{}'::text[];
   e_id INTEGER;
 BEGIN
   -- get context in which trigger has been fired
@@ -564,31 +568,51 @@ BEGIN
               AND upper(c.txid_range) IS NULL
               AND lower(c.txid_range) IS NOT NULL
           ) THEN
-            -- try to log corresponding table event
-            e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, event_type || ' COLUMN');
-
-            IF event_type <> 'RENAME' THEN
-              -- log data of entire column
-              EXECUTE format(
-                'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
-                   SELECT $1, t.audit_id, jsonb_build_object($2,t.%I) AS content FROM %I.%I t',
-                   columnname, schemaname, tablename) USING e_id, columnname;
-            END IF;
+            CASE event_type
+              WHEN 'RENAME' THEN
+                -- log event as only one RENAME COLUMN action is possible per table per transaction
+                PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
+              WHEN 'ALTER' THEN
+                altered_columns := array_append(altered_columns, columnname);
+              WHEN 'DROP' THEN
+                dropped_columns := array_append(altered_columns, columnname);
+              ELSE
+                RAISE NOTICE 'Event type % unknown', event_type;
+            END CASE;
           END IF;
         END IF;
         
         -- when event is found column name might be next
-        IF columnname = 'rename' THEN
-          event_type := 'RENAME';
-        ELSIF columnname = 'alter' THEN
-          event_type := 'ALTER';
-        ELSIF columnname = 'drop' THEN
-          event_type := 'DROP';
-        ELSE
-          event_type := NULL;
-        END IF;
+        CASE columnname
+          WHEN 'rename' THEN event_type := 'RENAME';
+          WHEN 'alter' THEN event_type := 'ALTER';
+          WHEN 'drop' THEN event_type := 'DROP';
+          ELSE event_type := NULL;
+        END CASE;
       END IF;
     END LOOP;
+
+    IF array_length(altered_columns, 1) > 0 THEN
+      -- log ALTER COLUMN table event
+      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
+
+      -- log data of entire column(s)
+      EXECUTE format(
+        'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
+           SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list(altered_columns)||') AS content FROM %I.%I t',
+           schemaname, tablename) USING e_id;
+    END IF;
+
+    IF array_length(dropped_columns, 1) > 0 THEN
+      -- log DROP COLUMN table event
+      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
+
+      -- log data of entire column(s)
+      EXECUTE format(
+        'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
+           SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list(dropped_columns)||') AS content FROM %I.%I t',
+           schemaname, tablename) USING e_id;
+    END IF;
   END IF;
 END;
 $$
