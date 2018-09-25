@@ -250,8 +250,16 @@ BEGIN
           'ADD COLUMN '
           || c_old.column_name
           || ' '
-          || c_old.data_type
-          || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END 
+          || CASE WHEN c_old.column_default = E'nextval(\''||$5||'_'||c_old.column_name||E'_seq\'::regclass)' THEN
+               CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
+                    WHEN c_old.data_type = 'integer' THEN 'serial'
+                    WHEN c_old.data_type = 'bigint' THEN 'bigserial'
+                    ELSE c_old.data_type END
+             ELSE 
+               c_old.data_type
+               || CASE WHEN c_old.column_default IS NOT NULL
+                  THEN ' DEFAULT ' || c_old.column_default ELSE '' END
+             END
           || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
           ', ' ORDER BY c_old.id
         ) INTO stmt
@@ -321,8 +329,16 @@ BEGIN
       string_agg(
         c_old.column_name
         || ' '
-        || c_old.data_type
-        || CASE WHEN c_old.column_default IS NOT NULL THEN ' DEFAULT ' || c_old.column_default ELSE '' END
+        || CASE WHEN c_old.column_default = E'nextval(\''||$5||'_'||c_old.column_name||E'_seq\'::regclass)' THEN
+             CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
+                  WHEN c_old.data_type = 'integer' THEN 'serial'
+                  WHEN c_old.data_type = 'bigint' THEN 'bigserial'
+                  ELSE c_old.data_type END
+           ELSE 
+             c_old.data_type
+             || CASE WHEN c_old.column_default IS NOT NULL
+                THEN ' DEFAULT ' || c_old.column_default ELSE '' END
+           END
         || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
         ', ' ORDER BY c_old.ordinal_position
       ) INTO stmt
