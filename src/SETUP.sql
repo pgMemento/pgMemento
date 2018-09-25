@@ -651,11 +651,9 @@ BEGIN
       WHEN invalid_text_representation THEN
         BEGIN
           session_info_obj := to_jsonb(current_setting('pgmemento.session_info'));
-
-          EXCEPTION
-            WHEN others THEN
-              session_info_obj := NULL;
         END;
+      WHEN others THEN
+        session_info_obj := NULL;
   END;
 
   -- try to log corresponding transaction
