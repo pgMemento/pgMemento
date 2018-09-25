@@ -62,7 +62,7 @@ CREATE TABLE pgmemento.transaction_log
   stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
   process_id INTEGER,
   user_name TEXT,
-  client_ip TEXT,
+  client_name TEXT,
   client_port INTEGER,
   application_name TEXT,
   session_info JSONB

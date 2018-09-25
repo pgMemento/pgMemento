@@ -272,9 +272,9 @@ rows of `column_B` to `new_value` will appear in the log tables like this:
 
 TRANSACTION_LOG
 
-| ID  | txid     | stmt_date                | user_name  | client_ip  | application_name  | session_info  |
-| --- |:-------- |:------------------------:|:----------:|:----------:|:-----------------:|:-------------:|
-| 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128    | psql              | NULL          |
+| ID  | txid     | stmt_date                | user_name  | client_name  | application_name  | session_info  |
+| --- |:-------- |:------------------------:|:----------:|:------------:|:-----------------:|:-------------:|
+| 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128      | psql              | NULL          |
 
 TABLE_EVENT_LOG
 

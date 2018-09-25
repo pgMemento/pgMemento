@@ -654,7 +654,7 @@ BEGIN
 
   -- try to log corresponding transaction
   INSERT INTO pgmemento.transaction_log 
-    (txid, stmt_date, process_id, user_name, client_ip, client_port, application_name, session_info)
+    (txid, stmt_date, process_id, user_name, client_name, client_port, application_name, session_info)
   VALUES 
     ($1, statement_timestamp(), pg_backend_pid(), current_user, inet_client_addr(), inet_client_port(),
      current_setting('application_name'), session_info_obj

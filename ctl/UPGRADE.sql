@@ -20,9 +20,6 @@
 
 -- alter existing tables
 ALTER TABLE pgmemento.transaction_log
-  RENAME COLUMN client_name TO client_id;
-
-ALTER TABLE pgmemento.transaction_log
   ADD COLUMN process_id INTEGER,
   ADD COLUMN client_port INTEGER,
   ADD COLUMN application_name TEXT,
