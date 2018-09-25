@@ -96,8 +96,7 @@ BEGIN
   FROM
     pgmemento.audit_column_log
   WHERE
-    upper(txid_range) = test_transaction
-    OR lower(txid_range) = test_transaction;
+    upper(txid_range) = test_transaction;
 
   ASSERT colnames[1] = 'test_column', 'Expected test_column, but found ''%'' instead', colnames[1];
   ASSERT colnames[2] = 'test_tstzrange_column', 'Expected test_tstzrange_column, but found ''%'' instead', colnames[2];
