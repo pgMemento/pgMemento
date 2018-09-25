@@ -645,11 +645,17 @@ DECLARE
 BEGIN
   -- retrieve session_info set by client
   BEGIN
-    session_info_obj := to_jsonb(current_setting('pgmemento.session_info'));
+    session_info_obj := current_setting('pgmemento.session_info')::jsonb;
 
     EXCEPTION
-      WHEN others THEN
-        session_info_obj := NULL;
+      WHEN invalid_text_representation THEN
+        BEGIN
+          session_info_obj := to_jsonb(current_setting('pgmemento.session_info'));
+
+          EXCEPTION
+            WHEN others THEN
+              session_info_obj := NULL;
+        END;
   END;
 
   -- try to log corresponding transaction
