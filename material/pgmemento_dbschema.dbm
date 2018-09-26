@@ -3,7 +3,7 @@
 CAUTION: Do not modify this file unless you know what you are doing.
          Unexpected results may occur if the code is changed deliberately.
 -->
-<dbmodel pgmodeler-ver="0.8.0" author="Felix Kunde" last-position="0,0" last-zoom="1"
+<dbmodel pgmodeler-ver="0.9.1-alpha1" last-position="305,152" last-zoom="1"
 	 default-owner="postgres">
 <database name="pgMemento_DB_schema">
 </database>
@@ -18,48 +18,60 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="transaction_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="962" y="242"/>
+	<position x="680" y="380"/>
 	<column name="id" not-null="true">
-		<type name="integer"/>
+		<type name="integer" length="1"/>
 	</column>
 	<column name="txid" not-null="true">
-		<type name="bigint"/>
+		<type name="bigint" length="1"/>
 	</column>
 	<column name="stmt_date" not-null="true">
-		<type name="timestamptz"/>
+		<type name="timestamptz" length="1"/>
+	</column>
+	<column name="process_id">
+		<type name="integer" length="0"/>
 	</column>
 	<column name="user_name">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="client_name">
-		<type name="text"/>
+		<type name="text" length="1"/>
+	</column>
+	<column name="client_port">
+		<type name="integer" length="0"/>
+	</column>
+	<column name="application_name">
+		<type name="text" length="0"/>
+	</column>
+	<column name="session_info">
+		<type name="jsonb" length="0"/>
 	</column>
 	<constraint name="transaction_log_pk" type="pk-constr" table="pgmemento.transaction_log">
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
 	<constraint name="transaction_log_unique_txid" type="uq-constr" table="pgmemento.transaction_log">
-		<columns names="txid" ref-type="src-columns"/>
+		<columns names="txid,stmt_date" ref-type="src-columns"/>
 	</constraint>
 </table>
 
 <table name="table_event_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="942" y="534.4"/>
+	<position x="1180" y="260"/>
 	<column name="id" not-null="true">
-		<type name="serial"/>
+		<type name="serial" length="1"/>
 	</column>
 	<column name="transaction_id">
-		<type name="bigint"/>
+		<type name="integer" length="1"/>
 	</column>
 	<column name="op_id" not-null="true">
-		<type name="smallint"/>
+		<type name="smallint" length="1"/>
 	</column>
 	<column name="table_operation" not-null="true">
 		<type name="varchar" length="12"/>
 	</column>
 	<column name="table_relid" not-null="true">
-		<type name="oid"/>
+		<type name="oid" length="1"/>
 	</column>
 	<constraint name="table_event_log_pk" type="pk-constr" table="pgmemento.table_event_log">
 		<columns names="id" ref-type="src-columns"/>
@@ -69,18 +81,18 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="row_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1454" y="391"/>
+	<position x="1200" y="600"/>
 	<column name="id" not-null="true">
-		<type name="bigserial"/>
+		<type name="bigserial" length="1"/>
 	</column>
 	<column name="event_id" not-null="true">
-		<type name="integer"/>
+		<type name="integer" length="1"/>
 	</column>
 	<column name="audit_id" not-null="true">
-		<type name="bigint"/>
+		<type name="bigint" length="1"/>
 	</column>
 	<column name="changes">
-		<type name="jsonb"/>
+		<type name="jsonb" length="1"/>
 	</column>
 	<constraint name="row_log_pk" type="pk-constr" table="pgmemento.row_log">
 		<columns names="id" ref-type="src-columns"/>
@@ -130,21 +142,21 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="293" y="240"/>
+	<position x="300" y="240"/>
 	<column name="id" not-null="true">
-		<type name="serial"/>
+		<type name="serial" length="1"/>
 	</column>
 	<column name="relid">
-		<type name="oid"/>
+		<type name="oid" length="1"/>
 	</column>
 	<column name="schema_name" not-null="true">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="table_name" not-null="true">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="txid_range">
-		<type name="numrange"/>
+		<type name="numrange" length="1"/>
 	</column>
 	<constraint name="audit_table_log_pk" type="pk-constr" table="pgmemento.audit_table_log">
 		<columns names="id" ref-type="src-columns"/>
@@ -154,30 +166,30 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <table name="audit_column_log">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="261" y="444"/>
+	<position x="280" y="540"/>
 	<column name="id" not-null="true">
-		<type name="serial"/>
+		<type name="serial" length="1"/>
 	</column>
 	<column name="audit_table_id" not-null="true">
-		<type name="integer"/>
+		<type name="integer" length="1"/>
 	</column>
 	<column name="column_name" not-null="true">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="ordinal_position">
-		<type name="integer"/>
+		<type name="integer" length="1"/>
 	</column>
 	<column name="data_type">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="column_default">
-		<type name="text"/>
+		<type name="text" length="1"/>
 	</column>
 	<column name="not_null">
 		<type name="boolean" length="3"/>
 	</column>
 	<column name="txid_range">
-		<type name="numrange"/>
+		<type name="numrange" length="1"/>
 	</column>
 	<constraint name="audit_column_log_pk" type="pk-constr" table="pgmemento.audit_column_log">
 		<columns names="id" ref-type="src-columns"/>
@@ -249,10 +261,18 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
+<index name="transaction_log_session_idx" table="pgmemento.transaction_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gin" factor="0">
+		<idxelement use-sorting="false">
+			<column name="session_info"/>
+		</idxelement>
+</index>
+
 <constraint name="table_event_log_txid_fk" type="fk-constr" comparison-type="MATCH FULL"
 	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.transaction_log" table="pgmemento.table_event_log">
 	<columns names="transaction_id" ref-type="src-columns"/>
-	<columns names="txid" ref-type="dst-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
 <constraint name="row_log_table_fk" type="fk-constr" comparison-type="MATCH FULL"
@@ -271,18 +291,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 src-table="pgmemento.table_event_log"
 	 dst-table="pgmemento.transaction_log"
 	 src-required="false" dst-required="false">
-	<line>
-		<position x="838" y="587"/>
-	<position x="840" y="294"/>
-	</line>
-	<label ref-type="src-label">
-		<position x="-4.35999" y="-0.600037"/>
-	</label>
-	<label ref-type="dst-label">
-		<position x="-2.35999" y="0.799988"/>
-	</label>
 	<label ref-type="name-label">
-		<position x="90.9757" y="-7.34854"/>
+		<position x="0" y="0"/>
 	</label>
 </relationship>
 
@@ -290,12 +300,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 src-table="pgmemento.row_log"
 	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
-	<line>
-		<position x="1371" y="443"/>
-	<position x="1372" y="569"/>
-	</line>
 	<label ref-type="name-label">
-		<position x="-103.524" y="-40.8485"/>
+		<position x="0" y="0"/>
 	</label>
 </relationship>
 
@@ -303,18 +309,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 src-table="pgmemento.audit_column_log"
 	 dst-table="pgmemento.audit_table_log"
 	 src-required="false" dst-required="false">
-	<line>
-		<position x="693" y="496"/>
-	<position x="695" y="273"/>
-	</line>
-	<label ref-type="src-label">
-		<position x="0.539978" y="-0.200012"/>
-	</label>
-	<label ref-type="dst-label">
-		<position x="1.53998" y="-0.200012"/>
-	</label>
 	<label ref-type="name-label">
-		<position x="-4.02429" y="-54.3485"/>
+		<position x="-5.55962" y="-28.0415"/>
 	</label>
 </relationship>
 
