@@ -46,7 +46,7 @@ the database consistent.
 pgMemento uses triggers to log the changes. The OLD and the NEW version
 of a tuple are accessable inside the corresponding trigger procedures.
 pgMemento only logs the OLD version as the recent state can be queried
-from the table. It breaks this priciple down on a columnar level meaning
+from the table. It breaks the priciple down on a columnar basis meaning
 that only deltas between OLD and NEW are stored when UPDATEs occur. Of
 course, this is an overhead but it pays off in saving disk space and in
 making rollbacks easier.
@@ -55,23 +55,24 @@ Logging only fragments can produce sparsely filled history/audit tables.
 Using a semistructured data type like JSONB can make the data logs more 
 compact. In general, using JSONB for auditing has another big advantage:
 The audit mechanism (triggers and audit tables) does not need to adapt
-to schema changes. Actually, you do not even need history tables for each 
-audited table (sometimes also called 'shadow tables'). All logs can be
-written to one central table with a JSONB field. 
+to schema changes. You do not need history tables for each audited table
+(sometimes also called 'shadow tables'). All logs can be written to one
+central table with a JSONB field. 
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/generic_logging.png "Generic logging")
 
-To trace different versions of a tuple in the log table a synthetical key
-is created in each audited table called `audit_id`. This is easier than
-relying on a table's primary key which can be defined on multiple tables
+To trace different versions of a tuple in the log table a surrogate key
+is created in each audited table called `audit_id`. It is easier than
+relying on a table's primary key which can be defined on multiple columns
 and for different data types. Audit_ids are unique in a (single node)
 database.
 
-pgMemento provides functions to recreate a former table or database state
+pgMemento provides an API to recreate former table or database states
 in a separate database schema incl. constraints and indexes. As event 
-triggers are capturing any schema changes, the restored table or database
-will have the layout of the past state. Historic versions of tuples and
-tables can also be queried on-the-fly through provided funtcions.
+triggers are capturing logical schema changes, the restored table or
+database will have the layout of the past state. Historic versions of
+tuples and tables can also be queried on-the-fly through provided
+funtcions.
 
 An audit trail like pgMemento is probably not ideal for write-instensive
 databases. However, as only OLD data is logged it will certainly take
@@ -85,7 +86,7 @@ pgMemento (v0.1) that works with the JSON data type and can be used along
 with PostgreSQL 9.3. But, it is slower and can not handle very big JSON
 strings. Releases v0.2 and v0.3 require at least PostgreSQL 9.4. The 
 master uses JSONB functions introduced in PostgreSQL 9.5. I recommend to
-always use the newest version of pgMemento.
+always use the newest release of pgMemento.
 
 
 ## 3. System requirements
@@ -128,9 +129,8 @@ of the new logical decoding feature of PostgreSQL you are probably right.
 But this technology is still young and there are not many tools out there 
 that provide the same functionality like pgMemento. A notable 
 implementation is [Logicaldecoding](https://github.com/sebastian-r-schmidt/logicaldecoding) 
-by Sebastian R. Schmidt. [pgaudit](https://github.com/2ndQuadrant/pgaudit) by 2ndQuadrant 
-and its [fork](https://github.com/pgaudit/pgaudit) by David Steele are 
-only logging transaction metadata at the moment and not the data itself.
+by Sebastian R. Schmidt. [pgaudit](https://github.com/pgaudit/pgaudit) by David Steele
+is great for logging transaction metadata (not the data itself).
 
 
 ## 5. Installation
@@ -140,15 +140,15 @@ only logging transaction metadata at the moment and not the data itself.
 A brief introduction about the different SQL files:
 * `DDL_LOG.sql` enables logging of schema changes (DDL statements)
 * `LOG_UTIL.sql` provides some helper functions for handling the audited information
-* `REVERT.sql` contains procedures to rollback changes of a certain transaction and
+* `REVERT.sql` procedures to rollback changes of a certain transaction and
+* `SCHEMA.sql` contains the database schema of pgMemento
 * `SCHEMA_MANAGEMENT.sql` includes functions to define constraints in the schema where tables have been restored
-* `SETUP.sql` contains DDL scripts for tables and basic setup functions
+* `SETUP.sql` basic setup functions to make tables ready for DML changes
 * `VERSIONING.sql` is necessary to restore past tuple/table/database states
 
-Run the `INSTALL_PGMEMENTO.sql` script with the psql client of 
-PostgreSQL. Now a new schema will appear in your database called 
-`pgmemento`. As of version 0.4 the `pgmemento` schema consist of 
-5 log tables and 2 view:
+Run the `INSTALL_PGMEMENTO.sql` script with the psql client of PostgreSQL.
+Now a new schema will appear in your database called `pgmemento`. As of
+version 0.4 the `pgmemento` schema consist of 5 log tables and 2 view:
 
 * `TABLE audit_column_log`: Stores information about columns of audited tables (DDL log target)
 * `TABLE audit_table_log`: Stores information about audited tables (DDL log target)
@@ -212,8 +212,12 @@ Logging can be stopped and restarted by running the `STOP_AUDITING.sql`
 and `START_AUDITING.sql` scripts. Note that theses scripts do not 
 remove the `audit_id` column in the logged tables.
 
+### 5.3. Upgrade from v0.5 to v0.6
 
-### 5.3. Uninstall pgMemento
+To upgrade from v0.5 to v0.6 simply run the `UPGRADE_v05_to_v06.sql`
+script. It will replace all functions and alters/updates the log tables
+
+### 5.4. Uninstall pgMemento
 
 In order to remove pgMemento simply run the `UNINSTALL_PGMEMENTO.sql`
 script.
@@ -270,11 +274,11 @@ Each row is referenced to an event ID saved in the first step.
 For example, an UPDATE command on `table_A` changing the value of some 
 rows of `column_B` to `new_value` will appear in the log tables like this:
 
-TRANSACTION_LOG
+TRANSACTION_LOG (columns process_id, client_port not displayed)
 
-| ID  | txid     | stmt_date                | user_name  | client_name  | application_name  | session_info  |
-| --- |:-------- |:------------------------:|:----------:|:------------:|:-----------------:|:-------------:|
-| 1   | 1000000  | 2017-02-22 15:00:00.100  | felix      | ::1/128      | psql              | NULL          |
+| ID  | txid     | stmt_date                | user_name  | client_name  | application_name  | session_info            |
+| --- |:-------- |:------------------------:|:----------:|:------------:|:-----------------:|:-----------------------:|
+| 1   | 1000000  | 2018-02-22 15:00:00.100  | felix      | ::1/128      | psql              | {"client_user":"fxku"}  |
 
 TABLE_EVENT_LOG
 
@@ -322,11 +326,30 @@ strings that fire event triggers are forbidden and will raise an
 exception. At least, since v0.5 DDL changes executed from inside
 functions can be extracted correctly.
 
-
 ### 6.4. User-defined session infos to log
 
+The Postgres functions used for logging transactions can only track
+server-side actions and parameters, not client-side ones. E.g. if
+multiple users work against the database by using one database role
+would be referenced to this role. Sure, there is the `client_name`
+field (IP) in `transaction_log`, but if all users are using the same
+remote client you cannot make distictions on the client IP.
 
+In order to log information specific to each database interaction
+pgMemento provides a JSONB field in the `transaction_log` table.
+Everything a client connection needs to do is to set a local
+configuration parameter, named `pgmemento.session_info`:
 
+<pre>
+SELECT set_config('pgmemento.session_info', '{"client_user":"fxku", "message":"Added new category to table"}'::text, FALSE);
+</pre>
+
+Note, that the value should be valid JSON to later query the
+`session_info` column with JSONB operators. Otherwise, the text
+is converted with `to_jsonb` which might not produce valid JSON.
+The configuration parameter lives as long as the session lasts.
+If you want it to last only during a single transaction change
+the last argument to TRUE.
 
 ### 6.5. Query the logs
 
@@ -484,7 +507,7 @@ The main motivation for having an audit trail might not be the ability
 to undo certain changes, but to simply browse through the history of 
 a tuple, table or even a whole database. When working with additional
 columns that specify the lifetime of different data versions (as most
-tools introduced in 4. do) this is easy by including these field into
+tools introduced in 4. do) this is easy by including these fields into
 the WHERE clause.
 
 For a generic logging approach with only one central data log table the
@@ -1043,13 +1066,15 @@ felix-kunde@gmx.de
 
 ## 14. Special Thanks
 
-* Petra Sauer (Beuth University of Applied Sciences) --> For support and discussions on a pgMemento research paper  
-* Adam Brusselback --> benchmarking and bugfixing
-* Hans-Jürgen Schönig (Cybertech) --> recommend to use a generic JSON auditing
-* Christophe Pettus (PGX) --> recommend to only log changes
-* Claus Nagel (virtualcitySYSTEMS) --> conceptual advices about logging
+* Petra Sauer --> For support and discussions on a pgMemento research paper  
+* Hans-Jürgen Schönig --> recommend to use a generic JSON auditing
+* Christophe Pettus --> recommend to only log changes
+* Claus Nagel --> conceptual advices about logging
 * Ugur Yilmaz --> feedback and suggestions
 * Maximilian Allies --> For setting up Travis yml script
+* Steve --> coming up with the idea of a `session_info` field
+* Adam Brusselback --> benchmarking and bugfixing
+* Franco Ricci --> bugfixing
 
 
 ## 15. Disclaimer
