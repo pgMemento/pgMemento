@@ -66,10 +66,10 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  tab TEXT := 'cityobject';
+  tab TEXT := 'object';
 BEGIN
   -- create log trigger
-  PERFORM pgmemento.create_table_log_trigger(tab, 'citydb');
+  PERFORM pgmemento.create_table_log_trigger(tab, 'public');
 
   -- query for log trigger
   ASSERT (
@@ -92,7 +92,7 @@ BEGIN
           pg_class c
         WHERE
           tg.tgrelid = c.oid
-          AND c.relname = 'cityobject'
+          AND c.relname = 'object'
         ) t
         ON t.tgname = p.pgm_trigger
       WHERE
@@ -108,10 +108,10 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  tab TEXT := 'cityobject';
+  tab TEXT := 'object';
 BEGIN
   -- add audit_id column. It should fire a DDL trigger to fill audit_table_log and audit column_log table
-  PERFORM pgmemento.create_table_audit_id(tab, 'citydb');
+  PERFORM pgmemento.create_table_audit_id(tab, 'public');
 
   -- test if audit_id column exists
   ASSERT (
@@ -119,7 +119,7 @@ BEGIN
       SELECT
         audit_id
       FROM
-        citydb.cityobject
+        public.object
     )
   ), 'Error: Did not find audit_id column in % table!', tab;
 
@@ -146,7 +146,7 @@ BEGIN
         pgmemento.audit_column_log c
         ON c.column_name = a.attname
       WHERE
-        a.attrelid = ('citydb.' || tab)::regclass
+        a.attrelid = ('public.' || tab)::regclass
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped

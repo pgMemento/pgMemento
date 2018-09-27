@@ -34,7 +34,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- rename test table to tests
-  ALTER TABLE citydb.test RENAME TO tests;
+  ALTER TABLE public.test RENAME TO tests;
 
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;
@@ -93,7 +93,7 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'citydb.tests'::regclass::oid
+    relid = 'public.tests'::regclass::oid
     AND upper(txid_range) = test_transaction;
 
   -- save table log id for next test
@@ -114,7 +114,7 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'citydb.tests'::regclass::oid
+    relid = 'public.tests'::regclass::oid
     AND lower(txid_range) = test_transaction;
 
   -- save table log id for next test

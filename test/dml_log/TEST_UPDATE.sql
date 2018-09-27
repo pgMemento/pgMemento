@@ -33,7 +33,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
-  UPDATE citydb.cityobject SET lineage = 'pgm_upsert_test'
+  UPDATE public.object SET lineage = 'pgm_upsert_test'
     WHERE lineage = 'pgm_upsert_test'
     RETURNING audit_id INTO update_audit_id;
 
@@ -90,7 +90,7 @@ DECLARE
   jsonb_log JSONB;
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
-  UPDATE citydb.cityobject SET lineage = 'pgm_update_test'
+  UPDATE public.object SET lineage = 'pgm_update_test'
     WHERE lineage = 'pgm_upsert_test'
     RETURNING audit_id INTO update_audit_id;
 

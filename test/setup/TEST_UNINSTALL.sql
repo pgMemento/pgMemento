@@ -28,10 +28,10 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 DO
 $$
 DECLARE
-  tab TEXT := 'cityobject';
+  tab TEXT := 'object';
 BEGIN
   -- drop audit_id column. It should fire a DDL trigger to fill audit tables and update audit_column_log
-  PERFORM pgmemento.drop_table_audit_id(tab, 'citydb');
+  PERFORM pgmemento.drop_table_audit_id(tab, 'public');
 
   -- test if audit_id column has been dropped
   ASSERT (
@@ -41,7 +41,7 @@ BEGIN
       FROM
         pg_attribute
       WHERE
-        attrelid = ('citydb.' || tab)::regclass
+        attrelid = ('public.' || tab)::regclass
         AND attnum > 0
         AND NOT attisdropped
         AND attname = 'audit_id'
@@ -57,10 +57,10 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  tab TEXT := 'cityobject';
+  tab TEXT := 'object';
 BEGIN
   -- drop logging triggers
-  PERFORM pgmemento.drop_table_log_trigger(tab, 'citydb');
+  PERFORM pgmemento.drop_table_log_trigger(tab, 'public');
 
   -- query for log trigger
   ASSERT (
@@ -83,7 +83,7 @@ BEGIN
           pg_class c
         WHERE
           tg.tgrelid = c.oid
-          AND c.relname = 'cityobject'
+          AND c.relname = 'object'
         ) t
         ON t.tgname = p.pgm_trigger
     )

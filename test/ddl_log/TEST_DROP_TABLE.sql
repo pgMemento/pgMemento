@@ -34,7 +34,7 @@ DECLARE
   test_events INTEGER[];
 BEGIN
   -- drop table tests
-  DROP TABLE citydb.tests;
+  DROP TABLE public.tests;
 
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;
@@ -96,7 +96,7 @@ BEGIN
     pgmemento.audit_table_log
   WHERE
     table_name = 'tests'
-    AND schema_name = 'citydb'
+    AND schema_name = 'public'
     AND upper(txid_range) IS NOT NULL;
 
   -- save table log id for next test

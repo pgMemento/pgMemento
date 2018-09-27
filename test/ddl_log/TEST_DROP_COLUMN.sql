@@ -34,7 +34,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- drop two columns
-  ALTER TABLE citydb.tests DROP test_tstzrange_column, DROP COLUMN test_column;
+  ALTER TABLE public.tests DROP test_tstzrange_column, DROP COLUMN test_column;
 
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;

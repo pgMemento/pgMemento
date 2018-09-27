@@ -35,7 +35,7 @@ DECLARE
   jsonb_log JSONB;
 BEGIN
   -- DELETE entry that has been inserted for other tests
-  DELETE FROM citydb.cityobject
+  DELETE FROM public.object
     WHERE lineage = 'pgm_update_test'
     RETURNING id, audit_id
     INTO delete_id, delete_audit_id;
@@ -76,7 +76,7 @@ BEGIN
     audit_id = delete_audit_id
     AND event_id = test_event;
 
-  ASSERT jsonb_log = ('{"id": '||delete_id||', "name": null, "gmlid": null, "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||', "envelope": null, "xml_source": null, "description": null, "creation_date": null, "name_codespace": null, "objectclass_id": 0, "gmlid_codespace": null, "updating_person": null, "termination_date": null, "reason_for_update": null, "relative_to_water": null, "relative_to_terrain": null, "last_modification_date": null}')::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;

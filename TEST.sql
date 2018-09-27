@@ -29,7 +29,16 @@ SET client_min_messages TO WARNING;
 -- set test counter
 CREATE SEQUENCE pgmemento.test_seq;
 
-\i test/testdb/RESTORE_TESTDB.sql
+-- create table for testing
+CREATE TABLE public.object (
+  id INTEGER PRIMARY KEY,
+  lineage TEXT
+);
+
+INSERT INTO
+  public.object(id, lineage)
+VALUES
+  (1, 'init');
 
 -- test schema
 \i test/setup/TEST_INSTALL.sql
@@ -59,9 +68,8 @@ CREATE SEQUENCE pgmemento.test_seq;
 DROP SCHEMA pgmemento CASCADE;
 
 \echo
-\echo 'Uninstall test database'
-DROP SCHEMA citydb_pkg CASCADE;
-DROP SCHEMA citydb CASCADE;
+\echo 'Uninstall test tables'
+DROP TABLE object;
 SET search_path TO pg_catalog,public;
 
 \echo

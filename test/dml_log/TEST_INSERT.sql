@@ -34,7 +34,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- log content of table
-  PERFORM pgmemento.log_table_state('cityobject', 'citydb');
+  PERFORM pgmemento.log_table_state('object', 'public');
 
   -- query for logged transaction
   ASSERT (
@@ -65,12 +65,12 @@ BEGIN
   ASSERT (
     SELECT NOT EXISTS (
       SELECT
-        c.id
+        o.id
       FROM
-        citydb.cityobject c
+        public.object o
       LEFT JOIN
         pgmemento.row_log r
-        ON c.audit_id = r.audit_id 
+        ON o.audit_id = r.audit_id 
       WHERE
         r.audit_id IS NULL
     )
@@ -93,9 +93,9 @@ DECLARE
 BEGIN
   -- INSERT new entry in table
   INSERT INTO
-    citydb.cityobject (objectclass_id, lineage)
+    public.object (id, lineage)
   VALUES
-    (0, 'pgm_insert_test')
+    (2, 'pgm_insert_test')
   RETURNING
     audit_id
   INTO
@@ -160,15 +160,15 @@ BEGIN
   INTO
     insert_id
   FROM
-    citydb.cityobject
+    public.object
   WHERE
     lineage = 'pgm_insert_test';
 
   -- INSERT new entry in table
   INSERT INTO
-    citydb.cityobject (id, objectclass_id, lineage)
+    public.object (id, lineage)
   VALUES
-    (insert_id, 0, 'pgm_insert_test')
+    (insert_id, 'pgm_insert_test')
   ON CONFLICT (id)
     DO UPDATE SET lineage = 'pgm_upsert_test'
   RETURNING 

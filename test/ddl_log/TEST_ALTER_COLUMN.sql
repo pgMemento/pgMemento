@@ -42,12 +42,12 @@ BEGIN
   PERFORM set_config('pgmemento.alter_column_test_value', test_tsrange::text, FALSE);
 
   -- alter data type of one column
-  ALTER TABLE citydb.tests ALTER test_tsrange_column TYPE tstzrange USING tstzrange(lower(test_tsrange_column), upper(test_tsrange_column), '(]');
+  ALTER TABLE public.tests ALTER test_tsrange_column TYPE tstzrange USING tstzrange(lower(test_tsrange_column), upper(test_tsrange_column), '(]');
 
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;
   PERFORM set_config('pgmemento.alter_column_test', test_transaction::text, FALSE);
-  test_event := current_setting('pgmemento.' || test_txid || '_' || 'citydb.tests'::regclass::oid || '_5')::int;
+  test_event := current_setting('pgmemento.' || test_txid || '_' || 'public.tests'::regclass::oid || '_5')::int;
 
   -- query for logged transaction
   ASSERT (
@@ -128,7 +128,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- rename a column
-  ALTER TABLE citydb.tests RENAME COLUMN test_tsrange_column TO test_tstzrange_column;
+  ALTER TABLE public.tests RENAME COLUMN test_tsrange_column TO test_tstzrange_column;
 
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;
