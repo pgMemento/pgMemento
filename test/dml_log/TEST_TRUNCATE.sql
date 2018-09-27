@@ -23,6 +23,14 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento audit TRUNCATE event'
 
+-- make another insert
+INSERT INTO
+  public.object
+SELECT
+  id, lineage
+FROM
+  (VALUES (3, 'prepare truncate test'), (4, 'it will delete everything')) AS v(id, lineage);
+
 \echo
 \echo 'TEST ':n'.1: Log TRUNCATE command'
 DO
@@ -32,19 +40,16 @@ DECLARE
   test_txid BIGINT := txid_current();
   test_event INTEGER;
 BEGIN
-  -- start logging for another table
-  PERFORM pgmemento.create_table_audit('textureparam', 'citydb', 0);
-
   -- collect ids into array before doing a TRUNCATE
   SELECT
     array_agg(audit_id)
   INTO
     truncate_audit_ids
   FROM
-    citydb.textureparam;
+    public.object;
 
   -- TRUNCATE table
-  TRUNCATE citydb.textureparam;
+  TRUNCATE public.object;
 
   -- query for logged transaction
   ASSERT (

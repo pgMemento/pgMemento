@@ -34,7 +34,7 @@ DECLARE
   test_event INTEGER;
 BEGIN
   -- add two new columns to tests table
-  ALTER TABLE citydb.tests
+  ALTER TABLE public.tests
     ADD COLUMN test_json_column JSON,
     ADD COLUMN test_tsrange_column tsrange;
 
