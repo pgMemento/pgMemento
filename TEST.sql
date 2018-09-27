@@ -26,6 +26,9 @@ SET client_min_messages TO WARNING;
 \echo 'Install pgMemento'
 \i INSTALL_PGMEMENTO.sql
 
+-- add PostGIS extension
+CREATE EXTENSION postgis;
+
 -- set test counter
 CREATE SEQUENCE pgmemento.test_seq;
 
