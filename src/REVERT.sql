@@ -250,7 +250,8 @@ BEGIN
           'ADD COLUMN '
           || c_old.column_name
           || ' '
-          || CASE WHEN c_old.column_default = E'nextval(\''||$5||'_'||c_old.column_name||E'_seq\'::regclass)' THEN
+          || CASE WHEN c_old.column_default LIKE 'nextval(%'
+                   AND c_old.column_default LIKE E'%_seq\'::regclass)' THEN
                CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                     WHEN c_old.data_type = 'integer' THEN 'serial'
                     WHEN c_old.data_type = 'bigint' THEN 'bigserial'
@@ -329,7 +330,8 @@ BEGIN
       string_agg(
         c_old.column_name
         || ' '
-        || CASE WHEN c_old.column_default = E'nextval(\''||$5||'_'||c_old.column_name||E'_seq\'::regclass)' THEN
+        || CASE WHEN c_old.column_default LIKE 'nextval(%'
+                 AND c_old.column_default LIKE E'%_seq\'::regclass)' THEN
              CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                   WHEN c_old.data_type = 'integer' THEN 'serial'
                   WHEN c_old.data_type = 'bigint' THEN 'bigserial'
