@@ -33,6 +33,8 @@ DECLARE
   test_transaction INTEGER;
   test_events INTEGER[];
 BEGIN
+  PERFORM set_config('pgmemento.session_info', '{"test":"drop table will first truncate table"}'::text, TRUE);
+
   -- drop table tests
   DROP TABLE public.tests;
 
@@ -102,7 +104,7 @@ BEGIN
   -- save table log id for next test
   PERFORM set_config('pgmemento.drop_table_test2', tabid::text, FALSE);
 
-  ASSERT upper(tid_range) IS NOT NULL, 'Error: Table should not exist anymore. Transaction range should be closed';
+  ASSERT upper(tid_range) = test_transaction, 'Error: Upper transaction id % does not match the id % of DROP TABLE event', upper(tid_ranges[1]), test_transaction;
 END;
 $$
 LANGUAGE plpgsql;
@@ -116,19 +118,16 @@ DECLARE
   test_transaction INTEGER;
   colnames TEXT[];
   datatypes TEXT[];
-  tid_ranges numrange[];
 BEGIN
   test_transaction := current_setting('pgmemento.drop_table_test')::int;
 
   -- get logs of columns of dropped table
   SELECT
     array_agg(column_name ORDER BY id),
-    array_agg(data_type ORDER BY id),
-    array_agg(txid_range ORDER BY id)
+    array_agg(data_type ORDER BY id)
   INTO
     colnames,
-    datatypes,
-    tid_ranges
+    datatypes
   FROM
     pgmemento.audit_column_log
   WHERE
@@ -141,9 +140,6 @@ BEGIN
   ASSERT datatypes[1] = 'integer', 'Expected integer data type, but found ''%'' instead', datatypes[1];
   ASSERT datatypes[2] = 'geometry(PointZ,4326)', 'Expected geometry(PointZ,4326) data type, but found ''%'' instead', datatypes[2];
   ASSERT datatypes[3] = 'json', 'Expected json data type, but found ''%'' instead', datatypes[3];
-  ASSERT upper(tid_ranges[1]) = test_transaction, 'Error: Upper transaction id % does not match the id % of DROP TABLE event', upper(tid_ranges[1]), test_transaction;
-  ASSERT upper(tid_ranges[2]) = test_transaction, 'Error: Upper transaction id % does not match the id % of DROP TABLE event', upper(tid_ranges[2]), test_transaction;
-  ASSERT upper(tid_ranges[3]) = test_transaction, 'Error: Upper transaction id % does not match the id % of DROP TABLE event', upper(tid_ranges[3]), test_transaction;
 END;
 $$
 LANGUAGE plpgsql;
