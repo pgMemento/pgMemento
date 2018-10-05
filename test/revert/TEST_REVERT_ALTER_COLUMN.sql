@@ -38,7 +38,7 @@ BEGIN
   PERFORM
     pgmemento.revert_transaction(transaction_id)
   FROM
-    table_event_log
+    pgmemento.table_event_log
   WHERE
     op_id = 22
   ORDER BY
@@ -131,7 +131,7 @@ BEGIN
   PERFORM
     pgmemento.revert_transaction(transaction_id)
   FROM
-    table_event_log
+    pgmemento.table_event_log
   WHERE
     op_id = 5
   ORDER BY
