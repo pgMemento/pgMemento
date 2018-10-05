@@ -148,9 +148,11 @@ BEGIN
         pgmemento.audit_column_log c_old,
         pgmemento.audit_column_log c_new
       WHERE
-        t.relid = ($6 || '.' || $5)::regclass::oid
-        AND c_old.audit_table_id = t.id
+        c_old.audit_table_id = t.id
         AND c_new.audit_table_id = t.id
+        AND t.table_name = $5
+        AND t.schema_name = $6
+        AND t.txid_range @> $1::numeric
         AND c_old.ordinal_position = c_new.ordinal_position
         AND upper(c_new.txid_range) = $1
         AND lower(c_old.txid_range) = $1;
@@ -222,11 +224,13 @@ BEGIN
         pgmemento.audit_column_log c_old,
         pgmemento.audit_column_log c_new
       WHERE
-        t.relid = ($6 || '.' || $5)::regclass::oid
-        AND c_old.audit_table_id = t.id
+        c_old.audit_table_id = t.id
         AND c_new.audit_table_id = t.id
+        AND t.table_name = $5
+        AND t.schema_name = $6
+        AND t.txid_range @> $1::numeric
         AND upper(c_old.txid_range) = $1
-        AND upper(c_new.txid_range) IS NULL
+        AND lower(c_new.txid_range) = $1
         AND c_old.ordinal_position = c_new.ordinal_position
         AND c_old.data_type <> c_new.data_type;
 
