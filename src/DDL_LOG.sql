@@ -450,7 +450,7 @@ BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
   stack := pgmemento.get_ddl_from_context(stack);
-  RAISE NOTICE 'le stack: %', stack;
+
   -- if DDL command was found in context, trigger was fired from inside a function
   IF stack IS NOT NULL THEN
     ddl_text := stack;

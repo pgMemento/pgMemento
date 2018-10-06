@@ -237,8 +237,6 @@ BEGIN
       -- alter table if it has not been done, yet
       IF stmt IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I ' || stmt , $6, $5);
-      ELSE
-        RAISE EXCEPTION 'result is empty!';
       END IF;
 
       -- it did not work for some reason
