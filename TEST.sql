@@ -18,7 +18,7 @@
 --
 
 \pset footer off
-SET client_min_messages TO WARNING;
+--SET client_min_messages TO WARNING;
 \set ON_ERROR_STOP ON
 
 -- prepare test database
