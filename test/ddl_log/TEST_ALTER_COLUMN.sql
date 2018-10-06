@@ -24,6 +24,13 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento audit ALTER TABLE ALTER COLUMN events'
 
+-- make dummy insert to check if it's logged when column is altered
+INSERT INTO tests (test_tsrange_column) VALUES (tsrange(now()::timestamp, NULL, '(]')) RETURNING test_tsrange_column AS test_tsrange
+\gset
+  
+-- save inserted value for next test
+SELECT set_config('pgmemento.alter_column_test_value', :'test_tsrange'::text, FALSE);
+
 \echo
 \echo 'TEST ':n'.1: Log ALTER COLUMN command'
 DO
@@ -34,13 +41,6 @@ DECLARE
   test_event INTEGER;
   test_tsrange tsrange;
 BEGIN
-  -- make dummy insert to check if it's logged when column is altered
-  INSERT INTO tests (test_tsrange_column) VALUES (tsrange(now()::timestamp, NULL, '(]'))
-    RETURNING test_tsrange_column INTO test_tsrange;
-  
-  -- save inserted value for next test
-  PERFORM set_config('pgmemento.alter_column_test_value', test_tsrange::text, FALSE);
-
   -- alter data type of one column
   ALTER TABLE public.tests ALTER test_tsrange_column TYPE tstzrange USING tstzrange(lower(test_tsrange_column), upper(test_tsrange_column), '(]');
 
