@@ -92,7 +92,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_value(
   ) RETURNS anyelement AS
 $$
 SELECT
-  jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
@@ -117,7 +117,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_change(
   ) RETURNS anyelement AS
 $$
 SELECT
-  jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
