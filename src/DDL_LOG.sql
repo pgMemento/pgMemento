@@ -341,6 +341,10 @@ BEGIN
 
   -- if DDL command was found in context, trigger was fired from inside a function
   IF stack IS NOT NULL THEN
+    -- check if context starts with DROP command
+    IF lower(stack) NOT LIKE 'drop%' THEN
+      RAISE EXCEPTION 'Could not parse DROP SCHEMA event! SQL context is: %', stack;
+    END IF;
     ddl_text := stack;
   END IF;
 
@@ -453,6 +457,10 @@ BEGIN
 
   -- if DDL command was found in context, trigger was fired from inside a function
   IF stack IS NOT NULL THEN
+    -- check if context starts with ALTER command
+    IF lower(stack) NOT LIKE 'alter%' THEN
+      RAISE EXCEPTION 'Could not parse ALTER TABLE event! SQL context is: %', stack;
+    END IF;
     ddl_text := stack;
   END IF;
 
@@ -597,10 +605,7 @@ BEGIN
       e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
 
       -- log data of entire column(s)
-      EXECUTE format(
-        'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
-           SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list(altered_columns)||') AS content FROM %I.%I t',
-           schemaname, tablename) USING e_id;
+      PERFORM pgmemento.log_column_state(e_id, altered_columns, tablename, schemaname);
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
@@ -608,10 +613,7 @@ BEGIN
       e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
 
       -- log data of entire column(s)
-      EXECUTE format(
-        'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
-           SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list(dropped_columns)||') AS content FROM %I.%I t',
-           schemaname, tablename) USING e_id;
+      PERFORM pgmemento.log_column_state(e_id, dropped_columns, tablename, schemaname);
     END IF;
   END IF;
 END;
@@ -690,6 +692,10 @@ BEGIN
 
   -- if DDL command was found in context, trigger was fired from inside a function
   IF stack IS NOT NULL THEN
+    -- check if context starts with DROP command
+    IF lower(stack) NOT LIKE 'drop%' THEN
+      RAISE EXCEPTION 'Could not parse DROP TABLE event! SQL context is: %', stack;
+    END IF;
     ddl_text := stack;
   END IF;
 

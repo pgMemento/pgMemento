@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.2     2018-10-07   new function log_column_state                  FKun
 -- 0.5.1     2018-09-24   new function column_array_to_column_list       FKun
 -- 0.5.0     2018-07-16   reflect changes in transaction_id handling     FKun
 -- 0.4.2     2017-07-26   new function to remove a key from all logs     FKun
@@ -35,13 +36,14 @@
 *
 * FUNCTIONS:
 *   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
-*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
+*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF VOID
 *   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER
+*   log_column_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *
 ***********************************************************/
 
@@ -170,7 +172,7 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
   table_oid INTEGER
-  ) RETURNS SETOF OID AS
+  ) RETURNS SETOF VOID AS
 $$
 BEGIN
   -- only allow delete if table has already been dropped
@@ -216,3 +218,20 @@ WHERE
   k = v;
 $$
 LANGUAGE sql STRICT;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.log_column_state(
+  e_id INTEGER,
+  columns TEXT[],
+  table_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  EXECUTE format(
+    'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
+       SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content FROM %I.%I t',
+    $4, $3) USING $1;
+END;
+$$
+LANGUAGE plpgsql STRICT;
