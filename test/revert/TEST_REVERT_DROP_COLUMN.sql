@@ -41,10 +41,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 6
-  ORDER BY
-    id DESC
-  LIMIT 1;
+    op_id = 6;
 
   -- query for logged transaction
   SELECT
