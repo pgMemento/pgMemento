@@ -36,7 +36,7 @@
 *
 * FUNCTIONS:
 *   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
-*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF VOID
+*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
@@ -172,7 +172,7 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
   table_oid INTEGER
-  ) RETURNS SETOF VOID AS
+  ) RETURNS SETOF OID AS
 $$
 BEGIN
   -- only allow delete if table has already been dropped
