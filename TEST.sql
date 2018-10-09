@@ -14,6 +14,12 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.1     2018-10-10   added tests for reverting DDL changes            FKun
+-- 0.3.0     2018-09-27   removed test dump to only work with dummy data   FKun
+-- 0.2.2     2018-09-25   added tests for DDL changes                      FKun
+-- 0.2.1     2017-11-20   added tests for DML changes                      FKun
+-- 0.2.0     2017-09-08   added event trigger and deinstallation tests     FKun
+--                        using a sequence for enumerating tests
 -- 0.1.0     2017-07-20   initial commit                                   FKun
 --
 
@@ -67,8 +73,8 @@ VALUES
 \i test/revert/TEST_REVERT_DROP_TABLE.sql;
 \i test/revert/TEST_REVERT_DROP_COLUMN.sql;
 \i test/revert/TEST_REVERT_ALTER_COLUMN.sql;
-/*\i test/revert/TEST_REVERT_ADD_COLUMN.sql;
-\i test/revert/TEST_REVERT_ALTER_TABLE.sql;
+\i test/revert/TEST_REVERT_ADD_COLUMN.sql;
+/*\i test/revert/TEST_REVERT_ALTER_TABLE.sql;
 \i test/revert/TEST_REVERT_CREATE_TABLE.sql;
 
 \i test/revert/TEST_REVERT_TRUNCATE.sql;

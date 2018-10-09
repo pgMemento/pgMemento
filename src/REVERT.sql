@@ -119,8 +119,6 @@ BEGIN
         ON c.audit_table_id = t.id
       WHERE
         lower(c.txid_range) = $1
-        AND upper(c.txid_range) IS NULL
-        AND lower(c.txid_range) IS NOT NULL
         AND t.table_name = $5
         AND t.schema_name = $6;
 
