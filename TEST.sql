@@ -74,10 +74,10 @@ VALUES
 \i test/revert/TEST_REVERT_DROP_COLUMN.sql;
 \i test/revert/TEST_REVERT_ALTER_COLUMN.sql;
 \i test/revert/TEST_REVERT_ADD_COLUMN.sql;
-/*\i test/revert/TEST_REVERT_ALTER_TABLE.sql;
+\i test/revert/TEST_REVERT_ALTER_TABLE.sql;
 \i test/revert/TEST_REVERT_CREATE_TABLE.sql;
 
-\i test/revert/TEST_REVERT_TRUNCATE.sql;
+/*\i test/revert/TEST_REVERT_TRUNCATE.sql;
 \i test/revert/TEST_REVERT_DELETE.sql;
 \i test/revert/TEST_REVERT_UPDATE.sql;
 \i test/revert/TEST_REVERT_INSERT.sql;*/
@@ -92,7 +92,7 @@ DROP SCHEMA pgmemento CASCADE;
 \echo
 \echo 'Uninstall test tables'
 DROP TABLE object;
-DROP TABLE tests;
+
 SET search_path TO pg_catalog,public;
 
 DROP EXTENSION postgis CASCADE;

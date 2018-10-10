@@ -1,4 +1,4 @@
--- TEST_ALTER_TABLE.sql
+-- TEST_REVERT_ALTER_TABLE.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -8,62 +8,67 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that checks log tables when an ALTER TABLE event happens
---
+-- Script that checks log tables when an INSERT event happens
+-- (also for logging initial state with pgmemento.log_table_state)
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.1.0     2018-08-14   initial commit                                   FKun
+-- 0.1.0     2018-10-10   initial commit                                   FKun
 --
 
 -- get test number
 SELECT nextval('pgmemento.test_seq') AS n \gset
 
 \echo
-\echo 'TEST ':n': pgMemento audit ALTER TABLE events'
+\echo 'TEST ':n': pgMemento revert ALTER TABLE event'
 
 \echo
-\echo 'TEST ':n'.1: Log RENAME TABLE command'
+\echo 'TEST ':n'.1: Revert RENAME TABLE event'
 DO
 $$
 DECLARE
-  test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
 BEGIN
-  -- rename test table to tests
-  ALTER TABLE public.test RENAME TO tests;
+  -- set session_info to query logged transaction later
+  PERFORM set_config('pgmemento.session_info', '{"message":"Reverting rename table"}'::text, FALSE);
 
-  -- save transaction_id for next tests
-  test_transaction := current_setting('pgmemento.' || test_txid)::int;
-  PERFORM set_config('pgmemento.rename_table_test', test_transaction::text, FALSE);
-
-  -- query for logged transaction
-  ASSERT (
-    SELECT EXISTS (
-      SELECT
-        txid
-      FROM
-        pgmemento.transaction_log
-      WHERE
-        txid = test_txid
-    )
-  ), 'Error: Did not find test entry in transaction_log table!';
-
-  -- query for logged table event
-  SELECT
-    id
-  INTO
-    test_event
+  -- get transaction_id of last rename table event
+  PERFORM
+    pgmemento.revert_transaction(transaction_id)
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = test_transaction
-    AND op_id = 12;
+    op_id = 12;
 
-  ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
+  -- query for logged transaction
+  SELECT
+    id
+  INTO
+    test_transaction
+  FROM
+    pgmemento.transaction_log
+  WHERE
+    session_info @> '{"message":"Reverting rename table"}'::jsonb;
+
+  ASSERT test_transaction IS NOT NULL, 'Error: Did not find test entry in transaction_log table!';
+
+  -- save transaction_id for next tests
+  PERFORM set_config('pgmemento.revert_rename_table_test', test_transaction::text, FALSE);
+
+  -- query for logged table event
+  ASSERT (
+    SELECT EXISTS (
+      SELECT
+        id
+      FROM
+        pgmemento.table_event_log
+      WHERE
+        transaction_id = test_transaction
+        AND op_id = 12
+    )
+  ), 'Error: Did not find test entry in table_event_log table!';
 END;
 $$
 LANGUAGE plpgsql;
@@ -79,7 +84,7 @@ DECLARE
   tabname TEXT;
   tid_range numrange;
 BEGIN
-  test_transaction := current_setting('pgmemento.rename_table_test')::int;
+  test_transaction := current_setting('pgmemento.revert_rename_table_test')::int;
 
   -- get old parameters of renamed table
   SELECT
@@ -91,13 +96,13 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    relid = 'public.test'::regclass::oid
     AND upper(txid_range) = test_transaction;
 
   -- save table log id for next test
-  PERFORM set_config('pgmemento.rename_table_test2', tabid::text, FALSE);
+  PERFORM set_config('pgmemento.revert_rename_table_test2', tabid::text, FALSE);
 
-  ASSERT tabname = 'test', 'Did not find table ''%'' in audit_table_log', tabname;
+  ASSERT tabname = 'tests', 'Did not find table ''%'' in audit_table_log', tabname;
 
   -- get new parameters of renamed table
   SELECT
@@ -111,13 +116,13 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    relid = 'public.test'::regclass::oid
     AND lower(txid_range) = test_transaction;
 
   -- save table log id for next test
-  PERFORM set_config('pgmemento.rename_table_test3', tabid::text, FALSE);
+  PERFORM set_config('pgmemento.revert_rename_table_test3', tabid::text, FALSE);
 
-  ASSERT tabname = 'tests', 'Did not find table ''%'' in audit_table_log', tabname;
+  ASSERT tabname = 'test', 'Did not find table ''%'' in audit_table_log', tabname;
   ASSERT upper(tid_range) IS NULL, 'Error: Renamed table should still exist and upper boundary of transaction range should be NULL, % instead', upper(tid_range);
 END;
 $$
@@ -134,7 +139,7 @@ DECLARE
   datatypes TEXT[];
   tid_ranges numrange[];
 BEGIN
-  test_transaction := current_setting('pgmemento.rename_table_test')::int;
+  test_transaction := current_setting('pgmemento.revert_rename_table_test')::int;
 
   -- get column information of renamed table
   SELECT
@@ -148,8 +153,9 @@ BEGIN
   FROM
     pgmemento.audit_column_log
   WHERE
-    audit_table_id = current_setting('pgmemento.rename_table_test2')::int
-    OR audit_table_id = current_setting('pgmemento.rename_table_test3')::int;
+    (audit_table_id = current_setting('pgmemento.revert_rename_table_test2')::int
+    OR audit_table_id = current_setting('pgmemento.revert_rename_table_test3')::int)
+    AND (lower(txid_range) = test_transaction OR upper(txid_range) = test_transaction);
 
   ASSERT colnames[1] = colnames[4]
      AND colnames[2] = colnames[5]

@@ -151,7 +151,7 @@ DECLARE
   insert_id INTEGER;
   upsert_audit_id INTEGER;
   test_txid BIGINT := txid_current();
-  test_events INTEGER[];
+  event_op_ids INTEGER[];
   jsonb_log JSONB[];
 BEGIN
   -- get audit_id of inserted row
@@ -192,14 +192,14 @@ BEGIN
   SELECT
     array_agg(id ORDER BY id)
   INTO
-    test_events
+    event_op_ids
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
     AND (op_id = 3 OR op_id = 4);
 
-  ASSERT array_length(test_events, 1) = 2, 'Error: Did not find entries in table_event_log table!';
+  ASSERT array_length(event_op_ids, 1) = 2, 'Error: Did not find entries in table_event_log table!';
 
   -- query for logged row
   SELECT
@@ -207,7 +207,7 @@ BEGIN
   INTO
     jsonb_log
   FROM
-    (SELECT unnest(test_events) AS e_id) e
+    (SELECT unnest(event_op_ids) AS e_id) e
   LEFT JOIN
     pgmemento.row_log r
     ON e.e_id = r.event_id;

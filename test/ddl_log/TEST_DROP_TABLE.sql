@@ -31,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_events INTEGER[];
+  event_op_ids INTEGER[];
 BEGIN
   PERFORM set_config('pgmemento.session_info', '{"test":"drop table will first truncate table"}'::text, TRUE);
 
@@ -56,9 +56,9 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    array_agg(id)
+    array_agg(id ORDER BY id)
   INTO
-    test_events
+    event_op_ids
   FROM
     pgmemento.table_event_log
   WHERE
@@ -66,11 +66,11 @@ BEGIN
     AND (op_id = 8
      OR op_id = 9);
 
-  ASSERT test_events[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
-  ASSERT test_events[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
+  ASSERT event_op_ids[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
+  ASSERT event_op_ids[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
 
   -- save event_id for next test
-  PERFORM set_config('pgmemento.drop_table_test_event', test_events[1]::text, FALSE);
+  PERFORM set_config('pgmemento.drop_table_test_event', event_op_ids[1]::text, FALSE);
 END;
 $$
 LANGUAGE plpgsql;
