@@ -8,8 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that checks log tables when an INSERT event happens
--- (also for logging initial state with pgmemento.log_table_state)
+-- Script that checks log tables when an ALTER TABLE event is reverted
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:

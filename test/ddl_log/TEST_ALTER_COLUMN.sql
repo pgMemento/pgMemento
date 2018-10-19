@@ -8,8 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that checks log tables when an ALTER TABLE event happens
---
+-- Script that checks log tables when an ALTER COLUMN event happens
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
