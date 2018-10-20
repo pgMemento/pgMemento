@@ -91,6 +91,9 @@ DECLARE
   test_event INTEGER;
   jsonb_log JSONB;
 BEGIN
+  -- set session_info to query logged transaction later
+  PERFORM set_config('pgmemento.session_info', '{"message":"Live insert test"}'::text, TRUE);
+
   -- INSERT new entry in table
   INSERT INTO
     public.object (id, lineage)
