@@ -10,7 +10,6 @@ addons:
 
 before_install:
     - psql -c 'create database pgmemento_testdb;' -U postgres
-    - psql -U postgres -c 'create extension postgis;'
     - psql --version
 
 script:
