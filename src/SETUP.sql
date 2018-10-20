@@ -638,6 +638,7 @@ CREATE OR REPLACE FUNCTION pgmemento.log_table_event(
   ) RETURNS INTEGER AS
 $$
 DECLARE
+  session_info_text TEXT;
   session_info_obj JSONB;
   transaction_log_id INTEGER;
   operation_id SMALLINT;
@@ -645,7 +646,13 @@ DECLARE
 BEGIN
   -- retrieve session_info set by client
   BEGIN
-    session_info_obj := current_setting('pgmemento.session_info')::jsonb;
+    session_info_text := current_setting('pgmemento.session_info');
+
+    IF session_info_text IS NULL OR session_info_text = '' THEN
+      session_info_obj := NULL;
+    ELSE
+      session_info_obj := session_info_text::jsonb;
+    END IF;
 
     EXCEPTION
       WHEN invalid_text_representation THEN
