@@ -513,7 +513,7 @@ BEGIN
     SELECT
       q.tid,
       q.audit_id,
-      CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
+      CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
       q.changes, 
       a.table_name,
       a.schema_name,
@@ -600,7 +600,7 @@ BEGIN
     SELECT
       q.tid,
       q.audit_id,
-      CASE WHEN e1.op_id = 4 AND e2.op_id > 6 THEN 3 ELSE e1.op_id END AS op_id,
+      CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
       q.changes, 
       a.table_name,
       a.schema_name,
