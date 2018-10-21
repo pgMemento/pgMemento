@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.2     2018-10-21   simplified restore query                            FKun
 -- 0.6.1     2018-09-22   new functions to retrieve the value of a single     FKun
 --                        columns from the logs
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling          FKun
@@ -299,7 +300,7 @@ BEGIN
 
   -- loop over all columns and query the historic value for each column separately
   FOR log_column IN
-    SELECT * FROM (  
+    SELECT * FROM (
       SELECT
         column_name,
         ordinal_position,
@@ -324,10 +325,8 @@ BEGIN
     v_columns_count := v_columns_count + 1;
     query_text := query_text 
       || delimiter || E'\n'
-      || '  q.key' || v_columns_count || E',\n' 
-      || '  q.value' || v_columns_count
-      -- use ->>0 to extract first element from jsonb logs
-      || '->>0';
+      || '  q.key' || v_columns_count || E',\n'
+      || '  q.value' || v_columns_count;
 
     -- extend subquery string to retrieve historic values
     find_logs := find_logs
@@ -336,7 +335,7 @@ BEGIN
       || format('    %L::text AS key', log_column.column_name) || v_columns_count || E',\n'
       -- value: query logs with given key
       || E'    COALESCE(\n'
-      || format(E'      jsonb_agg(a.changes -> %L) FILTER (WHERE a.changes ? %L) OVER (ROWS BETWEEN CURRENT ROW AND CURRENT ROW),\n',
+      || format(E'      first_value(a.changes -> %L) OVER (PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id),\n',
            log_column.column_name, log_column.column_name
          );
 
@@ -370,7 +369,7 @@ BEGIN
         END IF;
       ELSE
         -- take current value from matching column (and hope that the data is really fitting)
-        find_logs := find_logs 
+        find_logs := find_logs
           || format(E'      to_jsonb(x.%I),\n', new_column_name);
         join_recent_state := TRUE;
       END IF;
@@ -407,8 +406,7 @@ BEGIN
     || E'    SELECT DISTINCT ON (r.audit_id) r.audit_id, r.event_id, e.op_id\n'
     || E'      FROM pgmemento.row_log r\n'
     || E'      JOIN pgmemento.table_event_log e ON e.id = r.event_id\n'
-    || E'      JOIN pgmemento.transaction_log t ON t.id = e.transaction_id\n'
-    || format(E'        WHERE t.id >= %L AND t.id < %L\n', $1, $2)
+    || format(E'        WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
          format(E'          AND e.table_relid = %L\n', tab_oid)
        ELSE
@@ -430,13 +428,12 @@ BEGIN
     -- order by oldest log entry for given audit_id
     || '    ORDER BY a.audit_id, '
     || CASE WHEN join_recent_state THEN
-         'x.audit_id,'
+         'x.audit_id'
        ELSE
          ''
        END
-    || E' a.id\n'
     -- closing FROM block q
-    || E') q\n';
+    || E'\n) q';
 
   RETURN query_text;
 END;

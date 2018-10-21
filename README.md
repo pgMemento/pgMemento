@@ -739,20 +739,16 @@ JOIN LATERAL (
 ) p ON (true)
 </pre>
 
-Since v0.4 pgMemento uses a window function with `FILTER` clauses 
-that were introduced in PostgreSQL 9.4. This allows for searching for
-different keys on same level of the query. A filter can only be used
-in conjunction with an aggregate function. Luckily, with `jsonb_agg`
-PostgreSQL offers a suitable function for the JSONB logs. The window
-is ordered by the ID of the `row_log` table to get the oldest log first.
-The window frame starts at the current row and has no upper boundary.
+Now, pgMemento uses a window query which sorts each column. The window
+is ordered by a boolean expression to get NOT NULL values first and then
+by the ID of the `row_log` table to get the oldest log first.
 
 <pre>
 SELECT
-  q.key1 , -- ID
-  q.value1->>0,
+  q.key1, -- ID
+  q.value1,
   q.key2, -- column_B
-  q.value2->>0,
+  q.value2,
   ...
 FROM (
   SELECT DISTINCT ON (a.audit_id, x.audit_id)
@@ -761,9 +757,7 @@ FROM (
     -- set value, use COALESCE to handle NULLs
     COALESCE(
       -- get value from JSONB log
-      jsonb_agg(a.changes -> 'id')
-        FILTER (WHERE a.changes ? 'id')
-          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND CURRENT ROW),
+      first_value(a.changes -> 'id') OVER (PARTITION BY a.audit_id ORDER BY a.changes -> 'id' IS NULL, a.id),
       -- if NULL, query recent value
       to_jsonb(x.id),
       -- no logs, no current value = NULL
@@ -772,9 +766,7 @@ FROM (
     'column_B'::text AS key2,
     -- set value, use COALESCE to handle NULLs
     COALESCE(
-      jsonb_agg(a.changes -> 'column_B')
-        FILTER (WHERE a.changes ? 'column_B')
-          OVER (ORDER BY a.id ROWS BETWEEN CURRENT ROW AND CURRENT ROW),
+      first_value(a.changes -> 'column_B') OVER (PARTITION BY a.audit_id ORDER BY a.changes -> 'column_B' IS NULL, a.id),
       to_jsonb(x.column_B),
       NULL
     ) AS value2,
@@ -792,8 +784,7 @@ FROM (
     f.op_id < 7
   ORDER BY
     a.audit_id,
-    x.audit_id,
-    a.id
+    x.audit_id
 ) q
 </pre>
 
