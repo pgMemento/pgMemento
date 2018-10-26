@@ -20,6 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.4.0     2018-10-25   copy_data argument changed to boolean           FKun
 -- 0.3.0     2017-07-27   avoid querying the information_schema           FKun
 --                        removed default_values_* functions
 -- 0.2.1     2016-02-14   removed unnecessary plpgsql code                FKun
@@ -43,7 +44,7 @@
 *     RETURNS SETOF VOID
 *   move_schema_state(target_schema_name TEXT, source_schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}',
 *     copy_data INTEGER DEFAULT 1) RETURNS SETOF void AS
-*   move_table_state(table_name TEXT, target_schema_name TEXT, source_schema_name TEXT, copy_data INTEGER DEFAULT 1
+*   move_table_state(table_name TEXT, target_schema_name TEXT, source_schema_name TEXT, copy_data BOOLEAN DEFAULT TRUE
 *     RETURNS SETOF VOID
 *   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -338,11 +339,11 @@ CREATE OR REPLACE FUNCTION pgmemento.move_table_state(
   table_name TEXT,
   target_schema_name TEXT,
   source_schema_name TEXT,
-  copy_data INTEGER DEFAULT 1
+  copy_data BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  IF $4 <> 0 THEN
+  IF $4 THEN
     EXECUTE format(
       'CREATE TABLE %I.%I AS SELECT * FROM %I.%I',
       $2, $1, $3, $1);
@@ -359,7 +360,7 @@ CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
   target_schema_name TEXT, 
   source_schema_name TEXT DEFAULT 'public',
   except_tables TEXT[] DEFAULT '{}',
-  copy_data INTEGER DEFAULT 1
+  copy_data BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF void AS
 $$
 DECLARE
@@ -381,7 +382,7 @@ BEGIN
       AND n.nspname = $2
       AND relkind = 'S'
   LOOP
-    IF $4 <> 0 THEN
+    IF $4 THEN
       SELECT nextval($2 || '.' || seq) INTO seq_value;
       IF seq_value > 1 THEN
         seq_value = seq_value - 1;

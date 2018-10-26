@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.3     2018-10-25   bool argument in create_schema_event_trigger     FKun
 -- 0.6.2     2018-09-24   altering or dropping multiple columns at once    FKun
 --                        produces only one JSONB log
 -- 0.6.1     2018-07-24   RENAME events now appear in table_event_log      FKun
@@ -35,7 +36,7 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   create_schema_event_trigger(trigger_create_table INTEGER DEFAULT 0) RETURNS SETOF VOID
+*   create_schema_event_trigger(trigger_create_table BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
@@ -789,7 +790,7 @@ LANGUAGE plpgsql;
 * created, altered or dropped
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_event_trigger(
-  trigger_create_table INTEGER DEFAULT 0
+  trigger_create_table BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -828,7 +829,7 @@ BEGIN
 
   -- Create event trigger for CREATE TABLE events to automatically start auditing on new tables
   -- The user can decide if he wants this behaviour during initializing pgMemento.
-  IF trigger_create_table <> 0 THEN
+  IF $1 THEN
     IF NOT EXISTS (
       SELECT 1 FROM pg_event_trigger
         WHERE evtname = 'table_create_post_trigger'

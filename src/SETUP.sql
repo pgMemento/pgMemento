@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.2     2018-10-25   log_state argument changed to boolean               FKun
 -- 0.6.1     2018-07-23   moved schema parts in its own file                  FKun
 -- 0.6.0     2018-07-14   additional columns in transaction_log table and     FKun
 --                        better handling for internal txid cycles
@@ -46,10 +47,10 @@
 *   audit_tables_dependency
 *
 * FUNCTIONS:
-*   create_schema_audit(schema_name TEXT DEFAULT 'public', log_state INTEGER DEFAULT 1, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_schema_audit(schema_name TEXT DEFAULT 'public', log_state BOOLEAN DEFAULT TRUE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_log_trigger(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public', log_state INTEGER DEFAULT 1) RETURNS SETOF VOID
+*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public', log_state BOOLEAN DEFAULT TRUE) RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
 *   drop_schema_audit(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -799,7 +800,6 @@ BEGIN
        jsonb_each(to_jsonb(OLD))
      WHERE
       to_jsonb(NEW) ->> key != to_jsonb(OLD) ->> key
-       --NOT ('{' || to_json(key) || ':' || value || '}')::jsonb <@ to_jsonb(NEW)
     ),
     '{}')::jsonb INTO jsonb_diff;
 
@@ -928,7 +928,7 @@ LANGUAGE sql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit( 
   table_name TEXT,
   schema_name TEXT DEFAULT 'public',
-  log_state INTEGER DEFAULT 1
+  log_state BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -939,7 +939,7 @@ BEGIN
   PERFORM pgmemento.create_table_audit_id($1, $2);
 
   -- log existing table content as inserted
-  IF $3 = 1 THEN
+  IF $3 THEN
     PERFORM pgmemento.log_table_state($1, $2);
   END IF;
 END;
@@ -949,7 +949,7 @@ LANGUAGE plpgsql STRICT;
 -- perform create_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   schema_name TEXT DEFAULT 'public',
-  log_state INTEGER DEFAULT 1,
+  log_state BOOLEAN DEFAULT TRUE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
