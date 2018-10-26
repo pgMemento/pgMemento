@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.3     2018-10-26   fixed delta creation for UPDATEs with JSON types    FKun
 -- 0.6.2     2018-10-25   log_state argument changed to boolean               FKun
 -- 0.6.1     2018-07-23   moved schema parts in its own file                  FKun
 -- 0.6.0     2018-07-14   additional columns in transaction_log table and     FKun
@@ -799,7 +800,7 @@ BEGIN
      FROM
        jsonb_each(to_jsonb(OLD))
      WHERE
-      to_jsonb(NEW) ->> key != to_jsonb(OLD) ->> key
+      to_jsonb(NEW) ->> key IS DISTINCT FROM to_jsonb(OLD) ->> key
     ),
     '{}')::jsonb INTO jsonb_diff;
 
