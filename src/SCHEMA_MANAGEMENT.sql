@@ -410,7 +410,7 @@ BEGIN
     AND c.relname <> ALL (COALESCE($3,'{}')); 
  
   -- remove old schema if data were not copied but moved
-  IF $4 = 0 THEN
+  IF NOT $4 THEN
     EXECUTE format(
       'DROP SCHEMA %I CASCADE',
       $2);

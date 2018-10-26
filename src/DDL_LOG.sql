@@ -640,7 +640,7 @@ BEGIN
       PERFORM pgmemento.log_table_event(txid_current(),(obj.schema_name || '.' || split_part(obj.object_identity, '.' ,2))::regclass::oid, 'CREATE TABLE');
 
       -- start auditing for new table
-      PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, 0);
+      PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, FALSE);
     END IF;
   END LOOP;
 END;
