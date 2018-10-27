@@ -99,7 +99,7 @@ BEGIN
     p.pronamespace = n.oid
     AND n.nspname = 'pgmemento';
 
-  ASSERT array_length(pgm_objects,1) = 70, 'Error: Incorrect number of stored procedures!';
+  ASSERT array_length(pgm_objects,1) = 71, 'Error: Incorrect number of stored procedures!';
   ASSERT pgm_objects[1] = 'audit_table_check;record;tid integer, tab_name text, tab_schema text, OUT log_tab_oid oid, OUT log_tab_name text, OUT log_tab_schema text, OUT log_tab_id integer, OUT recent_tab_name text, OUT recent_tab_schema text, OUT recent_tab_id integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[2] = 'column_array_to_column_list;text;columns text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[3] = 'create_restore_template;SETOF void;until_tid integer, template_name text, table_name text, schema_name text, preserve_template boolean DEFAULT false', 'Error: Expected different function and/or arguments';
@@ -111,7 +111,7 @@ BEGIN
   ASSERT pgm_objects[9] = 'create_table_audit_id;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[10] = 'create_table_log_trigger;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[11] = 'delete_audit_table_log;SETOF oid;table_oid integer', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[12] = 'delete_key;SETOF bigint;aid bigint, key_name text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[12] = 'delete_key;SETOF bigint;aid bigint, key_name text, old_value anyelement', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[13] = 'delete_table_event_log;SETOF integer;tid integer, table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[14] = 'delete_txid_log;integer;tid integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[15] = 'drop_schema_audit;SETOF void;schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
@@ -169,7 +169,8 @@ BEGIN
   ASSERT pgm_objects[67] = 'table_create_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[68] = 'table_drop_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[69] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[70] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[70] = 'unregister_audit_table;SETOF void;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[71] = 'update_key;SETOF bigint;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';  
 END
 $$
 LANGUAGE plpgsql;
