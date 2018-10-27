@@ -35,7 +35,7 @@ Public License Version 3.0. See the file LICENSE for more details.
 
 ## 3. Documetation
 
-Documentation can be found in the wiki(https://github.com/pgMemento/pgMemento/wiki/Home) section of this repository.
+Documentation can be found in the [wiki](https://github.com/pgMemento/pgMemento/wiki/Home) section of this repository.
 
 
 ## 4. Media
