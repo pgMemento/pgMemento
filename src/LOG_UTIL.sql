@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.3     2018-10-24   audit_table_check function moved here          FKun
 -- 0.5.2     2018-10-07   new function log_column_state                  FKun
 -- 0.5.1     2018-09-24   new function column_array_to_column_list       FKun
 -- 0.5.0     2018-07-16   reflect changes in transaction_id handling     FKun
@@ -35,6 +36,9 @@
 *   jsonb_merge(jsonb)
 *
 * FUNCTIONS:
+*   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
+*     OUT log_tab_oid OID, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
+*     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER) RETURNS RECORD
 *   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT) RETURNS SETOF BIGINT
@@ -235,3 +239,102 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
+* AUDIT TABLE CHECK
+*
+* Helper function to check if requested table has existed
+* before tid happened and if the name has named 
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
+  IN tid INTEGER,
+  IN tab_name TEXT,
+  IN tab_schema TEXT,
+  OUT log_tab_oid OID,
+  OUT log_tab_name TEXT,
+  OUT log_tab_schema TEXT,
+  OUT log_tab_id INTEGER,
+  OUT recent_tab_name TEXT,
+  OUT recent_tab_schema TEXT,
+  OUT recent_tab_id INTEGER
+  ) RETURNS RECORD AS
+$$
+DECLARE
+  log_tab_upper_txid NUMERIC;
+BEGIN
+  -- try to get OID of table
+  BEGIN
+    log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+
+    EXCEPTION
+      WHEN OTHERS THEN
+        -- check if the table exists in audit_table_log
+        SELECT
+          relid INTO log_tab_oid
+        FROM
+          pgmemento.audit_table_log
+        WHERE
+          schema_name = $3
+          AND table_name = $2
+        LIMIT 1;
+
+      IF log_tab_oid IS NULL THEN
+        RAISE NOTICE 'Could not find table ''%'' in log tables.', $2;
+        RETURN;
+      END IF;
+  END;
+
+  -- check if the table has existed before tid happened
+  -- save schema and name in case it was renamed
+  SELECT
+    id,
+    schema_name,
+    table_name,
+    upper(txid_range)
+  INTO
+    log_tab_id,
+    log_tab_schema,
+    log_tab_name,
+    log_tab_upper_txid 
+  FROM
+    pgmemento.audit_table_log 
+  WHERE
+    relid = log_tab_oid
+    AND txid_range @> $1::numeric;
+
+  IF NOT FOUND THEN
+    RAISE NOTICE 'Table ''%'' does not exist for requested before transaction %.', $2, $1;
+    RETURN;
+  END IF;
+
+  -- take into account that the table might not exist anymore or it has been renamed
+  -- try to find out if there is an active table with the same oid
+  IF log_tab_upper_txid IS NOT NULL THEN
+    SELECT
+      id,
+      schema_name,
+      table_name
+    INTO
+      recent_tab_id,
+      recent_tab_schema,
+      recent_tab_name
+    FROM
+      pgmemento.audit_table_log 
+    WHERE
+      relid = log_tab_oid
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
+  END IF;
+
+  -- if not, set new_tab_* attributes, as we need them later
+  IF recent_tab_id IS NULL THEN
+    recent_tab_id := log_tab_id;
+    recent_tab_schema := log_tab_schema;
+    recent_tab_name := log_tab_name;
+  END IF;
+
+  RETURN;
+END;
+$$
+LANGUAGE plpgsql STABLE STRICT;
