@@ -71,4 +71,4 @@ LANGUAGE plpgsql;
 \i src/SCHEMA_MANAGEMENT.sql
 
 \echo
-\echo 'pgMemento setup completed!'
+\echo 'pgMemento upgrade completed!'
