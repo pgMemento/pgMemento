@@ -50,12 +50,13 @@
 *     preserve_template BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   jsonb_populate_value(jsonb_log JSONB, column_name TEXT, INOUT template anyelement) RETURNS anyelement
 *   restore_change(during_tid INTEGER, aid BIGINT, column_name TEXT, INOUT restored_value anyelement) RETURNS anyelement
-*   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL) RETURNS TEXT
+*   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL,
+*     all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_record(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
-*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
-*   restore_record_definition(until_tid INTEGER,table_name TEXT, schema_name TEXT) RETURNS TEXT
+*     all_versions BOOLEAN DEFAULT FALSE, jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
+*   restore_record_definition(until_tid INTEGER,table_name TEXT, schema_name TEXT, include_events BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
-*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
+*     all_versions BOOLEAN DEFAULT FALSE, jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
@@ -153,7 +154,8 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_query(
   end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
-  aid BIGINT DEFAULT NULL
+  aid BIGINT DEFAULT NULL,
+  all_versions BOOLEAN DEFAULT FALSE
   ) RETURNS TEXT AS
 $$
 DECLARE
@@ -195,7 +197,10 @@ BEGIN
   -- loop over all columns and query the historic value for each column separately
   SELECT
     string_agg(
-      format('  COALESCE((first_value(a.changes ->> %L) OVER (PARTITION BY a.audit_id ORDER BY a.changes ->> %L IS NULL, a.id))::%s, ', c_old.column_name, c_old.column_name, c_old.data_type)
+      format('  COALESCE((first_value(a.changes ->> %L) OVER ', c_old.column_name)
+      || '(PARTITION BY '
+      || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
+      || format('a.audit_id ORDER BY a.changes ->> %L IS NULL, a.id))::%s, ', c_old.column_name, c_old.data_type)
       || CASE WHEN c_new.column_name IS NOT NULL THEN format('x.%I', c_new.column_name) ELSE '' END
       || format(', NULL::%s) AS %s', c_old.data_type, c_old.column_name)
       , E',\n' ORDER BY c_old.ordinal_position)
@@ -221,20 +226,20 @@ BEGIN
   -- finish restore query
   query_text := query_text
     -- use DISTINCT ON to get only one row
-    || 'SELECT DISTINCT ON (a.audit_id'
-    || CASE WHEN join_recent_state THEN
-         ', x.audit_id'
-       ELSE
-         ''
-       END
+    || 'SELECT DISTINCT ON ('
+    || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
+    || 'a.audit_id'
+    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E')\n'
     -- add column selection that has been set up above 
     || find_logs
-    || E',\n  f.audit_id\n'
+    || E',\n  f.audit_id'
+    || CASE WHEN $6 THEN E',\n  f.event_id,\n  f.transaction_id\n' ELSE E'\n' END
     -- add subquery f to get last event for given audit_id before given transaction
     || E'FROM (\n'
-    || E'  SELECT DISTINCT ON (r.audit_id)\n'
-    || E'    r.audit_id, r.event_id, e.op_id\n'
+    || '  SELECT '
+    || CASE WHEN $6 THEN E'\n' ELSE E'DISTINCT ON (r.audit_id)\n' END
+    || E'    r.audit_id, r.event_id, e.op_id, e.transaction_id\n'
     || E'  FROM\n'
     || E'    pgmemento.row_log r\n'
     || E'  JOIN\n'
@@ -264,12 +269,9 @@ BEGIN
     || E'  f.op_id < 7\n'
     -- order by oldest log entry for given audit_id
     || E'ORDER BY\n'
-    || '  a.audit_id'
-    || CASE WHEN join_recent_state THEN
-         ', x.audit_id'
-       ELSE
-         ''
-       END;
+    || CASE WHEN $6 THEN '  f.event_id, ' ELSE '  ' END
+    || 'a.audit_id'
+    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END;
 
   RETURN query_text;
 END;
@@ -280,11 +282,15 @@ LANGUAGE plpgsql STABLE;
 /**********************************************************
 * RESTORE RECORD/SET
 *
-* Functions to reproduce historic tuples for given
-* transaction range. Retrieving the correct result requires
-* you to provide a column definition list. If you prefer
-* to retrieve the logs as JSONB than the column definition
-* requires just one JSONB column which is easier to write.
+* Functions to reproduce historic tuples for a given
+* transaction range. To see all different versions of the
+* tuples and not just the version at 'end_at_tid' set
+* the all_versions flag to TRUE.
+* Retrieving the correct result requires you to provide a
+* column definition list. If you prefer to retrieve the
+* logs as JSONB, set the last flag to TRUE. Then the column
+* definition list requires just one JSONB column which is
+* easier to write.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_record(
   start_from_tid INTEGER,
@@ -292,15 +298,16 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_record(
   table_name TEXT,
   schema_name TEXT,
   aid BIGINT,
+  all_versions BOOLEAN DEFAULT FALSE,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS RECORD AS
 $$
 DECLARE
   -- init query string
-  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5);
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5, $6);
   restore_result RECORD;
 BEGIN
-  IF jsonb_output IS TRUE THEN
+  IF $7 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
@@ -316,14 +323,15 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_recordset(
   end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
+  all_versions BOOLEAN DEFAULT FALSE,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF RECORD AS
 $$
 DECLARE
   -- init query string
-  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4);
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, NULL, $5);
 BEGIN
-  IF jsonb_output IS TRUE THEN
+  IF $6 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
@@ -340,16 +348,20 @@ LANGUAGE plpgsql STRICT;
 * Function that returns a column definition list for
 * retrieving historic tuples with functions restor_record
 * and restore_recordset. Simply attach the output to your
-* restore query.
+* restore query. When restoring mutliple versions of one
+* row that set the flag include events to TRUE
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   until_tid INTEGER,
   table_name TEXT,
-  schema_name TEXT
+  schema_name TEXT,
+  include_events BOOLEAN DEFAULT FALSE
   ) RETURNS TEXT AS
 $$
 SELECT
-  'AS (' || list || ', audit_id bigint)' AS record_definition
+  'AS (' || list || ', audit_id bigint'
+  || CASE WHEN $4 THEN ', event_id, transaction_id' ELSE '' END
+  || ')' AS record_definition
 FROM (
   SELECT
     string_agg(
