@@ -312,7 +312,7 @@ DECLARE
   restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5);
   restore_result RECORD;
 BEGIN
-  IF $7 IS TRUE THEN
+  IF $6 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
@@ -336,7 +336,7 @@ DECLARE
   -- init query string
   restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5, TRUE);
 BEGIN
-  IF $7 IS TRUE THEN
+  IF $6 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
@@ -358,7 +358,7 @@ DECLARE
   -- init query string
   restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4);
 BEGIN
-  IF $6 IS TRUE THEN
+  IF $5 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
@@ -380,7 +380,7 @@ DECLARE
   -- init query string
   restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, NULL, TRUE);
 BEGIN
-  IF $6 IS TRUE THEN
+  IF $5 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
