@@ -169,8 +169,8 @@ BEGIN
   ASSERT pgm_objects[67] = 'table_create_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[68] = 'table_drop_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[69] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[70] = 'unregister_audit_table;SETOF void;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[71] = 'update_key;SETOF bigint;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';  
+  ASSERT pgm_objects[70] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[71] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
 END
 $$
 LANGUAGE plpgsql;
