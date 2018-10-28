@@ -99,7 +99,7 @@ BEGIN
     p.pronamespace = n.oid
     AND n.nspname = 'pgmemento';
 
-  ASSERT array_length(pgm_objects,1) = 71, 'Error: Incorrect number of stored procedures!';
+  ASSERT array_length(pgm_objects,1) = 73, 'Error: Incorrect number of stored procedures!';
   ASSERT pgm_objects[1] = 'audit_table_check;record;tid integer, tab_name text, tab_schema text, OUT log_tab_oid oid, OUT log_tab_name text, OUT log_tab_schema text, OUT log_tab_id integer, OUT recent_tab_name text, OUT recent_tab_schema text, OUT recent_tab_id integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[2] = 'column_array_to_column_list;text;columns text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[3] = 'create_restore_template;SETOF void;until_tid integer, template_name text, table_name text, schema_name text, preserve_template boolean DEFAULT false', 'Error: Expected different function and/or arguments';
@@ -152,25 +152,27 @@ BEGIN
   ASSERT pgm_objects[50] = 'register_audit_table;integer;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[51] = 'restore_change;anyelement;during_tid integer, aid bigint, column_name text, INOUT restored_value anyelement', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[52] = 'restore_query;text;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint DEFAULT NULL::bigint, all_versions boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[53] = 'restore_record;record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, all_versions boolean DEFAULT false, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[54] = 'restore_record_definition;text;until_tid integer, table_name text, schema_name text, include_events boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[55] = 'restore_recordset;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, all_versions boolean DEFAULT false, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[56] = 'restore_schema_state;SETOF void;start_from_tid integer, end_at_tid integer, original_schema_name text, target_schema_name text, target_table_type text DEFAULT ''VIEW''::text, update_state boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[57] = 'restore_table_state;SETOF void;start_from_tid integer, end_at_tid integer, original_table_name text, original_schema_name text, target_schema_name text, target_table_type text DEFAULT ''VIEW''::text, update_state boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[58] = 'restore_value;anyelement;until_tid integer, aid bigint, column_name text, INOUT restored_value anyelement', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[59] = 'revert_distinct_transaction;SETOF void;tid integer', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[60] = 'revert_distinct_transactions;SETOF void;start_from_tid integer, end_at_tid integer', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[61] = 'revert_transaction;SETOF void;tid integer', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[62] = 'revert_transactions;SETOF void;start_from_tid integer, end_at_tid integer', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[63] = 'schema_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[64] = 'sequence_schema_state;SETOF void;target_schema_name text, original_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[65] = 'table_alter_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[66] = 'table_alter_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[67] = 'table_create_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[68] = 'table_drop_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[69] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[70] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[71] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
+  ASSERT pgm_objects[53] = 'restore_record;record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[54] = 'restore_records;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[55] = 'restore_record_definition;text;until_tid integer, table_name text, schema_name text, include_events boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[56] = 'restore_recordset;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[57] = 'restore_recordsets;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[58] = 'restore_schema_state;SETOF void;start_from_tid integer, end_at_tid integer, original_schema_name text, target_schema_name text, target_table_type text DEFAULT ''VIEW''::text, update_state boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[59] = 'restore_table_state;SETOF void;start_from_tid integer, end_at_tid integer, original_table_name text, original_schema_name text, target_schema_name text, target_table_type text DEFAULT ''VIEW''::text, update_state boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[60] = 'restore_value;anyelement;until_tid integer, aid bigint, column_name text, INOUT restored_value anyelement', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[61] = 'revert_distinct_transaction;SETOF void;tid integer', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[62] = 'revert_distinct_transactions;SETOF void;start_from_tid integer, end_at_tid integer', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[63] = 'revert_transaction;SETOF void;tid integer', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[64] = 'revert_transactions;SETOF void;start_from_tid integer, end_at_tid integer', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[65] = 'schema_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[66] = 'sequence_schema_state;SETOF void;target_schema_name text, original_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[67] = 'table_alter_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[68] = 'table_alter_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[69] = 'table_create_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[70] = 'table_drop_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[71] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[72] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[73] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
 END
 $$
 LANGUAGE plpgsql;

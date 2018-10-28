@@ -16,6 +16,7 @@
 --
 -- Version | Date       | Description                                       | Author
 -- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
+--                        extended API to return multiple versions per row
 -- 0.6.4     2018-10-25   renamed generate functions to restore_record/set    FKun
 --                        which do not return JSONB anymore
 --                        new template helper restore_record_definition
@@ -54,10 +55,14 @@
 *   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL,
 *     all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_record(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
-*     all_versions BOOLEAN DEFAULT FALSE, jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
+*   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_record_definition(until_tid INTEGER,table_name TEXT, schema_name TEXT, include_events BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
-*     all_versions BOOLEAN DEFAULT FALSE, jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
+*   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
@@ -299,13 +304,12 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_record(
   table_name TEXT,
   schema_name TEXT,
   aid BIGINT,
-  all_versions BOOLEAN DEFAULT FALSE,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS RECORD AS
 $$
 DECLARE
   -- init query string
-  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5, $6);
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5);
   restore_result RECORD;
 BEGIN
   IF $7 IS TRUE THEN
@@ -319,18 +323,62 @@ END;
 $$
 LANGUAGE plpgsql STRICT;
 
-CREATE OR REPLACE FUNCTION pgmemento.restore_recordset(
+CREATE OR REPLACE FUNCTION pgmemento.restore_records(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
-  all_versions BOOLEAN DEFAULT FALSE,
+  aid BIGINT,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF RECORD AS
 $$
 DECLARE
   -- init query string
-  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, NULL, $5);
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5, TRUE);
+BEGIN
+  IF $7 IS TRUE THEN
+    restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
+  END IF;
+
+  -- execute the SQL command
+  RETURN QUERY EXECUTE restore_query_text;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.restore_recordset(
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
+  table_name TEXT,
+  schema_name TEXT,
+  jsonb_output BOOLEAN DEFAULT FALSE
+  ) RETURNS SETOF RECORD AS
+$$
+DECLARE
+  -- init query string
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4);
+BEGIN
+  IF $6 IS TRUE THEN
+    restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
+  END IF;
+
+  -- execute the SQL command
+  RETURN QUERY EXECUTE restore_query_text;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.restore_recordsets(
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
+  table_name TEXT,
+  schema_name TEXT,
+  jsonb_output BOOLEAN DEFAULT FALSE
+  ) RETURNS SETOF RECORD AS
+$$
+DECLARE
+  -- init query string
+  restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, NULL, TRUE);
 BEGIN
   IF $6 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
