@@ -172,8 +172,9 @@ DECLARE
   new_tab_id INTEGER;
   new_tab_name TEXT;
   new_tab_schema TEXT;
-  query_text TEXT := '';
-  find_logs TEXT := E'SELECT\n';
+  query_text TEXT := E'SELECT\n';
+  find_logs TEXT;
+  extract_logs TEXT;
   join_recent_state BOOLEAN := FALSE;
 BEGIN
   -- set variables
@@ -203,15 +204,21 @@ BEGIN
   -- loop over all columns and query the historic value for each column separately
   SELECT
     string_agg(
-      format('  COALESCE((first_value(a.changes ->> %L) OVER ', c_old.column_name)
+      format('    COALESCE(first_value(a.changes -> %L) OVER ', c_old.column_name)
       || '(PARTITION BY '
       || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
-      || format('a.audit_id ORDER BY a.changes ->> %L IS NULL, a.id))::%s, ', c_old.column_name, c_old.data_type)
-      || CASE WHEN c_new.column_name IS NOT NULL THEN format('x.%I', c_new.column_name) ELSE '' END
-      || format(', NULL::%s) AS %s', c_old.data_type, c_old.column_name)
-      , E',\n' ORDER BY c_old.ordinal_position)
+      || format('a.audit_id ORDER BY a.changes -> %L IS NULL, a.id) ', c_old.column_name)
+      || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I)', c_new.column_name) ELSE '' END
+      || format(') AS %s', c_old.column_name)
+      , E',\n' ORDER BY c_old.ordinal_position
+    ),
+    string_agg(
+      format('  COALESCE((%I ->> 0)::%s, NULL::%s) AS %s', c_old.column_name, c_old.data_type, c_old.data_type, c_old.column_name)
+      , E',\n' ORDER BY c_old.ordinal_position
+    )
   INTO
-    find_logs
+    find_logs,
+    extract_logs
   FROM
     pgmemento.audit_column_log c_old
   LEFT JOIN
@@ -225,59 +232,61 @@ BEGIN
     AND upper(c_new.txid_range) IS NULL;
 
   -- check if it is necessary to join with recent state of the table
-  IF find_logs LIKE '%, x.%' THEN
+  IF find_logs LIKE '%to_jsonb(x.%' THEN
     join_recent_state := TRUE;
   END IF;
 
   -- finish restore query
   query_text := query_text
+    || extract_logs
+    || E'\nFROM (\n'
     -- use DISTINCT ON to get only one row
-    || 'SELECT DISTINCT ON ('
+    || '  SELECT DISTINCT ON ('
     || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E')\n'
     -- add column selection that has been set up above 
     || find_logs
-    || E',\n  f.audit_id'
-    || CASE WHEN $6 THEN E',\n  f.event_id,\n  f.transaction_id\n' ELSE E'\n' END
+    || E',\n    f.audit_id'
+    || CASE WHEN $6 THEN E',\n    f.event_id,\n    f.transaction_id\n' ELSE E'\n' END
     -- add subquery f to get last event for given audit_id before given transaction
-    || E'FROM (\n'
-    || '  SELECT '
+    || E'  FROM (\n'
+    || '    SELECT '
     || CASE WHEN $6 THEN E'\n' ELSE E'DISTINCT ON (r.audit_id)\n' END
-    || E'    r.audit_id, r.event_id, e.op_id, e.transaction_id\n'
-    || E'  FROM\n'
-    || E'    pgmemento.row_log r\n'
-    || E'  JOIN\n'
-    || E'    pgmemento.table_event_log e ON e.id = r.event_id\n'
-    || format(E'  WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
+    || E'      r.audit_id, r.event_id, e.op_id, e.transaction_id\n'
+    || E'    FROM\n'
+    || E'      pgmemento.row_log r\n'
+    || E'    JOIN\n'
+    || E'      pgmemento.table_event_log e ON e.id = r.event_id\n'
+    || format(E'    WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
-         format(E'    AND e.table_relid = %L\n', tab_oid)
+         format(E'      AND e.table_relid = %L\n', tab_oid)
        ELSE
-         format(E'    AND r.audit_id = %L\n', $5)
+         format(E'      AND r.audit_id = %L\n', $5)
        END
-    || E'  ORDER BY\n'
-    || E'    r.audit_id, e.id DESC\n'
-    || E') f\n'
+    || E'    ORDER BY\n'
+    || E'      r.audit_id, e.id DESC\n'
+    || E'  ) f\n'
     -- left join on row_log table and consider only events younger than the one extracted in subquery f
-    || E'LEFT JOIN\n'
-    || E'  pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
+    || E'  LEFT JOIN\n'
+    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
     || CASE WHEN join_recent_state THEN
-         E'LEFT JOIN\n'
-         || format(E'  %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name)
+         E'  LEFT JOIN\n'
+         || format(E'    %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name)
        ELSE
          ''
        END
-    -- do not produce a result if row with audit_id did not exist before given transaction
-    -- could be if filtered event has been either DELETE, TRUNCATE or DROP TABLE
-    || E'WHERE\n'
-    || E'  f.op_id < 7\n'
+    -- if 'all_versions' flag is FALSE do not produce a result if row did not exist before second transaction ID
+    -- therefore, filter out DELETE, TRUNCATE or DROP TABLE events
+    || CASE WHEN $6 THEN '' ELSE E'WHERE\n    f.op_id < 7\n' END
     -- order by oldest log entry for given audit_id
-    || E'ORDER BY\n'
-    || CASE WHEN $6 THEN '  f.event_id, ' ELSE '  ' END
+    || E'  ORDER BY\n'
+    || CASE WHEN $6 THEN '    f.event_id, ' ELSE '    ' END
     || 'a.audit_id'
-    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END;
+    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
+    || E'\n) e';
 
   RETURN query_text;
 END;
