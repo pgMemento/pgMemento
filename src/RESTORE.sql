@@ -239,6 +239,8 @@ BEGIN
   -- finish restore query
   query_text := query_text
     || extract_logs
+    || E',\n  audit_id'
+    || CASE WHEN $6 THEN E',\n  event_id,\n   transaction_id\n' ELSE E'\n' END
     || E'\nFROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
