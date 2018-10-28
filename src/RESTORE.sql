@@ -1,4 +1,4 @@
--- VERSIONING.sql
+-- RESTORE.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
 -- 0.6.4     2018-10-25   renamed generate functions to restore_record/set    FKun
 --                        which do not return JSONB anymore
 --                        new template helper restore_record_definition
