@@ -8,8 +8,8 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script provides functions to enable versioning of PostgreSQL databases
--- by using logged content from the audit tables.
+-- This script provides functions to restore previous data states, be a single
+-- value, a record, a table or a whole database schema
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:

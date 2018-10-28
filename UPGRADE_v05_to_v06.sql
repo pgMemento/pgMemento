@@ -66,7 +66,7 @@ LANGUAGE plpgsql;
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql
-\i src/VERSIONING.sql
+\i src/RESTORE.sql
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
 
