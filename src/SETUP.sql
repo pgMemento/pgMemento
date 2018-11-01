@@ -264,7 +264,7 @@ BEGIN
   UPDATE
     pgmemento.audit_table_log
   SET
-    txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '[)')
+    txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
   WHERE
     table_name = $1
     AND schema_name = $2
@@ -278,7 +278,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log
     SET
-      txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '[)') 
+      txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]') 
     WHERE
       audit_table_id = tab_id
       AND upper(txid_range) IS NULL
@@ -345,7 +345,7 @@ BEGIN
       INSERT INTO pgmemento.audit_table_log
         (relid, schema_name, table_name, txid_range)
       VALUES 
-        (($2 || '.' || $1)::regclass::oid, $2, $1, numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '[)'))
+        (($2 || '.' || $1)::regclass::oid, $2, $1, numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
       RETURNING id INTO tab_id;
 
       -- insert columns of new audited table into 'audit_column_log'
@@ -364,7 +364,7 @@ BEGIN
             position('.' IN format_type(a.atttypid, a.atttypmod))+1,
             length(format_type(a.atttypid, a.atttypmod))
           ) AS data_type,
-          numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '[)') AS txid_range
+          numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
         FROM
           pg_attribute a
         LEFT JOIN

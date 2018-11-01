@@ -270,7 +270,7 @@ LANGUAGE plpgsql STRICT;
 * AUDIT TABLE CHECK
 *
 * Helper function to check if requested table has existed
-* before tid happened and if the name has named 
+* before tid happened and if the name has been renamed 
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   IN tid INTEGER,

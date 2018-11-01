@@ -158,7 +158,7 @@ BEGIN
         ) AS data_type,
         d.adsrc AS column_default,
         a.attnotnull AS not_null,
-        numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '[)') AS txid_range
+        numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
       FROM
         pg_attribute a
       LEFT JOIN
@@ -226,7 +226,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '[)') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]') 
     FROM
       dropped_columns dc
     WHERE
@@ -303,7 +303,7 @@ BEGIN
           data_type,
           column_default,
           not_null,
-          numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '[)') AS txid_range
+          numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
         FROM
           updated_columns
       )
@@ -311,7 +311,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '[)') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]') 
     FROM
       updated_columns uc
     WHERE

@@ -421,8 +421,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
-     AND (a.txid_range @> t.id::numeric 
-      OR (upper(a.txid_range) = t.id::numeric AND e.op_id <> 12))
+     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+      OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.relid = e.table_relid
@@ -472,8 +472,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a 
       ON a.relid = e.table_relid
-     AND (a.txid_range @> t.id::numeric
-      OR (upper(a.txid_range) = t.id::numeric AND e.op_id <> 12))
+     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+      OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.relid = e.table_relid
@@ -564,8 +564,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
-     AND (a.txid_range @> q.tid::numeric
-      OR (upper(a.txid_range) = q.tid::numeric AND e1.op_id <> 12))
+     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.relid = q.table_relid
     WHERE
@@ -650,8 +650,8 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.relid = q.table_relid
-     AND (a.txid_range @> q.tid::numeric
-      OR (upper(a.txid_range) = q.tid::numeric AND e1.op_id <> 12))
+     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.relid = q.table_relid
     WHERE

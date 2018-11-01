@@ -68,7 +68,7 @@ ALTER TABLE pgmemento.table_event_log
 ALTER INDEX table_event_log_unique_idx2 RENAME TO table_event_log_unique_idx;
 
 UPDATE pgmemento.audit_table_log atl
-  SET txid_range = numrange(t1.id, t2.id, '[)')
+  SET txid_range = numrange(t1.id, t2.id, '(]')
   FROM pgmemento.audit_table_log a
   JOIN pgmemento.transaction_log t1
     ON lower(a.txid_range) = t1.txid
@@ -77,7 +77,7 @@ UPDATE pgmemento.audit_table_log atl
     WHERE a.id = atl.id;
 
 UPDATE pgmemento.audit_column_log acl
-  SET txid_range = numrange(t1.id, t2.id, '[)')
+  SET txid_range = numrange(t1.id, t2.id, '(]')
   FROM pgmemento.audit_column_log a
   JOIN pgmemento.transaction_log t1
     ON lower(a.txid_range) = t1.txid
