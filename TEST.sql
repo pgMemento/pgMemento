@@ -83,6 +83,9 @@ VALUES
 \i test/revert/TEST_REVERT_UPDATE.sql;
 \i test/revert/TEST_REVERT_INSERT.sql;
 
+-- test restore
+\i test/restore/TEST_RESTORE_RECORD.sql;
+/*
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
 
@@ -100,3 +103,4 @@ DROP EXTENSION postgis CASCADE;
 
 \echo
 \echo 'pgMemento test completed!'
+*/
