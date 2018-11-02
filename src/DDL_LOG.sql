@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.4     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.6.3     2018-10-25   bool argument in create_schema_event_trigger     FKun
 -- 0.6.2     2018-09-24   altering or dropping multiple columns at once    FKun
 --                        produces only one JSONB log

@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.6.1     2018-11-02   new functions to get historic table layouts    FKun
 -- 0.6.0     2018-10-28   new function to update a key in logs           FKun
 --                        new value filter in delete_key function
 -- 0.5.3     2018-10-24   audit_table_check function moved here          FKun
@@ -46,6 +47,11 @@
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
+*   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT,
+*     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
+*   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*     OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER,
+*     OUT txid_range numrange) RETURNS SETOF RECORD
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER
@@ -363,3 +369,70 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
+
+
+/**********************************************************
+* GET COLUMN LIST BY TXID (RANGE)
+*
+* Returns column details of an audited table that have
+* existed either before a given transaction ID or within
+* a given ID range. When querying by range all different
+* versions of a column appear in the result set. To avoid
+* ambiguity a counter is returned as well.
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid(
+  tid INTEGER,
+  table_name TEXT,
+  schema_name TEXT,
+  OUT column_name TEXT,
+  OUT data_type TEXT,
+  OUT ordinal_position INTEGER
+  ) RETURNS SETOF RECORD AS
+$$
+SELECT
+  c.column_name,
+  c.data_type,
+  c.ordinal_position
+FROM
+  pgmemento.audit_column_log c
+JOIN
+  pgmemento.audit_table_log t
+  ON t.id = c.audit_table_id
+WHERE
+  t.table_name = $2
+  AND t.schema_name = $3
+  AND t.txid_range @> $1::numeric
+  AND c.txid_range @> $1::numeric;
+$$
+LANGUAGE sql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid_range(
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
+  table_name TEXT,
+  schema_name TEXT,
+  OUT column_name TEXT,
+  OUT column_count INTEGER,
+  OUT data_type TEXT,
+  OUT ordinal_position INTEGER,
+  OUT txid_range numrange
+  ) RETURNS SETOF RECORD AS
+$$
+SELECT
+  c.column_name,
+  (row_number() OVER (PARTITION BY column_name))::int AS column_count,
+  c.data_type,
+  c.ordinal_position,
+  c.txid_range
+FROM
+  pgmemento.audit_column_log c
+JOIN
+  pgmemento.audit_table_log t
+  ON t.id = c.audit_table_id
+WHERE
+  t.table_name = $3
+  AND t.schema_name = $4
+  AND t.txid_range && numrange($1::numeric, $2::numeric)
+  AND c.txid_range && numrange($1::numeric, $2::numeric);
+$$
+LANGUAGE sql STRICT;
