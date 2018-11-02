@@ -107,7 +107,7 @@ DECLARE
   tab_id INTEGER;
 BEGIN
   -- get id from audit_table_log for given table
-  tab_id := pgmemento.register_audit_table($1,$2);
+  tab_id := pgmemento.register_audit_table($1, $2);
 
   IF tab_id IS NOT NULL THEN
     IF EXISTS (

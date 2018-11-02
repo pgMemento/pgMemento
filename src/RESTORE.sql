@@ -634,7 +634,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.restore_table_state($1,$2,table_name,schema_name,$4,$5,$6)
+  pgmemento.restore_table_state($1, $2, table_name, schema_name, $4, $5, $6)
 FROM
   pgmemento.audit_table_log 
 WHERE
