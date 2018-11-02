@@ -14,8 +14,9 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                       | Author
--- 0.1.0     2018-07-23   initial commit                                      FKun
+-- Version | Date       | Description                                    | Author
+-- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
+-- 0.1.0     2018-07-23   initial commit                                   FKun
 --
 
 -- alter existing tables

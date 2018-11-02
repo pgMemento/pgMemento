@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.6     2018-11-02   consider schema changes when restoring versions     FKun
 -- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
 --                        extended API to return multiple versions per row
 -- 0.6.4     2018-10-25   renamed generate functions to restore_record/set    FKun
@@ -58,7 +59,8 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_record_definition(until_tid INTEGER,table_name TEXT, schema_name TEXT, include_events BOOLEAN DEFAULT FALSE) RETURNS TEXT
+*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*     all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
@@ -195,41 +197,73 @@ BEGIN
     new_tab_schema,
     new_tab_id
   FROM
-    pgmemento.audit_table_check($2,$3,$4);
+    pgmemento.audit_table_check($2, $3, $4);
 
   IF new_tab_name IS NULL THEN
     RETURN NULL;
   END IF;
-
+  
   -- loop over all columns and query the historic value for each column separately
-  SELECT
-    string_agg(
-      format('    COALESCE(first_value(a.changes -> %L) OVER ', c_old.column_name)
-      || '(PARTITION BY '
-      || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
-      || format('a.audit_id ORDER BY a.changes -> %L IS NULL, a.id) ', c_old.column_name)
-      || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I)', c_new.column_name) ELSE '' END
-      || format(') AS %s', c_old.column_name)
-      , E',\n' ORDER BY c_old.ordinal_position
-    ),
-    string_agg(
-      format('  COALESCE((%I ->> 0)::%s, NULL::%s) AS %s', c_old.column_name, c_old.data_type, c_old.data_type, c_old.column_name)
-      , E',\n' ORDER BY c_old.ordinal_position
-    )
-  INTO
-    find_logs,
-    extract_logs
-  FROM
-    pgmemento.audit_column_log c_old
-  LEFT JOIN
-    pgmemento.audit_column_log c_new
-    ON c_old.ordinal_position = c_new.ordinal_position
-    AND c_old.data_type = c_new.data_type
-    AND c_new.audit_table_id = new_tab_id
-  WHERE
-    c_old.audit_table_id = tab_id
-    AND c_old.txid_range @> $2::numeric
-    AND upper(c_new.txid_range) IS NULL;
+  IF $6 THEN
+    SELECT
+      string_agg(
+           CASE WHEN c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
+        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY f.event_id, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
+        || format(' AS %s', c_old.column_name)
+        || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
+        , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
+      ),
+      string_agg(
+        '  COALESCE(('
+        || format('CASE WHEN transaction_id >= %L AND transaction_id < %L THEN %I ->> 0 ELSE NULL END', 
+             CASE WHEN lower(c_old.txid_range) IS NOT NULL THEN lower(c_old.txid_range) ELSE $1 END,
+             CASE WHEN upper(c_old.txid_range) IS NOT NULL THEN upper(c_old.txid_range) ELSE $2 END,
+             c_old.column_name
+             || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
+           )
+        || format(')::%s, NULL::%s) AS %s', c_old.data_type, c_old.data_type, c_old.column_name)
+        || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
+        , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
+      )
+    INTO
+      find_logs,
+      extract_logs
+    FROM
+      pgmemento.get_column_list_by_txid_range($1, $2, tab_name, tab_schema) c_old
+    LEFT JOIN
+      pgmemento.audit_column_log c_new
+      ON c_old.ordinal_position = c_new.ordinal_position
+     AND c_old.data_type = c_new.data_type
+     AND c_new.audit_table_id = new_tab_id
+     AND upper(c_new.txid_range) IS NULL; 
+  ELSE
+    SELECT
+      string_agg(
+           CASE WHEN c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
+        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
+        || format(' AS %s', c_old.column_name)
+        , E',\n' ORDER BY c_old.ordinal_position
+      ),
+      string_agg(
+        format('  COALESCE((%I ->> 0)::%s, NULL::%s) AS %s', c_old.column_name, c_old.data_type, c_old.data_type, c_old.column_name)
+        , E',\n' ORDER BY c_old.ordinal_position
+      )
+    INTO
+      find_logs,
+      extract_logs
+    FROM
+      pgmemento.get_column_list_by_txid($2, tab_name, tab_schema) c_old
+    LEFT JOIN
+      pgmemento.audit_column_log c_new
+      ON c_old.ordinal_position = c_new.ordinal_position
+     AND c_old.data_type = c_new.data_type
+     AND c_new.audit_table_id = new_tab_id
+     AND upper(c_new.txid_range) IS NULL;
+  END IF;
 
   -- check if it is necessary to join with recent state of the table
   IF find_logs LIKE '%to_jsonb(x.%' THEN
@@ -240,8 +274,8 @@ BEGIN
   query_text := query_text
     || extract_logs
     || E',\n  audit_id'
-    || CASE WHEN $6 THEN E',\n  event_id,\n   transaction_id\n' ELSE E'\n' END
-    || E'\nFROM (\n'
+    || CASE WHEN $6 THEN E',\n  event_id,\n  transaction_id\n' ELSE E'\n' END
+    || E'FROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
     || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
@@ -412,35 +446,48 @@ LANGUAGE plpgsql STRICT;
 * row that set the flag include events to TRUE
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
-  until_tid INTEGER,
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
   table_name TEXT,
   schema_name TEXT,
-  include_events BOOLEAN DEFAULT FALSE
+  all_versions BOOLEAN DEFAULT FALSE
   ) RETURNS TEXT AS
 $$
-SELECT
-  'AS (' || list || ', audit_id bigint'
-  || CASE WHEN $4 THEN ', event_id, transaction_id' ELSE '' END
-  || ')' AS record_definition
-FROM (
-  SELECT
-    string_agg(
-      c.column_name || ' ' || c.data_type,
-      ', ' ORDER BY c.ordinal_position
-    ) AS list
-  FROM
-    pgmemento.audit_column_log c
-  JOIN
-    pgmemento.audit_table_log t
-    ON t.id = c.audit_table_id
-  WHERE
-    t.table_name = $2
-    AND t.schema_name = $3
-    AND t.txid_range @> $1::numeric
-    AND c.txid_range @> $1::numeric
-) l;
+DECLARE
+  column_list TEXT;
+BEGIN
+  IF $5 THEN
+    SELECT
+      'AS (' ||
+      string_agg(
+        column_name
+        || CASE WHEN column_count > 1 THEN '_' || column_count ELSE '' END
+        || ' ' || data_type
+      , ', ' ORDER BY ordinal_position, column_count
+      )
+      || ', audit_id bigint, event_id integer, transaction_id integer)'
+    INTO
+      column_list
+    FROM
+      pgmemento.get_column_list_by_txid_range($1, $2, $3, $4);
+  ELSE
+    SELECT
+      'AS (' ||
+      string_agg(
+        column_name || ' ' || data_type,
+        ', ' ORDER BY ordinal_position
+      )
+      || ', audit_id bigint)'
+    INTO
+      column_list
+    FROM
+      pgmemento.get_column_list_by_txid($2, $3, $4);
+  END IF;
+
+  RETURN column_list;
+END;
 $$
-LANGUAGE sql;
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************

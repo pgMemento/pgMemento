@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.4     2018-11-01   reflect range bounds change in audit tables         FKun
 -- 0.6.3     2018-10-26   fixed delta creation for UPDATEs with JSON types    FKun
 -- 0.6.2     2018-10-25   log_state argument changed to boolean               FKun
 -- 0.6.1     2018-07-23   moved schema parts in its own file                  FKun

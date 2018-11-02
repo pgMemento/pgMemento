@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
 
