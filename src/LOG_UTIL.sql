@@ -49,7 +49,7 @@
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
 *   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT,
 *     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
-*   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID,
 *     OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER,
 *     OUT txid_range numrange) RETURNS SETOF RECORD
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
@@ -409,8 +409,7 @@ LANGUAGE sql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid_range(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
-  table_name TEXT,
-  schema_name TEXT,
+  table_oid OID,
   OUT column_name TEXT,
   OUT column_count INTEGER,
   OUT data_type TEXT,
@@ -419,20 +418,32 @@ CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid_range(
   ) RETURNS SETOF RECORD AS
 $$
 SELECT
-  c.column_name,
+  column_name,
   (row_number() OVER (PARTITION BY column_name))::int AS column_count,
-  c.data_type,
-  c.ordinal_position,
-  c.txid_range
-FROM
-  pgmemento.audit_column_log c
-JOIN
-  pgmemento.audit_table_log t
-  ON t.id = c.audit_table_id
-WHERE
-  t.table_name = $3
-  AND t.schema_name = $4
-  AND t.txid_range && numrange($1::numeric, $2::numeric)
-  AND c.txid_range && numrange($1::numeric, $2::numeric);
+  data_type,
+  ordinal_position,
+  txid_range
+FROM (
+  SELECT
+    c.column_name,
+    c.data_type,
+    c.ordinal_position,
+    numrange(min(lower(c.txid_range)),max(COALESCE(upper(c.txid_range),$2::numeric))) AS txid_range
+  FROM
+    pgmemento.audit_column_log c
+  JOIN
+    pgmemento.audit_table_log t
+    ON t.id = c.audit_table_id
+  WHERE
+    t.relid = $3
+    AND t.txid_range && numrange(1::numeric, $2::numeric)
+    AND c.txid_range && numrange(1::numeric, $2::numeric)
+  GROUP BY
+    c.column_name,
+    c.data_type,
+    c.ordinal_position
+  ORDER BY
+    c.ordinal_position
+) t;
 $$
 LANGUAGE sql STRICT;

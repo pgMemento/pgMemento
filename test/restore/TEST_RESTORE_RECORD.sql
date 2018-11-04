@@ -32,7 +32,7 @@ DECLARE
   column_list TEXT;
 BEGIN
   SELECT
-    pgmemento.restore_record_definition(1, 17, 'object', 'public')
+    pgmemento.restore_record_definition(17, 'object', 'public')
   INTO
     column_list;
 

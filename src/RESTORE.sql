@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.7     2018-11-04   have two restore_record_definition functions        FKun
 -- 0.6.6     2018-11-02   consider schema changes when restoring versions     FKun
 -- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
 --                        extended API to return multiple versions per row
@@ -59,8 +60,8 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
-*     all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
+*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
+*   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
@@ -198,10 +199,6 @@ BEGIN
     new_tab_id
   FROM
     pgmemento.audit_table_check($2, $3, $4);
-
-  IF new_tab_name IS NULL THEN
-    RETURN NULL;
-  END IF;
   
   -- loop over all columns and query the historic value for each column separately
   IF $6 THEN
@@ -231,7 +228,7 @@ BEGIN
       find_logs,
       extract_logs
     FROM
-      pgmemento.get_column_list_by_txid_range($1, $2, tab_name, tab_schema) c_old
+      pgmemento.get_column_list_by_txid_range($1, $2, tab_oid) c_old
     LEFT JOIN
       pgmemento.audit_column_log c_new
       ON c_old.ordinal_position = c_new.ordinal_position
@@ -439,55 +436,49 @@ LANGUAGE plpgsql STRICT;
 /**********************************************************
 * RESTORE RECORD DEFINITION
 *
-* Function that returns a column definition list for
-* retrieving historic tuples with functions restor_record
-* and restore_recordset. Simply attach the output to your
-* restore query. When restoring mutliple versions of one
+* Functions that return a column definition list for
+* retrieving historic tuples with functions restor_record(s)
+* and restore_recordset(s). Simply attach the output to your
+* restore query. When restoring multiple versions of one
 * row that set the flag include events to TRUE
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
-  start_from_tid INTEGER,
-  end_at_tid INTEGER,
+  tid INTEGER,
   table_name TEXT,
-  schema_name TEXT,
-  all_versions BOOLEAN DEFAULT FALSE
+  schema_name TEXT
   ) RETURNS TEXT AS
 $$
-DECLARE
-  column_list TEXT;
-BEGIN
-  IF $5 THEN
-    SELECT
-      'AS (' ||
-      string_agg(
-        column_name
-        || CASE WHEN column_count > 1 THEN '_' || column_count ELSE '' END
-        || ' ' || data_type
-      , ', ' ORDER BY ordinal_position, column_count
-      )
-      || ', audit_id bigint, event_id integer, transaction_id integer)'
-    INTO
-      column_list
-    FROM
-      pgmemento.get_column_list_by_txid_range($1, $2, $3, $4);
-  ELSE
-    SELECT
-      'AS (' ||
-      string_agg(
-        column_name || ' ' || data_type,
-        ', ' ORDER BY ordinal_position
-      )
-      || ', audit_id bigint)'
-    INTO
-      column_list
-    FROM
-      pgmemento.get_column_list_by_txid($2, $3, $4);
-  END IF;
-
-  RETURN column_list;
-END;
+SELECT
+  'AS (' ||
+  string_agg(
+    column_name || ' ' || data_type,
+    ', ' ORDER BY ordinal_position
+  )
+  || ', audit_id bigint)'
+FROM
+  pgmemento.get_column_list_by_txid($1, $2, $3);
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE sql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
+  start_from_tid INTEGER,
+  end_at_tid INTEGER,
+  table_oid OID
+  ) RETURNS TEXT AS
+$$
+SELECT
+  'AS (' ||
+  string_agg(
+    column_name
+    || CASE WHEN column_count > 1 THEN '_' || column_count ELSE '' END
+    || ' ' || data_type
+  , ', ' ORDER BY ordinal_position, column_count
+  )
+  || ', audit_id bigint, event_id integer, transaction_id integer)'
+FROM
+  pgmemento.get_column_list_by_txid_range($1, $2, $3);
+$$
+LANGUAGE sql STRICT;
 
 
 /**********************************************************
