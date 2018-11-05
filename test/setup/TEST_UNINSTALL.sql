@@ -41,7 +41,7 @@ BEGIN
       FROM
         pg_attribute
       WHERE
-        attrelid = ('public.' || tab)::regclass
+        attrelid = ('public.' || tab)::regclass::oid
         AND attnum > 0
         AND NOT attisdropped
         AND attname = 'audit_id'

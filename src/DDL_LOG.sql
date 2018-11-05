@@ -132,7 +132,7 @@ BEGIN
         ) acl
         ON acl.ordinal_position = a.attnum
       WHERE
-        a.attrelid = ($2 || '.' || $1)::regclass
+        a.attrelid = ($2 || '.' || $1)::regclass::oid
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
@@ -183,7 +183,7 @@ BEGIN
         ) acl
       ON acl.ordinal_position = a.attnum
       WHERE
-        a.attrelid = ($2 || '.' || $1)::regclass
+        a.attrelid = ($2 || '.' || $1)::regclass::oid
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
@@ -211,7 +211,7 @@ BEGIN
         FROM
           pg_attribute
         WHERE
-          attrelid = ($2 || '.' || $1)::regclass
+          attrelid = ($2 || '.' || $1)::regclass::oid
         ) col
         ON col.column_name = c.column_name
         AND col.table_name = a.table_name
@@ -263,7 +263,7 @@ BEGIN
           pg_attrdef d
           ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         WHERE
-          a.attrelid = ($2 || '.' || $1)::regclass
+          a.attrelid = ($2 || '.' || $1)::regclass::oid
           AND a.attnum > 0
           AND NOT a.attisdropped
       ) col

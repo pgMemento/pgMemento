@@ -146,7 +146,7 @@ BEGIN
         pgmemento.audit_column_log c
         ON c.column_name = a.attname
       WHERE
-        a.attrelid = ('public.' || tab)::regclass
+        a.attrelid = ('public.' || tab)::regclass::oid
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped

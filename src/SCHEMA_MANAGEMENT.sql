@@ -32,25 +32,25 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   drop_schema_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   drop_table_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
+*   drop_schema_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   drop_table_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
 *     RETURNS SETOF VOID
-*   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
+*   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   index_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*   index_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
 *     RETURNS SETOF VOID
-*   move_schema_state(target_schema_name TEXT, source_schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}',
+*   move_schema_state(target_schema_name TEXT, source_schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}',
 *     copy_data INTEGER DEFAULT 1) RETURNS SETOF void AS
 *   move_table_state(table_name TEXT, target_schema_name TEXT, source_schema_name TEXT, copy_data BOOLEAN DEFAULT TRUE
 *     RETURNS SETOF VOID
-*   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public', 
+*   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   pkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public') 
+*   pkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
 *     RETURNS SETOF VOID
-*   sequence_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public')
+*   sequence_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
 ***********************************************************/
 
@@ -66,7 +66,7 @@
 CREATE OR REPLACE FUNCTION pgmemento.pkey_table_state( 
   table_name TEXT,
   target_schema_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
+  original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -80,7 +80,7 @@ BEGIN
     pg_class pgc,
     pg_attribute pga 
   WHERE
-    pgc.oid = ($3 || '.' || $1)::regclass 
+    pgc.oid = ($3 || '.' || $1)::regclass::oid
     AND pgi.indrelid = pgc.oid 
     AND pga.attrelid = pgc.oid 
     AND pga.attnum = ANY(pgi.indkey)
@@ -101,7 +101,7 @@ LANGUAGE plpgsql STRICT;
 -- perform pkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
   target_schema_name TEXT, 
-  original_schema_name TEXT DEFAULT 'public',
+  original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -130,7 +130,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.fkey_table_state( 
   table_name TEXT,
   target_schema_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
+  original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -203,7 +203,7 @@ LANGUAGE plpgsql STRICT;
 -- perform fkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
   target_schema_name TEXT, 
-  original_schema_name TEXT DEFAULT 'public',
+  original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -232,7 +232,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.index_table_state( 
   table_name TEXT,
   target_schema_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
+  original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -248,7 +248,7 @@ BEGIN
       pg_class c
       ON c.oid = i.indexrelid
     WHERE
-      i.indrelid = ($3 || '.' || $1)::regclass
+      i.indrelid = ($3 || '.' || $1)::regclass::oid
       AND i.indisprimary = 'f'
   LOOP
     BEGIN
@@ -266,7 +266,7 @@ LANGUAGE plpgsql STRICT;
 -- perform index_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
   target_schema_name TEXT, 
-  original_schema_name TEXT DEFAULT 'public',
+  original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -293,7 +293,7 @@ LANGUAGE sql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.sequence_schema_state( 
   target_schema_name TEXT,
-  original_schema_name TEXT DEFAULT 'public'
+  original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -358,7 +358,7 @@ LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
   target_schema_name TEXT, 
-  source_schema_name TEXT DEFAULT 'public',
+  source_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}',
   copy_data BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF void AS
@@ -429,7 +429,7 @@ LANGUAGE plpgsql;
 -- truncate and drop table and all depending objects
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_state(
   table_name TEXT,
-  target_schema_name TEXT DEFAULT 'public'
+  target_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
