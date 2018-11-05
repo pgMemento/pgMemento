@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.6.2     2018-11-05   delete_table_event_log now takes OID           FKun
 -- 0.6.1     2018-11-02   new functions to get historic table layouts    FKun
 -- 0.6.0     2018-10-28   new function to update a key in logs           FKun
 --                        new value filter in delete_key function
@@ -45,9 +46,9 @@
 *   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
 *   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
-*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_table_event_log(tid INTEGER, table_oid OID) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
-*   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT,
+*   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
 *   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID,
 *     OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER,
@@ -151,15 +152,14 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  table_oid OID
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
   pgmemento.table_event_log
 WHERE
   transaction_id = $1
-  AND table_relid = ($3 || '.' || $2)::regclass::oid
+  AND table_relid = $2
 RETURNING
   id;
 $$
@@ -383,7 +383,7 @@ LANGUAGE plpgsql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid(
   tid INTEGER,
   table_name TEXT,
-  schema_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
   OUT column_name TEXT,
   OUT data_type TEXT,
   OUT ordinal_position INTEGER

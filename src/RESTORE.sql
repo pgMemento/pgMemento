@@ -50,21 +50,21 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   create_restore_template(until_tid INTEGER, template_name TEXT, table_name TEXT, schema_name TEXT,
+*   create_restore_template(until_tid INTEGER, template_name TEXT, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     preserve_template BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   jsonb_populate_value(jsonb_log JSONB, column_name TEXT, INOUT template anyelement) RETURNS anyelement
 *   restore_change(during_tid INTEGER, aid BIGINT, column_name TEXT, INOUT restored_value anyelement) RETURNS anyelement
-*   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT DEFAULT NULL,
-*     all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
+*   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
+*     aid BIGINT DEFAULT NULL, all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_record(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
-*   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS TEXT
-*   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS TEXT
+*   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT,
+*   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
 *     target_table_type TEXT DEFAULT 'VIEW', update_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
@@ -162,7 +162,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_query(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
   table_name TEXT,
-  schema_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
   aid BIGINT DEFAULT NULL,
   all_versions BOOLEAN DEFAULT FALSE
   ) RETURNS TEXT AS
@@ -392,7 +392,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_recordset(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
   table_name TEXT,
-  schema_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF RECORD AS
 $$
@@ -414,7 +414,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_recordsets(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
   table_name TEXT,
-  schema_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
   jsonb_output BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF RECORD AS
 $$
@@ -445,7 +445,7 @@ LANGUAGE plpgsql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   tid INTEGER,
   table_name TEXT,
-  schema_name TEXT
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS TEXT AS
 $$
 SELECT
@@ -492,7 +492,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_restore_template(
   until_tid INTEGER,
   template_name TEXT,
   table_name TEXT,
-  schema_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text,
   preserve_template BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$

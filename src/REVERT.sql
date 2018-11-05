@@ -38,7 +38,7 @@
 *
 * FUNCTIONS:
 *   recover_audit_version(tid INTEGER, aid BIGINT, changes JSONB, table_op INTEGER,
-*     table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*     table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   revert_distinct_transaction(tid INTEGER) RETURNS SETOF VOID
 *   revert_distinct_transactions(start_from_tid INTEGER, end_at_tid INTEGER) RETURNS SETOF VOID
 *   revert_transaction(tid INTEGER) RETURNS SETOF VOID
@@ -56,7 +56,7 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   changes JSONB,
   table_op INTEGER,
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE

@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.5     2018-11-05   get_txid_bounds_to_table function now takes OID     FKun
 -- 0.6.4     2018-11-01   reflect range bounds change in audit tables         FKun
 -- 0.6.3     2018-10-26   fixed delta creation for UPDATEs with JSON types    FKun
 -- 0.6.2     2018-10-25   log_state argument changed to boolean               FKun
@@ -49,24 +50,24 @@
 *   audit_tables_dependency
 *
 * FUNCTIONS:
-*   create_schema_audit(schema_name TEXT DEFAULT 'public', log_state BOOLEAN DEFAULT TRUE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_schema_audit_id(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_schema_log_trigger(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public', log_state BOOLEAN DEFAULT TRUE) RETURNS SETOF VOID
-*   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   drop_schema_audit(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   drop_schema_audit_id(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public', except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   get_txid_bounds_to_table(table_name TEXT, schema_name TEXT DEFAULT 'public', OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
-*   log_schema_state(schemaname TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   create_schema_audit(schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE) RETURNS SETOF VOID
+*   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   drop_schema_audit(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   drop_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   get_txid_bounds_to_table(table_oid OID, OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
+*   log_schema_state(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   log_table_event(event_txid BIGINT, table_oid OID, op_type TEXT) RETURNS INTEGER
-*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
-*   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public') RETURNS INTEGER
-*   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public') RETURNS SETOF VOID
+*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS INTEGER
+*   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *  
 * TRIGGER FUNCTIONS
 *   log_delete() RETURNS trigger
@@ -84,8 +85,7 @@
 * transaction id to an audited table 
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txid_bounds_to_table(
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text,
+  table_oid OID,
   OUT txid_min INTEGER,
   OUT txid_max INTEGER
   ) RETURNS RECORD AS
@@ -96,7 +96,7 @@ SELECT
 FROM
   pgmemento.table_event_log 
 WHERE
-  table_relid = ($2 || '.' || $1)::regclass::oid;
+  table_relid = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
@@ -127,7 +127,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
     pg_attribute a
     ON a.attrelid = c.oid
   JOIN LATERAL (
-    SELECT * FROM pgmemento.get_txid_bounds_to_table(c.relname, n.nspname)
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(c.oid)
     ) b ON (true)
   LEFT JOIN (
     SELECT
@@ -255,7 +255,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.unregister_audit_table(
   audit_table_name TEXT,
-  audit_schema_name TEXT DEFAULT 'public'
+  audit_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -291,7 +291,7 @@ LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.register_audit_table( 
   audit_table_name TEXT,
-  audit_schema_name TEXT DEFAULT 'public'
+  audit_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS INTEGER AS
 $$
 DECLARE
@@ -372,7 +372,7 @@ BEGIN
           pg_attrdef d
           ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         WHERE
-          a.attrelid = ($2 || '.' || $1)::regclass
+          a.attrelid = ($2 || '.' || $1)::regclass::oid
           AND a.attname <> 'audit_id'
           AND a.attnum > 0
           AND NOT a.attisdropped
@@ -404,7 +404,7 @@ LANGUAGE plpgsql STRICT;
 -- create logging triggers for one table
 CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger( 
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -466,7 +466,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform create_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -486,7 +486,7 @@ LANGUAGE sql;
 -- drop logging triggers for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public' 
+  schema_name TEXT DEFAULT 'public'::text 
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -501,7 +501,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -528,7 +528,7 @@ LANGUAGE sql;
 -- add column 'audit_id' to a table
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -542,7 +542,7 @@ BEGIN
     FROM
       pg_attribute
     WHERE
-      attrelid = ($2 || '.' || $1)::regclass
+      attrelid = ($2 || '.' || $1)::regclass::oid
       AND attname = 'audit_id'
       AND NOT attisdropped
   ) THEN
@@ -556,7 +556,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform create_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -576,7 +576,7 @@ LANGUAGE sql;
 -- drop column 'audit_id' from a table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit_id(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -610,7 +610,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -848,7 +848,7 @@ LANGUAGE plpgsql;
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -900,7 +900,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform log_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
-  schemaname TEXT DEFAULT 'public'
+  schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 SELECT
@@ -929,7 +929,7 @@ LANGUAGE sql STRICT;
 -- create pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit( 
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   log_state BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF VOID AS
 $$
@@ -950,7 +950,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform create_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   log_state BOOLEAN DEFAULT TRUE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
@@ -971,7 +971,7 @@ LANGUAGE sql;
 -- drop pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public' 
+  schema_name TEXT DEFAULT 'public'::text 
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -986,7 +986,7 @@ LANGUAGE plpgsql STRICT;
 
 -- perform drop_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
-  schema_name TEXT DEFAULT 'public',
+  schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
