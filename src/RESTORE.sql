@@ -169,12 +169,11 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_query(
 $$
 DECLARE
   tab_oid OID;
-  tab_id INTEGER;
   tab_name TEXT;
   tab_schema TEXT;
-  new_tab_id INTEGER;
   new_tab_name TEXT;
   new_tab_schema TEXT;
+  new_tab_id INTEGER;
   query_text TEXT := E'SELECT\n';
   find_logs TEXT;
   extract_logs TEXT;
@@ -185,7 +184,6 @@ BEGIN
     log_tab_oid,
     log_tab_name,
     log_tab_schema,
-    log_tab_id,
     recent_tab_name,
     recent_tab_schema,
     recent_tab_id
@@ -193,7 +191,6 @@ BEGIN
     tab_oid,
     tab_name,
     tab_schema,
-    tab_id,
     new_tab_name,
     new_tab_schema,
     new_tab_id
