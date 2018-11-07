@@ -19,13 +19,15 @@
 -- 0.1.0     2018-07-23   initial commit                                   FKun
 --
 
--- alter existing tables
+-- add new columns new in v0.6
 ALTER TABLE pgmemento.transaction_log
   ADD COLUMN process_id INTEGER,
   ADD COLUMN client_port INTEGER,
   ADD COLUMN application_name TEXT,
   ADD COLUMN session_info JSONB;
 
+-- create new foreign key to transaction_log
+-- and table_operation field with more characters
 ALTER TABLE pgmemento.table_event_log
   ADD COLUMN transaction_id2 INTEGER,
   ADD COLUMN table_operation2 VARCHAR(18);
@@ -48,6 +50,7 @@ ALTER TABLE pgmemento.table_event_log
 
 CREATE UNIQUE INDEX table_event_log_unique_idx2 ON pgmemento.table_event_log USING BTREE (transaction_id2, table_relid, op_id);
 
+-- remove redundant parts for table_event_log
 ALTER TABLE pgmemento.table_event_log
   DROP CONSTRAINT table_event_log_txid_fk;
 
@@ -68,6 +71,8 @@ ALTER TABLE pgmemento.table_event_log
 
 ALTER INDEX table_event_log_unique_idx2 RENAME TO table_event_log_unique_idx;
 
+-- update range columns in DDL log tables and use transaction_log IDs instead of internal txids
+-- also define the range type as (] instead of [)
 UPDATE pgmemento.audit_table_log atl
   SET txid_range = numrange(t1.id, t2.id, '(]')
   FROM pgmemento.audit_table_log a
@@ -86,5 +91,5 @@ UPDATE pgmemento.audit_column_log acl
     ON upper(a.txid_range) = t2.txid
     WHERE a.id = acl.id;
 
--- create indexes new in v0.6
+-- create indexe new in v0.6
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
