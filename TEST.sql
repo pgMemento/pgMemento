@@ -85,6 +85,7 @@ VALUES
 
 -- test restore
 \i test/restore/TEST_RESTORE_RECORD.sql;
+\i test/restore/TEST_RESTORE_RECORDS.sql;
 
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql

@@ -8,8 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that checks if a previous table/schema state can be restored from
--- the logs
+-- Script that checks if a previous tuple state can be restored from the logs
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
