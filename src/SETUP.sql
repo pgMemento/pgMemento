@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.6     2018-11-10   rename log_table_state to log_table_baseline        FKun
+--                        new option for drop_table_audit to drop all logs
 -- 0.6.5     2018-11-05   get_txid_bounds_to_table function now takes OID     FKun
 -- 0.6.4     2018-11-01   reflect range bounds change in audit tables         FKun
 -- 0.6.3     2018-10-26   fixed delta creation for UPDATEs with JSON types    FKun
@@ -50,7 +52,9 @@
 *   audit_tables_dependency
 *
 * FUNCTIONS:
-*   create_schema_audit(schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
+*   create_schema_audit(schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE,
+*     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE) RETURNS SETOF VOID
@@ -63,9 +67,10 @@
 *   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   get_txid_bounds_to_table(table_oid OID, OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
-*   log_schema_state(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   log_schema_baseline(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   log_table_baseline(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   log_table_event(event_txid BIGINT, table_oid OID, op_type TEXT) RETURNS INTEGER
-*   log_table_state(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   log_table_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS INTEGER
 *   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *  
@@ -580,9 +585,6 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  -- log as 'drop column' event, as it is not done by event triggers
-  PERFORM pgmemento.log_table_event(txid_current(),($2 || '.' || $1)::regclass::oid, 'DROP COLUMN');
-
   -- drop 'audit_id' column if it exists
   IF EXISTS (
     SELECT
@@ -598,9 +600,6 @@ BEGIN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I_audit_id_key, DROP COLUMN audit_id',
       $2, $1, $1);
-
-    -- update audit_table_log and audit_column_log
-    PERFORM pgmemento.unregister_audit_table($1, $2);
   ELSE
     RETURN;
   END IF;
@@ -626,6 +625,50 @@ WHERE
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql;
+
+
+/**********************************************************
+* LOG TABLE STATE
+*
+* Function to log the whole content of a table or only
+* for given columns.
+**********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
+$$
+SELECT
+  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
+FROM
+  unnest($1) k,
+  unnest($1) v
+WHERE
+  k = v;
+$$
+LANGUAGE sql IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
+  e_id INTEGER,
+  columns TEXT[],
+  table_name TEXT,
+  schema_name TEXT DEFAULT 'public'::text
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  IF $2 IS NOT NULL AND array_length($2, 1) IS NOT NULL THEN
+    -- log content of given columns
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
+         SELECT $1, audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content FROM %I.%I ORDER BY audit_id',
+         $4, $3) USING $1;
+  ELSE
+    -- log content of entire table 
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
+         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
+         $3, $4, $3) USING $1;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
 
 
 /**********************************************************
@@ -696,6 +739,7 @@ BEGIN
     WHEN 'DROP COLUMN' THEN operation_id := 6;
     WHEN 'DELETE' THEN operation_id := 7;
     WHEN 'TRUNCATE' THEN operation_id := 8;
+    WHEN 'DROP AUDIT_ID' THEN operation_id := 8;
     WHEN 'DROP TABLE' THEN operation_id := 9;
   END CASE;
 
@@ -747,11 +791,10 @@ CREATE OR REPLACE FUNCTION pgmemento.log_truncate() RETURNS trigger AS
 $$
 BEGIN
   -- log the whole content of the truncated table in the row_log table
-  EXECUTE format(
-    'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-       SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I',
-       TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_TABLE_NAME
-    ) USING current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 8)::int;
+  PERFORM pgmemento.log_table_state(
+    current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 8)::int,
+    '{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA
+  );
 
   RETURN NULL;
 END;
@@ -841,12 +884,12 @@ LANGUAGE plpgsql;
 
 
 /**********************************************************
-* LOG TABLE STATE
+* LOG TABLE BASELINE
 *
-* Log table content in the audit_log table (as inserted values)
+* Log table content in the row_log table (as inserted values)
 * to have a baseline for table versioning.
 **********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
+CREATE OR REPLACE FUNCTION pgmemento.log_table_baseline(
   table_name TEXT,
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
@@ -899,12 +942,12 @@ $$
 LANGUAGE plpgsql STRICT;
 
 -- perform log_table_state on multiple tables in one schema
-CREATE OR REPLACE FUNCTION pgmemento.log_schema_state(
+CREATE OR REPLACE FUNCTION pgmemento.log_schema_baseline(
   schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.log_table_state(a.table_name, a.schema_name)
+  pgmemento.log_table_baseline(a.table_name, a.schema_name)
 FROM
   pgmemento.audit_table_log a,
   pgmemento.audit_tables_dependency d
@@ -942,7 +985,7 @@ BEGIN
 
   -- log existing table content as inserted
   IF $3 THEN
-    PERFORM pgmemento.log_table_state($1, $2);
+    PERFORM pgmemento.log_table_baseline($1, $2);
   END IF;
 END;
 $$
@@ -971,15 +1014,33 @@ LANGUAGE sql;
 -- drop pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text 
+  schema_name TEXT DEFAULT 'public'::text,
+  keep_log BOOLEAN DEFAULT TRUE
   ) RETURNS SETOF VOID AS
 $$
+DECLARE
+  e_id INTEGER;
 BEGIN
+  -- first drop log trigger
+  PERFORM pgmemento.drop_table_log_trigger($1, $2);
+
+  -- then either keep the audit trail for table or delete everything
+  IF $3 THEN
+    -- log event as event triggers will walk around anything related to the audit_id
+    e_id := pgmemento.log_table_event(txid_current(),($2 || '.' || $1)::regclass::oid, 'DROP AUDIT_ID');
+
+    -- log the whole content of the table to keep the reference between audit_id and table rows
+    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], $1, $2);
+
+    -- update audit_table_log and audit_column_log
+    PERFORM pgmemento.unregister_audit_table($1, $2);
+  ELSE
+    -- remove all logs related to given table
+    PERFORM pgmemento.delete_audit_table_log(($2 || '.' || $1)::regclass::oid);
+  END IF;
+
   -- drop audit_id column
   PERFORM pgmemento.drop_table_audit_id($1, $2);
-
-  -- drop log trigger
-  PERFORM pgmemento.drop_table_log_trigger($1, $2);
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -987,11 +1048,12 @@ LANGUAGE plpgsql STRICT;
 -- perform drop_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   schema_name TEXT DEFAULT 'public'::text,
+  keep_log BOOLEAN DEFAULT TRUE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit(c.relname, $1)
+  pgmemento.drop_table_audit(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -999,6 +1061,6 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($2,'{}'));
+  AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql;

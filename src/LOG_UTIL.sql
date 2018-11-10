@@ -20,9 +20,7 @@
 -- 0.6.1     2018-11-02   new functions to get historic table layouts    FKun
 -- 0.6.0     2018-10-28   new function to update a key in logs           FKun
 --                        new value filter in delete_key function
--- 0.5.3     2018-10-24   audit_table_check function moved here          FKun
--- 0.5.2     2018-10-07   new function log_column_state                  FKun
--- 0.5.1     2018-09-24   new function column_array_to_column_list       FKun
+-- 0.5.1     2018-10-24   audit_table_check function moved here          FKun
 -- 0.5.0     2018-07-16   reflect changes in transaction_id handling     FKun
 -- 0.4.2     2017-07-26   new function to remove a key from all logs     FKun
 -- 0.4.1     2017-04-11   moved VIEWs to SETUP.sql & added jsonb_merge   FKun
@@ -43,8 +41,7 @@
 *   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
 *     OUT log_tab_oid OID, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
 *     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER) RETURNS RECORD
-*   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
-*   delete_audit_table_log(table_oid INTEGER) RETURNS SETOF OID
+*   delete_audit_table_log(table_oid OID) RETURNS SETOF OID
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
 *   delete_table_event_log(tid INTEGER, table_oid OID) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
@@ -56,7 +53,6 @@
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER
-*   log_column_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   update_key(aid BIGINT, path_to_key_name TEXT[], old_value anyelement, new_value anyelement) RETURNS SETOF BIGINT
 *
 ***********************************************************/
@@ -206,7 +202,7 @@ LANGUAGE sql STRICT;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
-  table_oid INTEGER
+  table_oid OID
   ) RETURNS SETOF OID AS
 $$
 BEGIN
@@ -237,36 +233,6 @@ BEGIN
   ELSE
     RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', $1; 
   END IF;
-END;
-$$
-LANGUAGE plpgsql STRICT;
-
-
-CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
-$$
-SELECT
-  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
-FROM
-  unnest($1) k,
-  unnest($1) v
-WHERE
-  k = v;
-$$
-LANGUAGE sql STRICT;
-
-
-CREATE OR REPLACE FUNCTION pgmemento.log_column_state(
-  e_id INTEGER,
-  columns TEXT[],
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
-  ) RETURNS SETOF VOID AS
-$$
-BEGIN
-  EXECUTE format(
-    'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
-       SELECT $1, t.audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content FROM %I.%I t',
-    $4, $3) USING $1;
 END;
 $$
 LANGUAGE plpgsql STRICT;

@@ -9,13 +9,14 @@
 -------------------------------------------------------------------------------
 -- About:
 -- Script that checks log tables when an INSERT event happens
--- (also for logging initial state with pgmemento.log_table_state)
+-- (also for logging initial state with pgmemento.log_table_baseline)
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2017-11-20   added upsert case                                FKun
+-- 0.1.2     2018-11-10   reflect changes in SETUP                         FKun
+-- 0.1.1     2017-11-20   added upsert case                                FKun
 -- 0.1.0     2017-11-18   initial commit                                   FKun
 --
 
@@ -33,8 +34,8 @@ DECLARE
   test_txid BIGINT := txid_current();
   test_event INTEGER;
 BEGIN
-  -- log content of table
-  PERFORM pgmemento.log_table_state('object', 'public');
+  -- create baseline for test table
+  PERFORM pgmemento.log_table_baseline('object', 'public');
 
   -- query for logged transaction
   ASSERT (

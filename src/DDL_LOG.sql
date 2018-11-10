@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.5     2018-11-10   better treatment of dropping audit_id column     FKun
 -- 0.6.4     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.6.3     2018-10-25   bool argument in create_schema_event_trigger     FKun
 -- 0.6.2     2018-09-24   altering or dropping multiple columns at once    FKun
@@ -392,11 +393,7 @@ BEGIN
   LOOP
     -- log the whole content of the dropped table as truncated
     e_id := pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'TRUNCATE');
-
-    EXECUTE format(
-      'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         rec.tablename, rec.schemaname, rec.tablename) USING e_id;
+    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], rec.tablename, rec.schemaname);
 
     -- now log drop table event
     PERFORM pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'DROP TABLE');
@@ -607,15 +604,17 @@ BEGIN
       e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
 
       -- log data of entire column(s)
-      PERFORM pgmemento.log_column_state(e_id, altered_columns, tablename, schemaname);
+      PERFORM pgmemento.log_table_state(e_id, altered_columns, tablename, schemaname);
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
-      -- log DROP COLUMN table event
-      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
+      IF 'audit_id' <> ANY(dropped_columns) THEN
+        -- log DROP COLUMN table event
+        e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
 
-      -- log data of entire column(s)
-      PERFORM pgmemento.log_column_state(e_id, dropped_columns, tablename, schemaname);
+        -- log data of entire column(s)
+        PERFORM pgmemento.log_table_state(e_id, dropped_columns, tablename, schemaname);
+      END IF;
     END IF;
   END IF;
 END;
@@ -770,11 +769,7 @@ BEGIN
   ELSE
     -- log the whole content of the dropped table as truncated
     e_id :=  pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'TRUNCATE');
-
-    EXECUTE format(
-      'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-         SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         tablename, schemaname, tablename) USING e_id;
+    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], tablename, schemaname);
 
     -- now log drop table event
     PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP TABLE');
