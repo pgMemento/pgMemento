@@ -913,7 +913,7 @@ BEGIN
     IF e_id IS NOT NULL THEN
       -- get the primary key columns
       SELECT
-        array_to_string(array_agg(pga.attname),',') INTO pkey_columns
+        array_to_string(array_agg('t.' || pga.attname),',') INTO pkey_columns
       FROM
         pg_index pgi,
         pg_class pgc,
@@ -928,13 +928,15 @@ BEGIN
       IF pkey_columns IS NOT NULL THEN
         pkey_columns := ' ORDER BY ' || pkey_columns;
       ELSE
-        pkey_columns := ' ORDER BY audit_id';
+        pkey_columns := ' ORDER BY t.audit_id';
       END IF;
 
       EXECUTE format(
-        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
-           SELECT $1, audit_id, NULL::jsonb AS changes FROM %I.%I' || pkey_columns,
-           $2, $1) USING e_id;
+        'INSERT INTO pgmemento.row_log (event_id, audit_id, changes) '
+         || 'SELECT $1, t.audit_id, NULL::jsonb AS changes FROM %I.%I t '
+         || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
+         || 'WHERE r.audit_id IS NULL' || pkey_columns,
+         $2, $1) USING e_id;
     END IF;
   END IF;
 END;
