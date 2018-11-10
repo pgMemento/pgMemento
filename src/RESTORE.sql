@@ -100,7 +100,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql STABLE;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_value(
@@ -125,7 +125,7 @@ ORDER BY
   e.id DESC
 LIMIT 1;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_change(
@@ -149,7 +149,7 @@ ORDER BY
   e.id DESC
 LIMIT 1;
 $$
-LANGUAGE sql;
+LANGUAGE sql STABLE;
 
 
 /**********************************************************
@@ -360,7 +360,7 @@ BEGIN
   RETURN restore_result;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_records(
   start_from_tid INTEGER,
@@ -383,7 +383,7 @@ BEGIN
   RETURN QUERY EXECUTE restore_query_text;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_recordset(
   start_from_tid INTEGER,
@@ -405,7 +405,7 @@ BEGIN
   RETURN QUERY EXECUTE restore_query_text;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_recordsets(
   start_from_tid INTEGER,
@@ -427,7 +427,7 @@ BEGIN
   RETURN QUERY EXECUTE restore_query_text;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STABLE STRICT;
 
 
 /**********************************************************
@@ -455,7 +455,7 @@ SELECT
 FROM
   pgmemento.get_column_list_by_txid($1, $2, $3);
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   start_from_tid INTEGER,
@@ -475,7 +475,7 @@ SELECT
 FROM
   pgmemento.get_column_list_by_txid_range($1, $2, $3);
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STABLE STRICT;
 
 
 /**********************************************************

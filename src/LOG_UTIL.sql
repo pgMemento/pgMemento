@@ -178,7 +178,7 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.update_key(
@@ -198,7 +198,7 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
@@ -370,7 +370,7 @@ WHERE
   AND t.txid_range @> $1::numeric
   AND c.txid_range @> $1::numeric;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid_range(
   start_from_tid INTEGER,
@@ -412,4 +412,4 @@ FROM (
     c.ordinal_position
 ) t;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STABLE STRICT;

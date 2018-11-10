@@ -19,7 +19,7 @@
 -- 0.1.0     2018-07-23   initial commit                                   FKun
 --
 
--- add new columns new in v0.6
+-- add columns to transaction_log that are new in v0.6
 ALTER TABLE pgmemento.transaction_log
   ADD COLUMN process_id INTEGER,
   ADD COLUMN client_port INTEGER,
