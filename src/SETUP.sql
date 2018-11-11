@@ -713,7 +713,7 @@ BEGIN
   INSERT INTO pgmemento.transaction_log 
     (txid, stmt_date, process_id, user_name, client_name, client_port, application_name, session_info)
   VALUES 
-    ($1, statement_timestamp(), pg_backend_pid(), current_user, inet_client_addr(), inet_client_port(),
+    ($1, transaction_timestamp(), pg_backend_pid(), current_user, inet_client_addr(), inet_client_port(),
      current_setting('application_name'), session_info_obj
     )
   ON CONFLICT (txid, stmt_date)
@@ -725,6 +725,10 @@ BEGIN
     PERFORM set_config('pgmemento.' || $1, transaction_log_id::text, TRUE);
   ELSE
     transaction_log_id := current_setting('pgmemento.' || $1)::int;
+  END IF;
+
+  IF transaction_log_id IS NULL THEN
+    transaction_log_id := 1;
   END IF;
 
   -- assign id for operation type
@@ -754,11 +758,13 @@ BEGIN
   RETURNING id
   INTO table_event_log_id;
 
+  /* too many variables have a bad side effect
   IF table_event_log_id IS NOT NULL THEN
     PERFORM set_config('pgmemento.' || $1 || '_' || $2 || '_' || operation_id, table_event_log_id::text, TRUE);
   ELSE
     table_event_log_id := current_setting('pgmemento.' || $1 || '_' || $2 || '_' || operation_id)::int;
   END IF;
+  */
 
   RETURN table_event_log_id;
 END;
@@ -789,10 +795,24 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_truncate() RETURNS trigger AS
 $$
+DECLARE
+  e_id INTEGER;
 BEGIN
+  -- get corresponding table event as it has already been logged
+  -- by the log_transaction_trigger in advance
+  SELECT
+    id INTO e_id
+  FROM
+    pgmemento.table_event_log 
+  WHERE
+    transaction_id = current_setting('pgmemento.' || txid_current())::int
+    AND table_relid = TG_RELID
+    AND op_id = 8;
+
   -- log the whole content of the truncated table in the row_log table
   PERFORM pgmemento.log_table_state(
-    current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 8)::int,
+    e_id,
+    --current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 8)::int,
     '{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA
   );
 
@@ -811,13 +831,28 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_insert() RETURNS trigger AS
 $$
+DECLARE
+  e_id INTEGER;
 BEGIN
+  -- get corresponding table event as it has already been logged
+  -- by the log_transaction_trigger in advance
+  SELECT
+    id INTO e_id
+  FROM
+    pgmemento.table_event_log 
+  WHERE
+    transaction_id = current_setting('pgmemento.' || txid_current())::int
+    AND table_relid = TG_RELID
+    AND op_id = 3;
+
   -- log inserted row ('changes' column can be left blank)
   INSERT INTO pgmemento.row_log
     (event_id, audit_id)
   VALUES
-    (current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 3)::int, NEW.audit_id);
-			 
+    (e_id,
+     --current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 3)::int, 
+     NEW.audit_id);
+
   RETURN NULL;
 END;
 $$
@@ -834,8 +869,20 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
 $$
 DECLARE
+  e_id INTEGER;
   jsonb_diff JSONB;
 BEGIN
+  -- get corresponding table event as it has already been logged
+  -- by the log_transaction_trigger in advance
+  SELECT
+    id INTO e_id
+  FROM
+    pgmemento.table_event_log 
+  WHERE
+    transaction_id = current_setting('pgmemento.' || txid_current())::int
+    AND table_relid = TG_RELID
+    AND op_id = 4;
+
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
   SELECT COALESCE(
@@ -852,7 +899,9 @@ BEGIN
     INSERT INTO pgmemento.row_log
       (event_id, audit_id, changes)
     VALUES 
-      (current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 4)::int, NEW.audit_id, jsonb_diff);
+      (e_id,
+       --current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 4)::int, 
+       NEW.audit_id, jsonb_diff);
   END IF;
 
   RETURN NULL;
@@ -870,12 +919,27 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_delete() RETURNS trigger AS
 $$
+DECLARE
+  e_id INTEGER;
 BEGIN
+  -- get corresponding table event as it has already been logged
+  -- by the log_transaction_trigger in advance
+  SELECT
+    id INTO e_id
+  FROM
+    pgmemento.table_event_log 
+  WHERE
+    transaction_id = current_setting('pgmemento.' || txid_current())::int
+    AND table_relid = TG_RELID
+    AND op_id = 7;
+
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log
     (event_id, audit_id, changes)
   VALUES
-    (current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 7)::int, OLD.audit_id, to_jsonb(OLD));
+    (e_id,
+     --current_setting('pgmemento.' || txid_current() || '_' || TG_RELID || '_' || 7)::int, 
+     OLD.audit_id, to_jsonb(OLD));
 
   RETURN NULL;
 END;

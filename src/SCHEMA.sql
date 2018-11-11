@@ -69,8 +69,7 @@ CREATE TABLE pgmemento.transaction_log
 );
 
 ALTER TABLE pgmemento.transaction_log
-  ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id),
-  ADD CONSTRAINT transaction_log_unique_txid UNIQUE (txid, stmt_date);
+  ADD CONSTRAINT transaction_log_pk PRIMARY KEY (id);
 
 -- event on tables are logged into the table_event_log table
 DROP TABLE IF EXISTS pgmemento.table_event_log CASCADE;
@@ -152,8 +151,8 @@ ALTER TABLE pgmemento.audit_column_log
     ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later
-DROP INDEX IF EXISTS transaction_log_txid_idx;
 DROP INDEX IF EXISTS transaction_log_date_idx;
+DROP INDEX IF EXISTS transaction_log_unique_idx;
 DROP INDEX IF EXISTS transaction_log_session_idx;
 DROP INDEX IF EXISTS table_event_log_unique_idx;
 DROP INDEX IF EXISTS row_log_event_idx;
@@ -165,8 +164,8 @@ DROP INDEX IF EXISTS column_log_table_idx;
 DROP INDEX IF EXISTS column_log_column_idx;
 DROP INDEX IF EXISTS column_log_range_idx;
 
-CREATE INDEX transaction_log_txid_idx ON pgmemento.transaction_log USING BTREE (txid);
 CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
+CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, stmt_date);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
 CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_relid, op_id);
 CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
