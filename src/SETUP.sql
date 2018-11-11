@@ -727,10 +727,6 @@ BEGIN
     transaction_log_id := current_setting('pgmemento.' || $1)::int;
   END IF;
 
-  IF transaction_log_id IS NULL THEN
-    transaction_log_id := 1;
-  END IF;
-
   -- assign id for operation type
   CASE $3
     WHEN 'CREATE TABLE' THEN operation_id := 1;
