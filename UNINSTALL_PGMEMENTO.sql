@@ -31,7 +31,8 @@ SELECT pgmemento.drop_schema_event_trigger();
 SELECT
   pgmemento.drop_table_audit(
     table_name,
-    schema_name
+    schema_name,
+    FALSE
   )
 FROM
   pgmemento.audit_table_log
