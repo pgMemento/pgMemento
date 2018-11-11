@@ -47,7 +47,15 @@ BEGIN
   -- save transaction_id for next tests
   test_transaction := current_setting('pgmemento.' || test_txid)::int;
   PERFORM set_config('pgmemento.alter_column_test', test_transaction::text, FALSE);
-  test_event := current_setting('pgmemento.' || test_txid || '_' || 'public.tests'::regclass::oid || '_5')::int;
+
+  SELECT
+    id INTO test_event
+  FROM
+    pgmemento.table_event_log 
+  WHERE
+    transaction_id = test_transaction
+    AND table_relid = 'public.tests'::regclass::oid
+    AND op_id = 5;
 
   -- query for logged transaction
   ASSERT (
