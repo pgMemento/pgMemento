@@ -44,23 +44,22 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.2: Restore versions for single audit_id'
+\echo 'TEST ':n'.2: Restore multiple versions for single audit_id'
 DO
 $$
 DECLARE
-  rec RECORD;
   query_sring TEXT := 'SELECT array_agg(lineage) FROM pgmemento.restore_records(1, 18, ''object'', ''public'', 3)';
-  lineage TEXT[];
+  lineage_values TEXT[];
   jsonb_log JSONB;
 BEGIN
   -- append saved column list to query string
   query_sring := query_sring || current_setting('pgmemento.column_list');
   
-  EXECUTE query_sring INTO lineage;
+  EXECUTE query_sring INTO lineage_values;
 
-  ASSERT lineage[1] = 'pgm_insert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_insert_test'', but found %', rec.id;
-  ASSERT lineage[2] = 'pgm_upsert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_upsert_test'', but found %', rec.lineage;
-  ASSERT lineage[3] = 'pgm_update_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_update_test'', but found %', rec.lineage;
+  ASSERT lineage_values[1] = 'pgm_insert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_insert_test'', but found %', lineage_values[1];
+  ASSERT lineage_values[2] = 'pgm_upsert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_upsert_test'', but found %', lineage_values[2];
+  ASSERT lineage_values[3] = 'pgm_update_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_update_test'', but found %', lineage_values[3];
 
   -- restore row as JSONB
   SELECT
@@ -68,11 +67,12 @@ BEGIN
   INTO
     jsonb_log
   FROM
-    pgmemento.restore_records(1, 18, 'object', 'public', 3, TRUE) AS (log JSONB);
+    pgmemento.restore_records(1, 18, 'object', 'public', 3, TRUE)
+    AS (log JSONB);
 
-  ASSERT jsonb_log->0 = '{"id": 2, "lineage": "pgm_insert_test", "audit_id": 3, "event_id": 13, "transaction_id": 13}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_insert_test", "audit_id": 3, "event_id": 13, "transaction_id": 13}'', but found %', jsonb_log;
-  ASSERT jsonb_log->1 = '{"id": 2, "lineage": "pgm_upsert_test", "audit_id": 3, "event_id": 15, "transaction_id": 14}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_upsert_test", "audit_id": 3, "event_id": 15, "transaction_id": 14}'', but found %', jsonb_log;
-  ASSERT jsonb_log->2 = '{"id": 2, "lineage": "pgm_update_test", "audit_id": 3, "event_id": 17, "transaction_id": 17}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_update_test", "audit_id": 3, "event_id": 17, "transaction_id": 17}'', but found %', jsonb_log;
+  ASSERT jsonb_log->0 = '{"id": 2, "lineage": "pgm_insert_test", "audit_id": 3, "event_id": 13, "transaction_id": 13}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_insert_test", "audit_id": 3, "event_id": 13, "transaction_id": 13}'', but found %', jsonb_log->0;
+  ASSERT jsonb_log->1 = '{"id": 2, "lineage": "pgm_upsert_test", "audit_id": 3, "event_id": 15, "transaction_id": 14}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_upsert_test", "audit_id": 3, "event_id": 15, "transaction_id": 14}'', but found %', jsonb_log->1;
+  ASSERT jsonb_log->2 = '{"id": 2, "lineage": "pgm_update_test", "audit_id": 3, "event_id": 17, "transaction_id": 17}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_update_test", "audit_id": 3, "event_id": 17, "transaction_id": 17}'', but found %', jsonb_log->2;
 END;
 $$
 LANGUAGE plpgsql;

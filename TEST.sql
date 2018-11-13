@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.3     2018-11-13   added tests to restore previous tuple states     FKun
 -- 0.3.2     2018-10-20   added tests for reverting DML changes            FKun
 -- 0.3.1     2018-10-10   added tests for reverting DDL changes            FKun
 -- 0.3.0     2018-09-27   removed test dump to only work with dummy data   FKun
@@ -86,6 +87,8 @@ VALUES
 -- test restore
 \i test/restore/TEST_RESTORE_RECORD.sql;
 \i test/restore/TEST_RESTORE_RECORDS.sql;
+\i test/restore/TEST_RESTORE_RECORDSET.sql;
+\i test/restore/TEST_RESTORE_RECORDSETS.sql;
 
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
