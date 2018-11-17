@@ -551,6 +551,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
+  existing_table_type CHAR(1);
   replace_view TEXT := '';
   restore_query TEXT;
 BEGIN
@@ -567,31 +568,38 @@ BEGIN
   END IF;
 
   -- test if table or view already exist in target schema
-  IF EXISTS (
-    SELECT
-      1
-    FROM
-      pg_class c,
-      pg_namespace n
-    WHERE
-      c.relnamespace = n.oid
-      AND c.relname = $3
-      AND n.nspname = $5
-      AND (
-        c.relkind = 'r'
-        OR c.relkind = 'v'
-      )
-  ) THEN
+  SELECT
+    c.relkind
+  INTO
+    existing_table_type
+  FROM
+    pg_class c,
+    pg_namespace n
+  WHERE
+    c.relnamespace = n.oid
+    AND c.relname = $3
+    AND n.nspname = $5
+    AND (
+      c.relkind = 'r'
+      OR c.relkind = 'v'
+    );
+
+  IF existing_table_type IS NOT NULL THEN
     IF $7 THEN
-      IF $6 = 'TABLE' THEN
-        -- drop the table state
+      -- drop existing table
+      IF existing_table_type = 'r' THEN
         PERFORM pgmemento.drop_table_state($3, $5);
       ELSE
-        replace_view := 'OR REPLACE ';
+        IF $6 = 'TABLE' THEN
+          EXECUTE format('DROP VIEW %I.%I CASCADE', $5, $3);
+        ELSE
+          replace_view := 'OR REPLACE ';
+        END IF;
       END IF;
     ELSE
-      RAISE EXCEPTION '% ''%'' in schema ''%'' does already exist. Either delete the % or choose another name or target schema.',
-                         $6, $3, $5, $6;
+      RAISE EXCEPTION
+        'Relation ''%'' in schema ''%'' does already exist. Either set the update_state flag to TRUE or choose another target schema.',
+        $3, $5;
     END IF;
   END IF;
 

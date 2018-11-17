@@ -89,6 +89,7 @@ VALUES
 \i test/restore/TEST_RESTORE_RECORDS.sql;
 \i test/restore/TEST_RESTORE_RECORDSET.sql;
 \i test/restore/TEST_RESTORE_RECORDSETS.sql;
+\i test/restore/TEST_RESTORE_TABLE_STATE.sql;
 
 -- test uninstalling everything
 \i test/setup/TEST_UNINSTALL.sql
