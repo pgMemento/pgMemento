@@ -66,7 +66,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.1: Restore schema as VIEWs'
+\echo 'TEST ':n'.2: Restore schema as TABLEs'
 DO
 $$
 DECLARE

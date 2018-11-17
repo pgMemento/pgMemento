@@ -552,7 +552,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
 $$
 DECLARE
   existing_table_type CHAR(1);
-  replace_view TEXT := '';
+  replace_view TEXT := ' ';
   restore_query TEXT;
 BEGIN
   -- test if target schema already exist
@@ -593,7 +593,7 @@ BEGIN
         IF $6 = 'TABLE' THEN
           EXECUTE format('DROP VIEW %I.%I CASCADE', $5, $3);
         ELSE
-          replace_view := 'OR REPLACE ';
+          replace_view := ' OR REPLACE ';
         END IF;
       END IF;
     ELSE
@@ -605,7 +605,7 @@ BEGIN
 
   -- let's go back in time - restore a table state for given transaction interval
   IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN
-    restore_query := 'CREATE ' 
+    restore_query := 'CREATE' 
       || replace_view || $6 
       || format(E' %I.%I AS\n', $5, $3)
       || pgmemento.restore_query($1, $2, $3, $4);
