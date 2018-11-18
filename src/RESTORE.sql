@@ -171,19 +171,21 @@ DECLARE
   tab_oid OID;
   tab_name TEXT;
   tab_schema TEXT;
+  tab_id INTEGER;
   new_tab_name TEXT;
   new_tab_schema TEXT;
   new_tab_id INTEGER;
+  join_recent_state BOOLEAN := FALSE;
   query_text TEXT := E'SELECT\n';
   find_logs TEXT;
   extract_logs TEXT;
-  join_recent_state BOOLEAN := FALSE;
 BEGIN
-  -- set variables
+  -- first check if table can be restored
   SELECT
     log_tab_oid,
     log_tab_name,
     log_tab_schema,
+    log_tab_id,
     recent_tab_name,
     recent_tab_schema,
     recent_tab_id
@@ -191,20 +193,32 @@ BEGIN
     tab_oid,
     tab_name,
     tab_schema,
+    tab_id,
     new_tab_name,
     new_tab_schema,
     new_tab_id
   FROM
     pgmemento.audit_table_check($2, $3, $4);
-  
+
+  IF tab_id IS NULL THEN
+    RAISE EXCEPTION 'Can not restore table ''%'' because it did not exist before requested transaction %', $3, $2;
+  END IF;
+
+  -- check if recent state can be queried
+  IF new_tab_id IS NULL THEN
+    new_tab_id := tab_id;
+  ELSE
+    join_recent_state := TRUE;
+  END IF;
+
   -- loop over all columns and query the historic value for each column separately
   IF $6 THEN
     SELECT
       string_agg(
-           CASE WHEN c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
+           CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
         || format('(PARTITION BY f.event_id, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
-        || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
+        || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s', c_old.column_name)
         || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
         , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
@@ -235,10 +249,10 @@ BEGIN
   ELSE
     SELECT
       string_agg(
-           CASE WHEN c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
+           CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
         || format('(PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
-        || CASE WHEN c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
+        || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s', c_old.column_name)
         , E',\n' ORDER BY c_old.ordinal_position
       ),
@@ -257,11 +271,6 @@ BEGIN
      AND c_old.data_type = c_new.data_type
      AND c_new.audit_table_id = new_tab_id
      AND upper(c_new.txid_range) IS NULL;
-  END IF;
-
-  -- check if it is necessary to join with recent state of the table
-  IF find_logs LIKE '%to_jsonb(x.%' THEN
-    join_recent_state := TRUE;
   END IF;
 
   -- finish restore query
@@ -610,8 +619,8 @@ BEGIN
       || format(E' %I.%I AS\n', $5, $3)
       || pgmemento.restore_query($1, $2, $3, $4);
 
-      -- finally execute query string
-      EXECUTE restore_query;
+    -- finally execute query string
+    EXECUTE restore_query;
   ELSE
     RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', $6;
   END IF;

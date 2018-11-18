@@ -257,83 +257,56 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   OUT recent_tab_id INTEGER
   ) RETURNS RECORD AS
 $$
-DECLARE
-  log_tab_upper_txid NUMERIC;
 BEGIN
-  BEGIN
-    -- try to get OID of table
-    log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+  -- try to get OID of table
+  log_tab_oid := ($3 || '.' || $2)::regclass::oid;
 
-    -- check if the table has existed before tid happened
-    -- save schema and name in case it was renamed
-    SELECT
-      id,
-      schema_name,
-      table_name,
-      upper(txid_range)
-    INTO
-      log_tab_id,
-      log_tab_schema,
-      log_tab_name,
-      log_tab_upper_txid 
-    FROM
-      pgmemento.audit_table_log 
-    WHERE
-      relid = log_tab_oid
-      AND txid_range @> $1::numeric;
+  -- check if the table has existed before tid happened
+  -- save schema and name in case it was renamed
+  SELECT
+    t_old.id,
+    t_old.schema_name,
+    t_old.table_name,
+    t_new.id,
+    t_new.schema_name,
+    t_new.table_name
+  INTO
+    log_tab_id,
+    log_tab_schema,
+    log_tab_name,
+    recent_tab_id,
+    recent_tab_schema,
+    recent_tab_name    
+  FROM
+    pgmemento.audit_table_log t_new
+  LEFT JOIN
+    pgmemento.audit_table_log t_old
+    ON t_old.relid = t_new.relid
+   AND t_old.txid_range @> $1::numeric
+  WHERE
+    t_new.relid = log_tab_oid
+    AND upper(t_new.txid_range) IS NULL
+    AND lower(t_new.txid_range) IS NOT NULL;
 
-    EXCEPTION
-      WHEN OTHERS THEN
-        -- check if the table exists in audit_table_log
-        SELECT
-          id,
-          schema_name,
-          table_name,
-          relid,
-          upper(txid_range)
-        INTO
-          log_tab_id,
-          log_tab_schema,
-          log_tab_name,
-          log_tab_oid,
-          log_tab_upper_txid 
-        FROM
-          pgmemento.audit_table_log 
-        WHERE
-          table_name = $2
-          AND schema_name = $3
-          AND txid_range @> $1::numeric;
-  END;
-
-  IF log_tab_oid IS NULL THEN
-    RAISE NOTICE 'Could not find table ''%'' before transaction %.', $2, $1;
-    RETURN;
-  END IF;
-
-  -- take into account that the table might not exist anymore or it has been renamed
-  -- try to find out if there is an active table with the same oid
-  IF log_tab_upper_txid IS NOT NULL THEN
-    SELECT
-      id,
-      schema_name,
-      table_name
-    INTO
-      recent_tab_id,
-      recent_tab_schema,
-      recent_tab_name
-    FROM
-      pgmemento.audit_table_log 
-    WHERE
-      relid = log_tab_oid
-      AND upper(txid_range) IS NULL
-      AND lower(txid_range) IS NOT NULL;
-  ELSE
-    recent_tab_id := log_tab_id;
-    recent_tab_schema := log_tab_schema;
-    recent_tab_name := log_tab_name;
-  END IF;
-
-  RETURN;
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- check if the table exists in audit_table_log
+      SELECT
+        id,
+        relid,
+        schema_name,
+        table_name
+      INTO
+        log_tab_id,
+        log_tab_oid,
+        log_tab_schema,
+        log_tab_name
+      FROM
+        pgmemento.audit_table_log 
+      WHERE
+        table_name = $2
+        AND schema_name = $3
+        AND txid_range @> $1::numeric;
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
