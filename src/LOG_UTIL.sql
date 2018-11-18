@@ -260,48 +260,53 @@ $$
 DECLARE
   log_tab_upper_txid NUMERIC;
 BEGIN
-  -- try to get OID of table
   BEGIN
+    -- try to get OID of table
     log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+
+    -- check if the table has existed before tid happened
+    -- save schema and name in case it was renamed
+    SELECT
+      id,
+      schema_name,
+      table_name,
+      upper(txid_range)
+    INTO
+      log_tab_id,
+      log_tab_schema,
+      log_tab_name,
+      log_tab_upper_txid 
+    FROM
+      pgmemento.audit_table_log 
+    WHERE
+      relid = log_tab_oid
+      AND txid_range @> $1::numeric;
 
     EXCEPTION
       WHEN OTHERS THEN
         -- check if the table exists in audit_table_log
         SELECT
-          relid INTO log_tab_oid
+          id,
+          schema_name,
+          table_name,
+          relid,
+          upper(txid_range)
+        INTO
+          log_tab_id,
+          log_tab_schema,
+          log_tab_name,
+          log_tab_oid,
+          log_tab_upper_txid 
         FROM
-          pgmemento.audit_table_log
+          pgmemento.audit_table_log 
         WHERE
-          schema_name = $3
-          AND table_name = $2
-        LIMIT 1;
-
-      IF log_tab_oid IS NULL THEN
-        RAISE NOTICE 'Could not find table ''%'' in log tables.', $2;
-        RETURN;
-      END IF;
+          table_name = $2
+          AND schema_name = $3
+          AND txid_range @> $1::numeric;
   END;
 
-  -- check if the table has existed before tid happened
-  -- save schema and name in case it was renamed
-  SELECT
-    id,
-    schema_name,
-    table_name,
-    upper(txid_range)
-  INTO
-    log_tab_id,
-    log_tab_schema,
-    log_tab_name,
-    log_tab_upper_txid 
-  FROM
-    pgmemento.audit_table_log 
-  WHERE
-    relid = log_tab_oid
-    AND txid_range @> $1::numeric;
-
-  IF NOT FOUND THEN
-    RAISE NOTICE 'Table ''%'' does not exist for requested before transaction %.', $2, $1;
+  IF log_tab_oid IS NULL THEN
+    RAISE NOTICE 'Could not find table ''%'' before transaction %.', $2, $1;
     RETURN;
   END IF;
 
@@ -322,10 +327,7 @@ BEGIN
       relid = log_tab_oid
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
-  END IF;
-
-  -- if not, set new_tab_* attributes, as we need them later
-  IF recent_tab_id IS NULL THEN
+  ELSE
     recent_tab_id := log_tab_id;
     recent_tab_schema := log_tab_schema;
     recent_tab_name := log_tab_name;
