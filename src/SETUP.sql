@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.7     2018-11-19   new log events for adding and dropping audit_id     FKun 
 -- 0.6.6     2018-11-10   rename log_table_state to log_table_baseline        FKun
 --                        new option for drop_table_audit to drop all logs
 -- 0.6.5     2018-11-05   get_txid_bounds_to_table function now takes OID     FKun
@@ -538,7 +539,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
 $$
 BEGIN
   -- log as 'add column' event, as it is not done by event triggers
-  PERFORM pgmemento.log_table_event(txid_current(),($2 || '.' || $1)::regclass::oid, 'ADD COLUMN');
+  PERFORM pgmemento.log_table_event(txid_current(),($2 || '.' || $1)::regclass::oid, 'ADD AUDIT_ID');
 
   -- add 'audit_id' column to table if it does not exist, yet
   IF NOT EXISTS (
@@ -732,6 +733,7 @@ BEGIN
     WHEN 'CREATE TABLE' THEN operation_id := 1;
     WHEN 'RENAME TABLE' THEN operation_id := 12;
     WHEN 'ADD COLUMN' THEN operation_id := 2;
+    WHEN 'ADD AUDIT_ID' THEN operation_id := 2;
     WHEN 'RENAME COLUMN' THEN operation_id := 22;
     WHEN 'INSERT' THEN operation_id := 3;
     WHEN 'UPDATE' THEN operation_id := 4;

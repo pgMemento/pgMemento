@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.6     2018-11-19   log ADD COLUMN events in pre alter trigger       FKun
 -- 0.6.5     2018-11-10   better treatment of dropping audit_id column     FKun
 -- 0.6.4     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.6.3     2018-10-25   bool argument in create_schema_event_trigger     FKun
@@ -111,39 +112,6 @@ BEGIN
   tab_id := pgmemento.register_audit_table($1, $2);
 
   IF tab_id IS NOT NULL THEN
-    IF EXISTS (
-      SELECT
-        1
-      FROM
-        pg_attribute a
-      LEFT JOIN (
-        SELECT
-          c.ordinal_position
-        FROM
-          pgmemento.audit_table_log a
-        JOIN
-          pgmemento.audit_column_log c
-          ON c.audit_table_id = a.id
-        WHERE
-          a.id = tab_id
-          AND upper(a.txid_range) IS NULL
-          AND lower(a.txid_range) IS NOT NULL
-          AND upper(c.txid_range) IS NULL
-          AND lower(c.txid_range) IS NOT NULL
-        ) acl
-        ON acl.ordinal_position = a.attnum
-      WHERE
-        a.attrelid = ($2 || '.' || $1)::regclass::oid
-        AND a.attname <> 'audit_id'
-        AND a.attnum > 0
-        AND NOT a.attisdropped
-        AND acl.ordinal_position IS NULL
-      LIMIT 1
-    ) THEN
-      -- EVENT: New column created
-      PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ADD COLUMN');
-    END IF;
-
     -- insert columns that do not exist in audit_column_log table
     INSERT INTO pgmemento.audit_column_log
       (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
@@ -465,6 +433,7 @@ DECLARE
   objs TEXT[];
   columnname TEXT;
   event_type TEXT;
+  added_columns TEXT[] := '{}'::text[];
   altered_columns TEXT[] := '{}'::text[];
   dropped_columns TEXT[] := '{}'::text[];
   e_id INTEGER;
@@ -486,12 +455,18 @@ BEGIN
   ddl_text := lower(ddl_text);
 
   -- are columns renamed, altered or dropped
-  IF (ddl_text LIKE '%using%' AND NOT ddl_text LIKE '%using index%') OR
-     (ddl_text LIKE '%drop column%' OR ddl_text LIKE '%drop %' OR ddl_text LIKE '%rename %') THEN
+  IF ddl_text LIKE '%using%' OR
+     ddl_text LIKE '%add column%' OR
+     ddl_text LIKE '%add %' OR 
+     ddl_text LIKE '%drop column%' OR
+     ddl_text LIKE '%drop %' OR 
+     ddl_text LIKE '%rename %'
+  THEN
     -- check if input string contains comments
-    IF ddl_text LIKE '%--%'
-    OR ddl_text LIKE '%/*%'
-    OR ddl_text LIKE '%*/%' THEN
+    IF ddl_text LIKE '%--%' OR
+       ddl_text LIKE '%/*%' OR
+       ddl_text LIKE '%*/%'
+    THEN
       RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
     END IF;
 
@@ -514,7 +489,7 @@ BEGIN
         END IF;
       END IF;
     END LOOP;
-
+    
     -- get table and schema name
     IF table_ident LIKE '%.%' THEN
       -- check if table is audited
@@ -580,43 +555,75 @@ BEGIN
       -- if keyword 'column' is found, do not reset event type
       IF columnname <> 'column' THEN
         IF event_type IS NOT NULL THEN
-          IF EXISTS (
-            SELECT
-              1
-            FROM
-              pgmemento.audit_column_log c,
-              pgmemento.audit_table_log a
-            WHERE
-              c.audit_table_id = a.id
-              AND c.column_name = columnname
-              AND a.table_name = tablename
-              AND a.schema_name = schemaname
-              AND upper(c.txid_range) IS NULL
-              AND lower(c.txid_range) IS NOT NULL
-          ) THEN
-            CASE event_type
-              WHEN 'RENAME' THEN
-                -- log event as only one RENAME COLUMN action is possible per table per transaction
-                PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
-              WHEN 'ALTER' THEN
-                altered_columns := array_append(altered_columns, columnname);
-              WHEN 'DROP' THEN
-                dropped_columns := array_append(dropped_columns, columnname);
+          IF event_type = 'ADD' THEN
+            IF do_next THEN
+              -- column does not exist yet
+              -- continue loop and hope to find a data type
+              do_next := FALSE;
+              CONTINUE;
+            ELSE
+              -- if next word is a data type it must be an ADD COLUMN event
+              IF current_setting('server_version_num')::int < 90600 THEN
+                IF to_regtype(columnname::cstring) IS NOT NULL THEN
+                  added_columns := array_append(added_columns, columnname);
+                END IF;
               ELSE
-                RAISE NOTICE 'Event type % unknown', event_type;
-            END CASE;
+                IF to_regtype(columnname) IS NOT NULL THEN
+                  added_columns := array_append(added_columns, columnname);
+                END IF;
+              END IF;
+            END IF;
+          ELSE
+            IF EXISTS (
+              SELECT
+                1
+              FROM
+                pgmemento.audit_column_log c,
+                pgmemento.audit_table_log a
+              WHERE
+                c.audit_table_id = a.id
+                AND c.column_name = columnname
+                AND a.table_name = tablename
+                AND a.schema_name = schemaname
+                AND upper(c.txid_range) IS NULL
+                AND lower(c.txid_range) IS NOT NULL
+            ) THEN
+              CASE event_type
+                WHEN 'RENAME' THEN
+                  -- log event as only one RENAME COLUMN action is possible per table per transaction
+                  PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
+                WHEN 'ALTER' THEN
+                  altered_columns := array_append(altered_columns, columnname);
+                WHEN 'DROP' THEN
+                  dropped_columns := array_append(dropped_columns, columnname);
+                ELSE
+                  RAISE NOTICE 'Event type % unknown', event_type;
+              END CASE;
+            END IF;
           END IF;
         END IF;
-        
+
         -- when event is found column name might be next
         CASE columnname
-          WHEN 'rename' THEN event_type := 'RENAME';
-          WHEN 'alter' THEN event_type := 'ALTER';
-          WHEN 'drop' THEN event_type := 'DROP';
-          ELSE event_type := NULL;
+          WHEN 'add' THEN
+            event_type := 'ADD';
+            do_next := TRUE;
+          WHEN 'rename' THEN
+            event_type := 'RENAME';
+          WHEN 'alter' THEN
+            event_type := 'ALTER';
+          WHEN 'drop' THEN
+            event_type := 'DROP';
+          ELSE
+            event_type := NULL;
         END CASE;
       END IF;
     END LOOP;
+
+    IF array_length(added_columns, 1) > 0 THEN
+      -- log ADD COLUMN table event
+      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ADD COLUMN');
+    END IF;
 
     IF array_length(altered_columns, 1) > 0 THEN
       -- log ALTER COLUMN table event
