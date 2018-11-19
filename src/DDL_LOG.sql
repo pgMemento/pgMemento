@@ -416,12 +416,31 @@ CREATE OR REPLACE FUNCTION pgmemento.table_alter_post_trigger() RETURNS event_tr
 $$
 DECLARE
   obj RECORD;
+  tid INTEGER;
 BEGIN
+  tid := current_setting('pgmemento.' || txid_current())::int;
+
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    PERFORM pgmemento.modify_ddl_log_tables(split_part(obj.object_identity, '.' ,2), obj.schema_name);
+    -- check for existing table events
+    IF EXISTS (
+      SELECT
+        1
+      FROM
+        pgmemento.table_event_log
+      WHERE
+        transaction_id = tid
+        AND table_relid = obj.objid
+        AND op_id IN (12, 2, 22, 5, 6)
+    ) THEN
+      PERFORM pgmemento.modify_ddl_log_tables(split_part(obj.object_identity, '.' ,2), obj.schema_name);
+    END IF;
   END LOOP;
+
+  EXCEPTION
+    WHEN undefined_object THEN
+      RETURN; -- no event has been logged, yet
 END;
 $$
 LANGUAGE plpgsql;
