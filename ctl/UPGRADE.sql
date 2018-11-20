@@ -52,14 +52,21 @@ CREATE UNIQUE INDEX table_event_log_unique_idx2 ON pgmemento.table_event_log USI
 
 -- remove redundant parts for table_event_log
 ALTER TABLE pgmemento.table_event_log
-  DROP CONSTRAINT table_event_log_txid_fk;
+  DROP CONSTRAINT IF EXISTS table_event_log_txid_fk;
 
-DROP INDEX table_event_log_unique_idx;
+DROP INDEX IF EXISTS table_event_log_unique_idx;
 
 ALTER TABLE pgmemento.table_event_log
-  DROP COLUMN transaction_id,
-  DROP COLUMN table_operation;
+  DROP COLUMN IF EXISTS transaction_id,
+  DROP COLUMN IF EXISTS table_operation;
 
+-- remove old constraints and indexes from transaction_log
+ALTER TABLE pgmemento.transaction_log
+  DROP CONSTRAINT IF EXISTS transaction_log_unique_txid;
+
+DROP INDEX IF EXISTS transaction_log_txid_idx;
+
+-- rename new columns and index to old names
 ALTER TABLE pgmemento.table_event_log
   RENAME COLUMN transaction_id2 TO transaction_id;
 
@@ -91,5 +98,6 @@ UPDATE pgmemento.audit_column_log acl
     ON upper(a.txid_range) = t2.txid
     WHERE a.id = acl.id;
 
--- create indexe new in v0.6
+-- create indexes new in v0.6
+CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, stmt_date);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
