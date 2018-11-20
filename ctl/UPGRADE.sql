@@ -18,7 +18,7 @@
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-07-23   initial commit                                   FKun
 --
-
+/*
 -- add columns to transaction_log that are new in v0.6
 ALTER TABLE pgmemento.transaction_log
   ADD COLUMN process_id INTEGER,
@@ -58,11 +58,11 @@ DROP INDEX table_event_log_unique_idx;
 
 ALTER TABLE pgmemento.table_event_log
   DROP COLUMN transaction_id,
-  DROP COLUMN table_operation2;
+  DROP COLUMN table_operation;
 
 ALTER TABLE pgmemento.table_event_log
   RENAME COLUMN transaction_id2 TO transaction_id;
-  
+*/  
 ALTER TABLE pgmemento.table_event_log
   RENAME COLUMN table_operation2 TO table_operation;
 
