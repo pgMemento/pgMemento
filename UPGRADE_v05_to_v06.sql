@@ -28,7 +28,7 @@ SET client_min_messages TO WARNING;
 \echo 'Updgrade pgMemento from v0.5 to v0.6 ...'
 
 \echo
-\echo 'Remember audited tables'
+\echo 'Remember activated triggers'
 CREATE TEMPORARY TABLE audit_tables_v5 AS
   SELECT
     schemaname,
@@ -37,6 +37,15 @@ CREATE TEMPORARY TABLE audit_tables_v5 AS
     pgmemento.audit_tables
   WHERE
     tg_is_active = TRUE;
+
+SELECT EXISTS (
+  SELECT
+    1
+  FROM
+    pg_event_trigger
+  WHERE
+    evtname = 'table_create_post_trigger'
+) AS is_set_create_trigger \gset
 
 \echo
 \echo 'Remove views'
@@ -88,6 +97,8 @@ SELECT
   pgmemento.create_table_log_trigger(tablename, schemaname)
 FROM
   audit_tables_v5;
+
+SELECT pgmemento.create_schema_event_trigger(:'is_set_create_trigger');
 
 \echo
 \echo 'pgMemento upgrade completed!'
