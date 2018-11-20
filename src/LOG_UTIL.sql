@@ -145,7 +145,6 @@ RETURNING
 $$
 LANGUAGE sql STRICT;
 
-
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
   table_oid OID
@@ -160,46 +159,6 @@ RETURNING
   id;
 $$
 LANGUAGE sql STRICT;
-
-
-CREATE OR REPLACE FUNCTION pgmemento.delete_key(
-  aid BIGINT,
-  key_name TEXT,
-  old_value anyelement
-  ) RETURNS SETOF BIGINT AS
-$$
-UPDATE
-  pgmemento.row_log
-SET
-  changes = changes - $2
-WHERE
-  audit_id = $1
-  AND changes @> jsonb_build_object($2, $3)
-RETURNING
-  id;
-$$
-LANGUAGE sql;
-
-
-CREATE OR REPLACE FUNCTION pgmemento.update_key(
-  aid BIGINT,
-  path_to_key_name TEXT[],
-  old_value anyelement,
-  new_value anyelement
-  ) RETURNS SETOF BIGINT AS
-$$
-UPDATE
-  pgmemento.row_log
-SET
-  changes = jsonb_set(changes, $2, to_jsonb($4), FALSE)
-WHERE
-  audit_id = $1
-  AND changes @> jsonb_build_object($2[1], $3)
-RETURNING
-  id;
-$$
-LANGUAGE sql;
-
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
   table_oid OID
@@ -236,6 +195,50 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
+* DATA CORRECTION
+*
+* Functions to delete or update a value for a given key
+* inside the audit trail
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.delete_key(
+  aid BIGINT,
+  key_name TEXT,
+  old_value anyelement
+  ) RETURNS SETOF BIGINT AS
+$$
+UPDATE
+  pgmemento.row_log
+SET
+  changes = changes - $2
+WHERE
+  audit_id = $1
+  AND changes @> jsonb_build_object($2, $3)
+RETURNING
+  id;
+$$
+LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION pgmemento.update_key(
+  aid BIGINT,
+  path_to_key_name TEXT[],
+  old_value anyelement,
+  new_value anyelement
+  ) RETURNS SETOF BIGINT AS
+$$
+UPDATE
+  pgmemento.row_log
+SET
+  changes = jsonb_set(changes, $2, to_jsonb($4), FALSE)
+WHERE
+  audit_id = $1
+  AND changes @> jsonb_build_object($2[1], $3)
+RETURNING
+  id;
+$$
+LANGUAGE sql;
 
 
 /**********************************************************
