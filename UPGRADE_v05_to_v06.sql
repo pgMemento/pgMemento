@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.0     2018-11-20   restart auditing after upgrade                 FKun
 -- 0.1.0     2018-07-23   initial commit                                 FKun
 --
 
@@ -25,6 +26,17 @@ SET client_min_messages TO WARNING;
 
 \echo
 \echo 'Updgrade pgMemento from v0.5 to v0.6 ...'
+
+\echo
+\echo 'Remember audited tables'
+CREATE TEMPORARY TABLE audit_tables_v5 AS
+  SELECT
+    schemaname,
+    tablename
+  FROM
+    pgmemento.audit_tables
+  WHERE
+    tg_is_active = TRUE;
 
 \echo
 \echo 'Remove views'
@@ -69,6 +81,13 @@ LANGUAGE plpgsql;
 \i src/RESTORE.sql
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
+
+\echo
+\echo 'Reactivate logging for previously audited tables'
+SELECT
+  pgmemento.create_table_log_trigger(tablename, schemaname)
+FROM
+  audit_tables_v5;
 
 \echo
 \echo 'pgMemento upgrade completed!'
