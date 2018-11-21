@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.3     2018-11-20   revert updates with composite data types        FKun
 -- 0.6.2     2018-09-24   improved reverts when column type is altered    FKun
 -- 0.6.1     2018-07-24   support for RENAME events & improved queries    FKun
 -- 0.6.0     2018-07-16   reflect changes in transaction_id handling      FKun
@@ -190,9 +191,33 @@ BEGIN
       BEGIN
         -- create SET part
         SELECT
-          string_agg(key || '=' || quote_nullable(value),', ') INTO stmt
-        FROM
-          jsonb_each_text($3);
+          string_agg(set_columns,', ')
+        INTO
+          stmt
+        FROM (
+          SELECT
+            CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
+              pgmemento.jsonb_unroll_for_update(j.key, j.value, p.typname)
+            ELSE
+              j.key || '=' || quote_nullable(j.value->>0)
+            END AS set_columns
+          FROM
+            jsonb_each($3) j
+          LEFT JOIN
+            pgmemento.audit_column_log c
+            ON c.column_name = j.key
+           AND jsonb_typeof(j.value) = 'object'
+           AND upper(c.txid_range) IS NULL
+          LEFT JOIN
+            pgmemento.audit_table_log t
+            ON t.id = c.audit_table_id
+           AND t.table_name = $5
+           AND t.schema_name = $6
+          LEFT JOIN
+            pg_type p
+            ON p.typname = c.data_type
+           AND p.typcategory = 'C'
+        ) u;
 
         -- try to execute UPDATE command
         EXECUTE format(

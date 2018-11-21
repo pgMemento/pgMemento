@@ -16,6 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
+--                        composite data types
 -- 0.6.2     2018-11-05   delete_table_event_log now takes OID           FKun
 -- 0.6.1     2018-11-02   new functions to get historic table layouts    FKun
 -- 0.6.0     2018-10-28   new function to update a key in logs           FKun
@@ -53,6 +55,7 @@
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_min_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
 *   get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER
+*   jsonb_unroll_for_update(path TEXT, nested_value JSONB, complex_typname TEXT) RETURNS TEXT
 *   update_key(aid BIGINT, path_to_key_name TEXT[], old_value anyelement, new_value anyelement) RETURNS SETOF BIGINT
 *
 ***********************************************************/
@@ -69,6 +72,49 @@ CREATE AGGREGATE pgmemento.jsonb_merge(jsonb)
     stype = jsonb,
     initcond = '{}'
 );
+
+
+/**********************************************************
+* JSONB UNROLL
+*
+* Helper function to revert updates with composite datatypes
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.jsonb_unroll_for_update(
+  path TEXT,
+  nested_value JSONB,
+  complex_typname TEXT
+  ) RETURNS TEXT AS
+$$
+SELECT
+  string_agg(set_columns,', ')
+FROM (
+  SELECT
+    CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
+      pgmemento.jsonb_unroll_for_update($1 || '.' || j.key, j.value, p.typname)
+    ELSE
+      $1 || '.' || j.key || '=' || quote_nullable(j.value->>0)
+    END AS set_columns
+  FROM
+    jsonb_each($2) j
+  LEFT JOIN
+    pg_attribute a
+    ON a.attname = j.key
+   AND jsonb_typeof(j.value) = 'object'
+  LEFT JOIN
+    pg_class c
+    ON c.oid = a.attrelid
+  LEFT JOIN
+    pg_type t
+    ON t.typrelid = c.oid
+   AND t.typname = $3
+  LEFT JOIN
+    pg_type p
+    ON p.typname = format_type(a.atttypid, a.atttypmod)
+   AND p.typcategory = 'C'
+) u
+$$
+LANGUAGE sql STRICT;
+
 
 /**********************************************************
 * GET TRANSACTION ID
