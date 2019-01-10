@@ -547,6 +547,7 @@ BEGIN
     -- remove schema and table name from DDL string and try to process columns
     ddl_text := replace(ddl_text, schemaname || '.', '');
     ddl_text := replace(ddl_text, tablename, '');
+    ddl_text := regexp_replace(ddl_text, 'numeric\((\d+),\ (\d+)\)', 'numeric(\1,\2)');
     objs := regexp_split_to_array(ddl_text, E'\\s+');
 
     FOREACH columnname IN ARRAY objs LOOP
