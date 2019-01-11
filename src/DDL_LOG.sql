@@ -431,9 +431,10 @@ DECLARE
   tablename TEXT;
   ntables INTEGER := 0;
   objs TEXT[];
+  obj TEXT;
   columnname TEXT;
   event_type TEXT;
-  added_columns TEXT[] := '{}'::text[];
+  added_columns BOOLEAN := FALSE;
   altered_columns TEXT[] := '{}'::text[];
   dropped_columns TEXT[] := '{}'::text[];
   e_id INTEGER;
@@ -549,8 +550,11 @@ BEGIN
     ddl_text := replace(ddl_text, tablename, '');
     objs := regexp_split_to_array(ddl_text, E'\\s+');
 
-    FOREACH columnname IN ARRAY objs LOOP
-      columnname := replace(columnname, ',', '');
+    FOREACH obj IN ARRAY objs LOOP
+      -- shrink ddl_text by obj
+      ddl_text := substr(ddl_text, position(obj in ddl_text) + length(obj), length(ddl_text));
+      -- remove commas and spaces from potential column name
+      columnname := replace(obj, ',', '');
       columnname := substring(columnname, '\S(?:.*\S)*');
       -- if keyword 'column' is found, do not reset event type
       IF columnname <> 'column' THEN
@@ -563,15 +567,24 @@ BEGIN
               CONTINUE;
             ELSE
               -- if next word is a data type it must be an ADD COLUMN event
-              IF current_setting('server_version_num')::int < 90600 THEN
-                IF to_regtype(columnname::cstring) IS NOT NULL THEN
-                  added_columns := array_append(added_columns, columnname);
-                END IF;
-              ELSE
-                IF to_regtype(columnname) IS NOT NULL THEN
-                  added_columns := array_append(added_columns, columnname);
-                END IF;
-              END IF;
+              FOR i IN 0..length(ddl_text) LOOP
+                EXIT WHEN added_columns = TRUE;
+                BEGIN
+                  IF current_setting('server_version_num')::int < 90600 THEN
+                    IF to_regtype((obj || substr(ddl_text, 1, i))::cstring) IS NOT NULL THEN
+                      added_columns := TRUE;
+                    END IF;
+                  ELSE
+                    IF to_regtype(obj || substr(ddl_text, 1, i)) IS NOT NULL THEN
+                      added_columns := TRUE;
+                    END IF;
+                  END IF;
+              
+                  EXCEPTION
+                    WHEN syntax_error THEN
+                      CONTINUE;
+                END;
+              END LOOP;
             END IF;
           ELSE
             IF EXISTS (
@@ -620,7 +633,7 @@ BEGIN
       END IF;
     END LOOP;
 
-    IF array_length(added_columns, 1) > 0 THEN
+    IF added_columns THEN
       -- log ADD COLUMN table event
       e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ADD COLUMN');
     END IF;
