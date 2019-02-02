@@ -273,8 +273,8 @@ BEGIN
   SET
     txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
   WHERE
-    table_name = $1
-    AND schema_name = $2
+    table_name = replace($1,'"','')
+    AND schema_name = replace($2,'"','')
     AND upper(txid_range) IS NULL
     AND lower(txid_range) IS NOT NULL
   RETURNING
@@ -312,8 +312,8 @@ BEGIN
     FROM
       pgmemento.audit_tables
     WHERE
-      tablename = $1
-      AND schemaname = $2
+      tablename = replace($1,'"','')
+      AND schemaname = replace($2,'"','')
   ) THEN
     RETURN NULL;
   ELSE
@@ -323,8 +323,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log 
     WHERE
-      table_name = $1
-      AND schema_name = $2
+      table_name = replace($1,'"','')
+      AND schema_name = replace($2,'"','')
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
@@ -352,7 +352,7 @@ BEGIN
       INSERT INTO pgmemento.audit_table_log
         (relid, schema_name, table_name, txid_range)
       VALUES 
-        (($2 || '.' || $1)::regclass::oid, $2, $1, numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
+        (($2 || '.' || $1)::regclass::oid, replace($2,'"',''), replace($1,'"',''), numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
       RETURNING id INTO tab_id;
 
       -- insert columns of new audited table into 'audit_column_log'
@@ -388,7 +388,7 @@ BEGIN
       -- rename unique constraint for audit_id column
       IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I_audit_id_key TO %I_audit_id_key',
-          $2, $1, old_table_name, $1);
+          replace($2,'"',''), replace($1,'"',''), old_table_name, replace($1,'"',''));
       END IF;
     END IF;
   END IF;
@@ -413,6 +413,9 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger(
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
+DECLARE
+  tablename TEXT := replace($1,'"','');
+  schemaname TEXT := replace($2,'"','');
 BEGIN
   IF EXISTS (
     SELECT
@@ -433,14 +436,14 @@ BEGIN
       'CREATE TRIGGER log_transaction_trigger
          BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_transaction()',
-         $2, $1);
+         schemaname, tablename);
 
     -- second trigger to be fired before truncate events 
     EXECUTE format(
       'CREATE TRIGGER log_truncate_trigger 
          BEFORE TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_truncate()',
-         $2, $1);
+         schemaname, tablename);
 
     /*
       row level triggers
@@ -450,21 +453,21 @@ BEGIN
       'CREATE TRIGGER log_insert_trigger
          AFTER INSERT ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert()',
-         $2, $1);
+         schemaname, tablename);
 
     -- trigger to be fired after update events
     EXECUTE format(
       'CREATE TRIGGER log_update_trigger
          AFTER UPDATE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update()',
-         $2, $1);
+         schemaname, tablename);
 
     -- trigger to be fired after insert events
     EXECUTE format(
       'CREATE TRIGGER log_delete_trigger
          AFTER DELETE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_delete()',
-         $2, $1);
+         schemaname, tablename);
   END IF;
 END;
 $$
@@ -483,7 +486,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -495,12 +498,15 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   schema_name TEXT DEFAULT 'public'::text 
   ) RETURNS SETOF VOID AS
 $$
+DECLARE
+  tablename TEXT := replace($1,'"','');
+  schemaname TEXT := replace($2,'"','');
 BEGIN
-  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', $2, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', $2, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', $2, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', $2, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schemaname, tablename);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schemaname, tablename);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schemaname, tablename);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schemaname, tablename);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schemaname, tablename);
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -518,7 +524,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -554,7 +560,7 @@ BEGIN
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
-      $2, $1);
+      replace($2,'"',''), replace($1,'"',''));
   END IF;
 END;
 $$
@@ -573,7 +579,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -600,7 +606,7 @@ BEGIN
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I_audit_id_key, DROP COLUMN audit_id',
-      $2, $1, $1);
+      replace($2,'"',''), replace($1,'"',''), replace($1,'"',''));
   ELSE
     RETURN;
   END IF;
@@ -621,7 +627,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -637,7 +643,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
 SELECT
-  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
+  array_to_string(array_agg(format('%L, %I', k, replace(v,'"',''))), ', ')
 FROM
   unnest($1) k,
   unnest($1) v
@@ -659,13 +665,13 @@ BEGIN
     EXECUTE format(
       'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
          SELECT $1, audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content FROM %I.%I ORDER BY audit_id',
-         $4, $3) USING $1;
+         replace($4,'"',''), replace($3,'"','')) USING $1;
   ELSE
     -- log content of entire table 
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
          SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         $3, $4, $3) USING $1;
+         replace($3,'"',''), replace($4,'"',''), replace($3,'"','')) USING $1;
   END IF;
 END;
 $$
@@ -964,7 +970,7 @@ BEGIN
   -- first, check if table is not empty
   EXECUTE format(
     'SELECT 1 FROM %I.%I LIMIT 1',
-    $2, $1)
+    replace($2,'"',''), replace($1,'"',''))
     INTO is_empty;
 
   IF is_empty <> 0 THEN
@@ -998,7 +1004,7 @@ BEGIN
          || 'SELECT $1, t.audit_id, NULL::jsonb AS changes FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
          || 'WHERE r.audit_id IS NULL' || pkey_columns,
-         $2, $1) USING e_id;
+         replace($2,'"',''), replace($1,'"','')) USING e_id;
     END IF;
   END IF;
 END;
@@ -1018,8 +1024,8 @@ FROM
 WHERE
   a.schema_name = d.schemaname
   AND a.table_name = d.tablename
-  AND a.schema_name = $1
-  AND d.schemaname = $1
+  AND a.schema_name = replace($1,'"','')
+  AND d.schemaname = replace($1,'"','')
   AND upper(a.txid_range) IS NULL
   AND lower(a.txid_range) IS NOT NULL
 ORDER BY
@@ -1069,7 +1075,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -1123,7 +1129,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$

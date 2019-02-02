@@ -219,7 +219,7 @@ BEGIN
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
         || format('(PARTITION BY f.event_id, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
-        || format(' AS %s', c_old.column_name)
+        || format(' AS %s', quote_ident(c_old.column_name))
         || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
         , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
       ),
@@ -231,7 +231,7 @@ BEGIN
              c_old.column_name
              || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
            )
-        || format(')::%s, NULL::%s) AS %s', c_old.data_type, c_old.data_type, c_old.column_name)
+        || format(')::%s, NULL::%s) AS %s', c_old.data_type, c_old.data_type, quote_ident(c_old.column_name))
         || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
         , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
       )
@@ -253,11 +253,11 @@ BEGIN
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
         || format('(PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
-        || format(' AS %s', c_old.column_name)
+        || format(' AS %s', quote_ident(c_old.column_name))
         , E',\n' ORDER BY c_old.ordinal_position
       ),
       string_agg(
-        format('  COALESCE((%I ->> 0)::%s, NULL::%s) AS %s', c_old.column_name, c_old.data_type, c_old.data_type, c_old.column_name)
+        format('  COALESCE((%I ->> 0)::%s, NULL::%s) AS %s', c_old.column_name, c_old.data_type, c_old.data_type, quote_ident(c_old.column_name))
         , E',\n' ORDER BY c_old.ordinal_position
       )
     INTO
@@ -457,7 +457,7 @@ $$
 SELECT
   'AS (' ||
   string_agg(
-    column_name || ' ' || data_type,
+    quote_ident(column_name) || ' ' || data_type,
     ', ' ORDER BY ordinal_position
   )
   || ', audit_id bigint)'
@@ -475,7 +475,7 @@ $$
 SELECT
   'AS (' ||
   string_agg(
-    column_name
+    quote_ident(column_name)
     || CASE WHEN column_count > 1 THEN '_' || column_count ELSE '' END
     || ' ' || data_type
   , ', ' ORDER BY ordinal_position, column_count
@@ -508,7 +508,7 @@ BEGIN
   -- get columns that exist before transaction with id end_at_tid
   SELECT
     string_agg(
-      c.column_name
+      quote_ident(c.column_name)
       || ' '
       || c.data_type
       || CASE WHEN c.column_default IS NOT NULL AND c.column_default NOT LIKE '%::regclass%'
@@ -522,8 +522,8 @@ BEGIN
     pgmemento.audit_table_log t
     ON t.id = c.audit_table_id
   WHERE
-    t.table_name = $3
-    AND t.schema_name = $4
+    t.table_name = replace($3,'"','')
+    AND t.schema_name = replace($4,'"','')
     AND t.txid_range @> $1::numeric
     AND c.txid_range @> $1::numeric;
 
@@ -535,7 +535,7 @@ BEGIN
          || ', audit_id bigint DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
          || ') '
          || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END,
-       $2);
+       replace($2,'"',''));
   END IF;
 END;
 $$
@@ -571,9 +571,9 @@ BEGIN
     FROM
       pg_namespace
     WHERE
-      nspname = $5
+      nspname = replace($5,'"','')
   ) THEN
-    EXECUTE format('CREATE SCHEMA %I', $5);
+    EXECUTE format('CREATE SCHEMA %I', replace($5,'"',''));
   END IF;
 
   -- test if table or view already exist in target schema
@@ -586,8 +586,8 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND c.relname = $3
-    AND n.nspname = $5
+    AND c.relname = replace($3,'"','')
+    AND n.nspname = replace($5,'"','')
     AND (
       c.relkind = 'r'
       OR c.relkind = 'v'
@@ -600,7 +600,7 @@ BEGIN
         PERFORM pgmemento.drop_table_state($3, $5);
       ELSE
         IF $6 = 'TABLE' THEN
-          EXECUTE format('DROP VIEW %I.%I CASCADE', $5, $3);
+          EXECUTE format('DROP VIEW %I.%I CASCADE', replace($5,'"',''), replace($3,'"',''));
         ELSE
           replace_view := ' OR REPLACE ';
         END IF;
@@ -616,7 +616,7 @@ BEGIN
   IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN
     restore_query := 'CREATE' 
       || replace_view || $6 
-      || format(E' %I.%I AS\n', $5, $3)
+      || format(E' %I.%I AS\n', replace($5,'"',''), replace($3,'"',''))
       || pgmemento.restore_query($1, $2, $3, $4);
 
     -- finally execute query string
@@ -643,7 +643,7 @@ SELECT
 FROM
   pgmemento.audit_table_log 
 WHERE
-  schema_name = $3
+  schema_name = replace($3,'"','')
   AND txid_range @> $2::numeric;
 $$
 LANGUAGE sql STRICT;

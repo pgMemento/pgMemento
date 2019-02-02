@@ -175,8 +175,8 @@ BEGIN
       LEFT JOIN (
         SELECT
           attname AS column_name,
-          $1 AS table_name,
-          $2 AS schema_name
+          replace($1,'"','') AS table_name,
+          replace($2,'"','') AS schema_name
         FROM
           pg_attribute
         WHERE
@@ -224,8 +224,8 @@ BEGIN
           ) AS data_type,
           d.adsrc AS column_default,
           a.attnotnull AS not_null,
-          $1 AS table_name,
-          $2 AS schema_name
+          replace($1,'"','') AS table_name,
+          replace($2,'"','') AS schema_name
         FROM
           pg_attribute a
         LEFT JOIN
@@ -434,6 +434,7 @@ DECLARE
   obj TEXT;
   columnname TEXT;
   event_type TEXT;
+  is_quoted BOOLEAN := FALSE;
   added_columns BOOLEAN := FALSE;
   altered_columns TEXT[] := '{}'::text[];
   dropped_columns TEXT[] := '{}'::text[];
@@ -482,7 +483,8 @@ BEGIN
 
     FOR i IN 1..length(ddl_text) LOOP
       EXIT WHEN do_next = FALSE;
-      IF substr(ddl_text,i,1) <> ' ' OR position('"' IN table_ident) = 1 THEN
+      IF substr(ddl_text,i,1) <> ' ' OR left(table_ident, 1) = '"'
+         AND NOT (substr(ddl_text,i,1) = ' ' AND right(table_ident, 1) = '"') THEN
         table_ident := table_ident || substr(ddl_text,i,1);
       ELSE
         IF length(table_ident) > 0 THEN
@@ -503,8 +505,8 @@ BEGIN
       FROM
         pgmemento.audit_table_log
       WHERE
-        table_name = split_part(table_ident, '.', 2)
-        AND schema_name = split_part(table_ident, '.', 1)
+        table_name = replace(split_part(table_ident, '.', 2),'"','')
+        AND schema_name = replace(split_part(table_ident, '.', 1),'"','')
         AND upper(txid_range) IS NULL
         AND lower(txid_range) IS NOT NULL;
 
@@ -521,7 +523,7 @@ BEGIN
         FROM
           pgmemento.audit_table_log
         WHERE
-          table_name = tablename
+          table_name = replace(tablename,'"','')
           AND upper(txid_range) IS NULL
           AND lower(txid_range) IS NOT NULL
       LOOP
@@ -561,12 +563,22 @@ BEGIN
         IF event_type IS NOT NULL THEN
           IF event_type = 'ADD' THEN
             IF do_next THEN
-              -- column does not exist yet
-              -- continue loop and hope to find a data type
-              do_next := FALSE;
+              -- after ADD we might find a column name
+              -- watch out for double quotes
+              IF left(columnname,1) = '"' THEN
+                is_quoted := TRUE;
+              END IF;
+
+              -- stop here if we think the column name is over and a data type could be next
+              IF NOT is_quoted OR right(columnname,1) = '"' THEN
+                is_quoted := FALSE;
+                do_next := FALSE;
+              END IF;
+
               CONTINUE;
             ELSE
               -- if next word is a data type it must be an ADD COLUMN event
+              -- otherwise it could also be an ADD constraint event, which is not of interest
               FOR i IN 0..length(ddl_text) LOOP
                 EXIT WHEN added_columns = TRUE;
                 BEGIN
@@ -771,8 +783,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log
     WHERE
-      table_name = split_part(ddl_text, '.', 2)
-      AND schema_name = split_part(ddl_text, '.', 1)
+      table_name = replace(split_part(ddl_text, '.', 2),'"','')
+      AND schema_name = replace(split_part(ddl_text, '.', 1),'"','')
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
@@ -789,7 +801,7 @@ BEGIN
       FROM
         pgmemento.audit_table_log
       WHERE
-        table_name = tablename
+        table_name = replace(tablename,'"','')
         AND upper(txid_range) IS NULL
         AND lower(txid_range) IS NOT NULL
     LOOP

@@ -74,7 +74,7 @@ DECLARE
 BEGIN
   -- rebuild primary key columns to index produced tables
   SELECT
-    string_agg(pga.attname,', ') INTO pkey_columns
+    string_agg(quote_ident(pga.attname),', ') INTO pkey_columns
   FROM
     pg_index pgi,
     pg_class pgc,
@@ -93,7 +93,7 @@ BEGIN
 
   EXECUTE format(
     'ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')',
-    $2, $1, $1);
+    replace($2,'"',''), replace($1,'"',''));
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -112,7 +112,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $2
+  AND n.nspname = replace($2,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -183,12 +183,12 @@ BEGIN
       -- test query
       EXECUTE format(
         'SELECT 1 FROM %I.%I a, %I.%I b WHERE a.%I = b.%I LIMIT 1',
-        $2, $1, $2, fkey.ref_table, fkey.fkey_column, fkey.ref_column);
+        replace($2,'"',''), replace($1,'"',''), replace($2,'"',''), fkey.ref_table, fkey.fkey_column, fkey.ref_column);
 
       -- recreate foreign key of original table
       EXECUTE format(
         'ALTER TABLE %I.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %I.%I ON UPDATE %I ON DELETE %I MATCH %I',
-        $2, $1, fkey.fkey_name, fkey.fkey_column, $2, fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
+        replace($2,'"',''), replace($1,'"',''), fkey.fkey_name, fkey.fkey_column, replace($2,'"',''), fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
 
       EXCEPTION
         WHEN OTHERS THEN
@@ -214,7 +214,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $2
+  AND n.nspname = replace($2,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -241,7 +241,7 @@ BEGIN
   -- rebuild user defined indexes
   FOR stmt IN 
     SELECT
-      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', $2))
+      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', replace($2,'"','')))
     FROM
       pg_index i
     JOIN
@@ -277,7 +277,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $2
+  AND n.nspname = replace($2,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -309,7 +309,7 @@ BEGIN
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = $2
+      AND n.nspname = replace($2,'"','')
       AND relkind = 'S'
   LOOP
     SELECT nextval($2 || '.' || seq) INTO seq_value;
@@ -318,7 +318,7 @@ BEGIN
     END IF;
     EXECUTE format(
       'CREATE SEQUENCE %I.%I START ' || seq_value,
-      $1, seq);
+      replace($1,'"',''), seq);
   END LOOP;
 END;
 $$
@@ -346,11 +346,11 @@ BEGIN
   IF $4 THEN
     EXECUTE format(
       'CREATE TABLE %I.%I AS SELECT * FROM %I.%I',
-      $2, $1, $3, $1);
+      replace($2,'"',''), replace($1,'"',''), replace($3,'"',''), replace($1,'"',''));
   ELSE
     EXECUTE format(
       'ALTER TABLE %I.%I SET SCHEMA %I',
-      $3, $1, $2);
+      replace($3,'"',''), replace($1,'"',''), replace($2,'"',''));
   END IF;
 END;
 $$
@@ -368,7 +368,7 @@ DECLARE
   seq_value INTEGER;
 BEGIN
   -- create new schema
-  EXECUTE format('CREATE SCHEMA %I', $1);
+  EXECUTE format('CREATE SCHEMA %I', replace($1,'"',''));
 
   -- copy or move sequences
   FOR seq IN 
@@ -379,7 +379,7 @@ BEGIN
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = $2
+      AND n.nspname = replace($2,'"','')
       AND relkind = 'S'
   LOOP
     IF $4 THEN
@@ -389,11 +389,11 @@ BEGIN
       END IF;
       EXECUTE format(
         'CREATE SEQUENCE %I.%I START ' || seq_value,
-        $1, seq);
+        replace($1,'"',''), seq);
     ELSE
       EXECUTE format(
         'ALTER SEQUENCE %I.%I SET SCHEMA %I',
-        $2, seq, $1);
+        replace($2,'"',''), seq, replace($1,'"',''));
     END IF;
   END LOOP;
 
@@ -405,7 +405,7 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND n.nspname = $2
+    AND n.nspname = replace($2,'"','')
     AND c.relkind = 'r'
     AND c.relname <> ALL (COALESCE($3,'{}')); 
  
@@ -413,7 +413,7 @@ BEGIN
   IF NOT $4 THEN
     EXECUTE format(
       'DROP SCHEMA %I CASCADE',
-      $2);
+      replace($2,'"',''));
   END IF;
 END
 $$
@@ -447,18 +447,18 @@ BEGIN
   LOOP
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I',
-      $2, $1, fkey);
+      replace($2,'"',''), replace($1,'"',''), fkey);
   END LOOP;
 
   -- hit the log_truncate_trigger
   EXECUTE format(
     'TRUNCATE TABLE %I.%I CASCADE',
-    $2, $1);
+    replace($2,'"',''), replace($1,'"',''));
 
   -- dropping the table
   EXECUTE format(
     'DROP TABLE %I.%I CASCADE',
-    $2, $1);
+    replace($2,'"',''), replace($1,'"',''));
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -476,7 +476,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = $1
+  AND n.nspname = replace($1,'"','')
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}')); 
 $$

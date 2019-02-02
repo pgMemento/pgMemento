@@ -353,8 +353,8 @@ BEGIN
       FROM
         pgmemento.audit_table_log 
       WHERE
-        table_name = $2
-        AND schema_name = $3
+        table_name = replace($2,'"','')
+        AND schema_name = replace($3,'"','')
         AND txid_range @> $1::numeric;
 END;
 $$
@@ -389,8 +389,8 @@ JOIN
   pgmemento.audit_table_log t
   ON t.id = c.audit_table_id
 WHERE
-  t.table_name = $2
-  AND t.schema_name = $3
+  t.table_name = replace($2,'"','')
+  AND t.schema_name = replace($3,'"','')
   AND t.txid_range @> $1::numeric
   AND c.txid_range @> $1::numeric;
 $$
