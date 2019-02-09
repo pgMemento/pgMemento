@@ -366,7 +366,7 @@ BEGIN
 
   WHILE fetch_next LOOP
     -- extracting the schema identifier from the DDL command
-    schema_ident := fetch_ident(ddl_text);
+    schema_ident := pgmemento.fetch_ident(ddl_text);
 
     -- shrink ddl_text by schema_ident
     ddl_text := substr(ddl_text, position(schema_ident in ddl_text) + length(schema_ident), length(ddl_text));
@@ -523,7 +523,7 @@ BEGIN
 
     WHILE fetch_next LOOP
       -- extracting the table identifier from the DDL command
-      table_ident := fetch_ident(ddl_text);
+      table_ident := pgmemento.fetch_ident(ddl_text);
 
       -- shrink ddl_text by table_ident
       ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
@@ -604,7 +604,7 @@ BEGIN
     WHILE length(ddl_text) > 0 LOOP
       -- process each single following word in DDL string
       -- hope to find event types, column names and data types
-      column_candidate := fetch_ident(ddl_text);
+      column_candidate := pgmemento.fetch_ident(ddl_text);
 
       -- exit loop when nothing has been fetched
       IF length(column_candidate) = 0 THEN
@@ -621,7 +621,7 @@ BEGIN
             -- after ADD we might find a column name
             -- if next word is a data type it must be an ADD COLUMN event
             -- otherwise it could also be an ADD constraint event, which is not audited
-            column_type := fetch_ident(ddl_text);
+            column_type := pgmemento.fetch_ident(ddl_text);
             ddl_text := substr(ddl_text, position(column_type in ddl_text) + length(column_type), length(ddl_text));
 
             FOR i IN 0..length(ddl_text) LOOP
@@ -808,7 +808,7 @@ BEGIN
 
   WHILE fetch_next LOOP
     -- extracting the table identifier from the DDL command
-    table_ident := fetch_ident(ddl_text);
+    table_ident := pgmemento.fetch_ident(ddl_text);
 
     -- shrink ddl_text by table_ident
     ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
