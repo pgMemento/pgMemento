@@ -294,6 +294,39 @@ LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
+* fetch_ident
+*
+* Helper function for to parse first word from DDL context
+* which could be a schema, table or column name
+* (incl. quotes, commas and other special characters)
+**********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(context TEXT) RETURNS TEXT AS
+$$
+DECLARE
+  sql_ident TEXT := '';
+  do_next BOOLEAN := TRUE;
+BEGIN
+  FOR i IN 1..length($1) LOOP
+    EXIT WHEN do_next = FALSE;
+    -- parse as long there is no space or within quotes
+    IF (substr($1,i,1) <> ' ' AND substr($1,i,1) <> ',' AND substr($1,i,1) <> ';')
+       OR (left(sql_ident, 1) = '"' AND NOT right(sql_ident, 1) = '"')
+    THEN
+      sql_ident := sql_ident || substr($1,i,1);
+    ELSE
+      IF length(sql_ident) > 0 THEN
+        do_next := FALSE;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN sql_ident;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
 * EVENT TRIGGER PROCEDURE schema_drop_pre_trigger
 *
 * Procedure that is called BEFORE schema will be dropped.
@@ -303,7 +336,8 @@ $$
 DECLARE
   ddl_text TEXT := current_query();
   stack TEXT;
-  schema_name TEXT;
+  fetch_next BOOLEAN := TRUE;
+  schema_ident TEXT;
   rec RECORD;
   e_id INTEGER;
 BEGIN
@@ -320,9 +354,6 @@ BEGIN
     ddl_text := stack;
   END IF;
 
-  -- lowercase everything
-  ddl_text := lower(ddl_text);
-
   -- check if input string contains comments
   IF ddl_text LIKE '%--%'
   OR ddl_text LIKE '%/*%'
@@ -330,15 +361,34 @@ BEGIN
     RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
   END IF;
 
-  -- extracting the schema name from the DDL command
-  -- remove irrelevant parts and line breaks from the DDL string
-  schema_name := replace(lower(ddl_text), 'drop schema ', '');
-  schema_name := replace(schema_name, 'if exists ', '');
-  schema_name := replace(schema_name, ' cascade', '');
-  schema_name := replace(schema_name, ' restrict', '');
-  schema_name := replace(schema_name, ';', '');
-  schema_name := regexp_replace(schema_name, '[\r\n]+', ' ', 'g');
-  schema_name := substring(schema_name, '\S(?:.*\S)*');
+  -- remove line breaks from the DDL string
+  ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
+
+  WHILE fetch_next LOOP
+    -- extracting the schema identifier from the DDL command
+    schema_ident := fetch_ident(ddl_text);
+
+    -- shrink ddl_text by schema_ident
+    ddl_text := substr(ddl_text, position(schema_ident in ddl_text) + length(schema_ident), length(ddl_text));
+
+    IF position('"' IN schema_ident) > 0 OR (
+         position('"' IN schema_ident) = 0 AND (
+           lower(schema_ident) NOT IN ('drop', 'schema', 'if', 'exists')
+         )
+       )
+    THEN
+      SELECT NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pg_namespace
+        WHERE
+          nspname = replace(schema_ident,'"','')
+      )
+      INTO
+        fetch_next;
+    END IF;
+  END LOOP;
 
   -- truncate tables to log the data
   FOR rec IN 
@@ -355,7 +405,7 @@ BEGIN
       ON d.schemaname = n.nspname
       AND d.tablename = c.relname
     WHERE
-      n.nspname = schema_name
+      n.nspname = replace(schema_ident,'"','')
     ORDER BY
       n.oid,
       d.depth DESC
@@ -413,38 +463,6 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
-
-
-/**********************************************************
-* fetch_ident
-*
-* Helper function for table_alter_pre_trigger to parse
-* table or column name (incl. quotes and commas)
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(context TEXT) RETURNS TEXT AS
-$$
-DECLARE
-  sql_ident TEXT := '';
-  do_next BOOLEAN := TRUE;
-BEGIN
-  FOR i IN 1..length($1) LOOP
-    EXIT WHEN do_next = FALSE;
-    -- parse as long there is no space or within quotes
-    IF (substr($1,i,1) <> ' ' AND substr($1,i,1) <> ',' AND substr($1,i,1) <> ';')
-       OR (left(sql_ident, 1) = '"' AND NOT right(sql_ident, 1) = '"')
-    THEN
-      sql_ident := sql_ident || substr($1,i,1);
-    ELSE
-      IF length(sql_ident) > 0 THEN
-        do_next := FALSE;
-      END IF;
-    END IF;
-  END LOOP;
-
-  RETURN sql_ident;
-END;
-$$
-LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -512,7 +530,7 @@ BEGIN
 
       IF position('"' IN table_ident) > 0 OR (
            position('"' IN table_ident) = 0 AND (
-             lower(table_ident) <> 'table' OR lower(table_ident) <> 'exists'
+             lower(table_ident) NOT IN ('drop', 'table', 'if', 'exists')
            )
          )
       THEN
@@ -758,6 +776,8 @@ $$
 DECLARE
   ddl_text TEXT := current_query();
   stack TEXT;
+  fetch_next BOOLEAN := TRUE;
+  table_ident TEXT;
   schemaname TEXT;
   tablename TEXT;
   ntables INTEGER := 0;
@@ -776,9 +796,6 @@ BEGIN
     ddl_text := stack;
   END IF;
 
-  -- lowercase everything
-  ddl_text := lower(ddl_text);
-
   -- check if input string contains comments
   IF ddl_text LIKE '%--%'
   OR ddl_text LIKE '%/*%'
@@ -786,18 +803,36 @@ BEGIN
     RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
   END IF;
 
-  -- extracting the table identifier from the DDL command
-  -- remove irrelevant parts and line breaks from the DDL string
-  ddl_text := replace(ddl_text, 'drop table ', '');
-  ddl_text := replace(ddl_text, 'if exists ', '');
-  ddl_text := replace(ddl_text, ' cascade', '');
-  ddl_text := replace(ddl_text, ' restrict', '');
-  ddl_text := replace(ddl_text, ';', '');
+  -- remove line breaks from the DDL string
   ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
-  ddl_text := substring(ddl_text, '\S(?:.*\S)*');
+
+  WHILE fetch_next LOOP
+    -- extracting the table identifier from the DDL command
+    table_ident := fetch_ident(ddl_text);
+
+    -- shrink ddl_text by table_ident
+    ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
+
+    IF position('"' IN table_ident) > 0 OR (
+         position('"' IN table_ident) = 0 AND (
+           lower(table_ident) NOT IN ('drop', 'table', 'if', 'exists')
+         )
+       )
+    THEN
+      BEGIN
+        -- if table exists, this should work
+        PERFORM table_ident::regclass;
+        fetch_next := FALSE;
+
+        EXCEPTION
+          WHEN undefined_table THEN
+            fetch_next := TRUE;
+      END;
+    END IF;
+  END LOOP;
 
   -- get table and schema name
-  IF ddl_text LIKE '%.%' THEN
+  IF table_ident LIKE '%.%' THEN
     -- check if table is audited
     SELECT
       table_name,
@@ -808,8 +843,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log
     WHERE
-      table_name = replace(split_part(ddl_text, '.', 2),'"','')
-      AND schema_name = replace(split_part(ddl_text, '.', 1),'"','')
+      table_name = replace(split_part(table_ident, '.', 2),'"','')
+      AND schema_name = replace(split_part(table_ident, '.', 1),'"','')
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
@@ -817,7 +852,7 @@ BEGIN
       ntables := 1;
     END IF;
   ELSE
-    tablename := ddl_text;
+    tablename := table_ident;
 
     -- check if table is audited and not ambiguous
     FOR schemaname IN
