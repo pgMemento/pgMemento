@@ -453,7 +453,10 @@ BEGIN
         AND table_relid = obj.objid
         AND op_id IN (12, 2, 22, 5, 6)
     ) THEN
-      PERFORM pgmemento.modify_ddl_log_tables(split_part(obj.object_identity, '.' ,2), obj.schema_name);
+      PERFORM pgmemento.modify_ddl_log_tables(
+        split_part(obj.object_identity, '.' ,2),
+        split_part(obj.object_identity, '.' ,1)
+      );
     END IF;
   END LOOP;
 
@@ -731,10 +734,18 @@ BEGIN
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
       -- log as 'create table' event
-      PERFORM pgmemento.log_table_event(txid_current(),(obj.schema_name || '.' || split_part(obj.object_identity, '.' ,2))::regclass::oid, 'CREATE TABLE');
+      PERFORM pgmemento.log_table_event(
+        txid_current(),
+        (split_part(obj.object_identity, '.' ,1) || '.' || split_part(obj.object_identity, '.' ,2))::regclass::oid,
+        'CREATE TABLE'
+      );
 
       -- start auditing for new table
-      PERFORM pgmemento.create_table_audit(split_part(obj.object_identity, '.' ,2), obj.schema_name, FALSE);
+      PERFORM pgmemento.create_table_audit(
+        split_part(obj.object_identity, '.' ,2),
+        split_part(obj.object_identity, '.' ,1),
+        FALSE
+      );
     END IF;
   END LOOP;
 END;
@@ -758,7 +769,10 @@ BEGIN
   LOOP
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
       -- update txid_range for removed table in audit_table_log table
-      PERFORM pgmemento.unregister_audit_table(obj.object_name, obj.schema_name);
+      PERFORM pgmemento.unregister_audit_table(
+        split_part(obj.object_identity, '.' ,2),
+        split_part(obj.object_identity, '.' ,1)
+      );
     END IF;
   END LOOP;
 END;
