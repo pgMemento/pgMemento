@@ -90,9 +90,9 @@ SELECT
 FROM (
   SELECT
     CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
-      pgmemento.jsonb_unroll_for_update($1 || '.' || j.key, j.value, p.typname)
+      pgmemento.jsonb_unroll_for_update($1 || '.' || quote_ident(j.key), j.value, p.typname)
     ELSE
-      $1 || '.' || j.key || '=' || quote_nullable(j.value->>0)
+      $1 || '.' || quote_ident(j.key) || '=' || quote_nullable(j.value->>0)
     END AS set_columns
   FROM
     jsonb_each($2) j
