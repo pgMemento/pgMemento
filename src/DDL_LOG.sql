@@ -393,8 +393,8 @@ BEGIN
   -- truncate tables to log the data
   FOR rec IN 
     SELECT
-      n.nspname AS schemaname,
-      c.relname AS tablename 
+      quote_ident(n.nspname) AS schemaname,
+      quote_ident(c.relname) AS tablename 
     FROM
       pg_class c
     JOIN
@@ -553,8 +553,8 @@ BEGIN
     IF table_ident LIKE '%.%' THEN
       -- check if table is audited
       SELECT
-        table_name,
-        schema_name
+        quote_ident(table_name),
+        quote_ident(schema_name)
       INTO
         tablename,
         schemaname
@@ -575,7 +575,7 @@ BEGIN
       -- check if table is audited and not ambiguous
       FOR schemaname IN
         SELECT
-          schema_name
+          quote_ident(schema_name)
         FROM
           pgmemento.audit_table_log
         WHERE
@@ -849,8 +849,8 @@ BEGIN
   IF table_ident LIKE '%.%' THEN
     -- check if table is audited
     SELECT
-      table_name,
-      schema_name
+      quote_ident(table_name),
+      quote_ident(schema_name)
     INTO
       tablename,
       schemaname
@@ -871,7 +871,7 @@ BEGIN
     -- check if table is audited and not ambiguous
     FOR schemaname IN
       SELECT
-        schema_name
+        quote_ident(schema_name)
       FROM
         pgmemento.audit_table_log
       WHERE
