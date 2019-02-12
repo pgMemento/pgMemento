@@ -368,6 +368,11 @@ BEGIN
     -- extracting the schema identifier from the DDL command
     schema_ident := pgmemento.fetch_ident(ddl_text);
 
+    -- exit loop when nothing has been fetched
+    IF length(schema_ident) = 0 THEN
+      EXIT;
+    END IF; 
+
     -- shrink ddl_text by schema_ident
     ddl_text := substr(ddl_text, position(schema_ident in ddl_text) + length(schema_ident), length(ddl_text));
 
