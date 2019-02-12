@@ -545,6 +545,8 @@ BEGIN
           EXCEPTION
             WHEN undefined_table THEN
               fetch_next := TRUE;
+            WHEN invalid_name THEN
+              fetch_next := FALSE;
         END;
       END IF;
     END LOOP;
@@ -841,6 +843,8 @@ BEGIN
         EXCEPTION
           WHEN undefined_table THEN
             fetch_next := TRUE;
+          WHEN invalid_name THEN
+            fetch_next := FALSE;
       END;
     END IF;
   END LOOP;
