@@ -20,6 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.4.0     2019-02-14   support for quoted tables and schemas           FKun
 -- 0.4.0     2018-10-25   copy_data argument changed to boolean           FKun
 -- 0.3.0     2017-07-27   avoid querying the information_schema           FKun
 --                        removed default_values_* functions
@@ -106,7 +107,7 @@ CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.pkey_table_state(c.relname, $1, n.nspname)
+  pgmemento.pkey_table_state(quote_ident(c.relname), $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -208,7 +209,7 @@ CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.fkey_table_state(c.relname, $1, n.nspname)
+  pgmemento.fkey_table_state(quote_ident(c.relname), $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -271,7 +272,7 @@ CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.index_table_state(c.relname, $1, n.nspname)
+  pgmemento.index_table_state(quote_ident(c.relname), $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -303,7 +304,7 @@ BEGIN
   -- copy or move sequences
   FOR seq IN
     SELECT
-      c.relname
+      quote_ident(c.relname)
     FROM
       pg_class c,
       pg_namespace n
@@ -399,7 +400,7 @@ BEGIN
 
   -- copy or move tables
   PERFORM
-    pgmemento.move_table_state(c.relname, $1, n.nspname, $4)
+    pgmemento.move_table_state(c.relname, $1, $2, $4)
   FROM
     pg_class c,
     pg_namespace n
@@ -470,7 +471,7 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_state(c.relname, n.nspname)
+  pgmemento.drop_table_state(quote_ident(c.relname), $1)
 FROM
   pg_class c,
   pg_namespace n

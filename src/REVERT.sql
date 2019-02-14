@@ -138,8 +138,8 @@ BEGIN
     BEGIN
       -- collect information of renamed table
       SELECT
-        'RENAME COLUMN ' || c_old.column_name ||
-        ' TO ' || c_new.column_name
+        'RENAME COLUMN ' || quote_ident(c_old.column_name) ||
+        ' TO ' || quote_ident(c_new.column_name)
       INTO
         stmt
       FROM
@@ -239,7 +239,7 @@ BEGIN
       SELECT
         string_agg(
           format('ALTER COLUMN %I SET DATA TYPE %s USING pgmemento.restore_change(%L, audit_id, %L, NULL::%s)',
-            c_new.column_name, c_old.data_type, $1, c_old.column_name, c_old.data_type),
+            c_new.column_name, c_old.data_type, $1, quote_ident(c_old.column_name), c_old.data_type),
           ', ' ORDER BY c_new.id
         ) INTO stmt
       FROM

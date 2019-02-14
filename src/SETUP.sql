@@ -480,7 +480,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_log_trigger(c.relname, $1)
+  pgmemento.create_table_log_trigger(quote_ident(c.relname), $1)
 FROM
   pg_class c,
   pg_namespace n
@@ -499,14 +499,13 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  tablename TEXT := replace($1,'"','');
   schemaname TEXT := replace($2,'"','');
 BEGIN
-  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schemaname, tablename);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schemaname, tablename);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schemaname, tablename);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schemaname, tablename);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schemaname, tablename);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schemaname, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schemaname, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schemaname, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schemaname, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schemaname, $1);
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -573,7 +572,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit_id(c.relname, $1)
+  pgmemento.create_table_audit_id(quote_ident(c.relname), $1)
 FROM
   pg_class c,
   pg_namespace n
@@ -621,7 +620,7 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit_id(c.relname, $1)
+  pgmemento.drop_table_audit_id(quote_ident(c.relname), $1)
 FROM
   pg_class c,
   pg_namespace n
@@ -1069,7 +1068,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit(c.relname, $1, $2)
+  pgmemento.create_table_audit(quote_ident(c.relname), $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -1123,7 +1122,7 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit(c.relname, $1, $2)
+  pgmemento.drop_table_audit(quote_ident(c.relname), $1, $2)
 FROM
   pg_class c,
   pg_namespace n
