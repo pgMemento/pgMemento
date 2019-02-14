@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.4     2019-02-14   Changed revert ADD AUDIT_ID events              FKun
 -- 0.6.3     2018-11-20   revert updates with composite data types        FKun
 -- 0.6.2     2018-09-24   improved reverts when column type is altered    FKun
 -- 0.6.1     2018-07-24   support for RENAME events & improved queries    FKun
@@ -132,6 +133,11 @@ BEGIN
         WHEN others THEN
           RAISE NOTICE 'Could not revert ADD COLUMN event for table %.%: %', $6, $5, SQLERRM;
     END;
+
+  -- ADD AUDIT_ID case
+  WHEN $4 = 21 THEN
+    PERFORM pgmemento.drop_table_audit($5, $6);
+
 
   -- RENAME COLUMN case
   WHEN $4 = 22 THEN

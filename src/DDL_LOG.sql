@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.7     2019-02-14   permit drop audit_id in pre alter trigger        FKun
 -- 0.6.6     2018-11-19   log ADD COLUMN events in pre alter trigger       FKun
 -- 0.6.5     2018-11-10   better treatment of dropping audit_id column     FKun
 -- 0.6.4     2018-11-01   reflect range bounds change in audit tables      FKun
@@ -400,7 +401,7 @@ BEGIN
       WHERE
         transaction_id = tid
         AND table_relid = obj.objid
-        AND op_id IN (12, 2, 22, 5, 6)
+        AND op_id IN (12, 2, 21, 22, 5, 6)
     ) THEN
       PERFORM pgmemento.modify_ddl_log_tables(split_part(obj.object_identity, '.' ,2), obj.schema_name);
     END IF;
@@ -587,7 +588,7 @@ BEGIN
               END LOOP;
             END IF;
           ELSE
-            IF EXISTS (
+            IF columnname = 'audit_id' OR EXISTS (
               SELECT
                 1
               FROM
@@ -603,6 +604,9 @@ BEGIN
             ) THEN
               CASE event_type
                 WHEN 'RENAME' THEN
+                  IF columnname = 'audit_id' THEN
+                    RAISE EXCEPTION 'Renaming the audit_id column is not possible!';
+                  END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
                   PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
                 WHEN 'ALTER' THEN
@@ -647,12 +651,14 @@ BEGIN
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
-      IF 'audit_id' <> ANY(dropped_columns) THEN
+      IF NOT ('audit_id' = ANY(dropped_columns)) THEN
         -- log DROP COLUMN table event
         e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
 
         -- log data of entire column(s)
         PERFORM pgmemento.log_table_state(e_id, dropped_columns, tablename, schemaname);
+      ELSE
+        RAISE EXCEPTION 'To remove the audit_id column, please use pgmemento.drop_table_audit!';
       END IF;
     END IF;
   END IF;
@@ -702,8 +708,24 @@ BEGIN
     SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
-      -- update txid_range for removed table in audit_table_log table
-      PERFORM pgmemento.unregister_audit_table(obj.object_name, obj.schema_name);
+      -- if DROP AUDIT_ID event exists for table in the current transaction
+      -- only create a DROP TABLE event, because auditing has already stopped
+      IF EXISTS (
+        SELECT
+          1
+        FROM
+          pgmemento.table_event_log
+        WHERE
+          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          AND table_relid = obj.objid
+          AND op_id = 8
+          AND table_operation = 'DROP AUDIT_ID'
+      ) THEN
+        PERFORM pgmemento.log_table_event(txid_current(), obj.objid, 'DROP TABLE');
+      ELSE
+        -- update txid_range for removed table in audit_table_log table
+        PERFORM pgmemento.unregister_audit_table(obj.object_name, obj.schema_name);
+      END IF;
     END IF;
   END LOOP;
 END;
