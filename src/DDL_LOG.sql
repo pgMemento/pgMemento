@@ -311,12 +311,12 @@ BEGIN
     EXIT WHEN do_next = FALSE;
     -- parse as long there is no space or within quotes
     IF (substr($1,i,1) <> ' ' AND substr($1,i,1) <> ',' AND substr($1,i,1) <> ';')
-       OR (substr(sql_ident,quote_pos,1) = '"' AND NOT right(sql_ident, 1) = '"')
+       OR (substr(sql_ident,quote_pos,1) = '"' AND NOT (right(sql_ident, 1) = '"' AND quote_pos = i-1))
     THEN
       sql_ident := sql_ident || substr($1,i,1);
-    IF substr($1,i,1) = '"' THEN
-      quote_pos := position('"' in sql_ident);
-    END IF;
+      IF substr($1,i,1) = '"' THEN
+        quote_pos := position('"' in sql_ident);
+      END IF;
     ELSE
       IF length(sql_ident) > 0 THEN
         do_next := FALSE;
