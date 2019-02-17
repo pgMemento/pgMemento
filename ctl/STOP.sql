@@ -19,7 +19,7 @@
 
 \echo
 \echo 'Drop triggers for tables in ':schema_name' schema ...'
-SELECT pgmemento.drop_schema_log_trigger(:'schema_name', string_to_array(:'except_tables',','));
+SELECT pgmemento.drop_schema_log_trigger(quote_ident(:'schema_name'), string_to_array(:'except_tables',','));
 
 \echo
 \echo 'pgMemento is stopped for ':schema_name' schema.'

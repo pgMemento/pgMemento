@@ -19,7 +19,7 @@
 
 \echo
 \echo 'Creating triggers for tables in ':schema_name' schema ...'
-SELECT pgmemento.create_schema_log_trigger(:'schema_name', string_to_array(:'except_tables',','));
+SELECT pgmemento.create_schema_log_trigger(quote_ident(:'schema_name'), string_to_array(:'except_tables',','));
 
 \echo
 \echo 'pgMemento is now started on ':schema_name' schema.'

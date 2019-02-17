@@ -387,8 +387,8 @@ BEGIN
 
       -- rename unique constraint for audit_id column
       IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
-        EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I_audit_id_key TO %I_audit_id_key',
-          replace($2,'"',''), replace($1,'"',''), old_table_name, replace($1,'"',''));
+        EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I TO %I',
+          replace($2,'"',''), replace($1,'"',''), old_table_name || '_audit_id_key', replace($1,'"','') || '_audit_id_key');
       END IF;
     END IF;
   END IF;
@@ -604,8 +604,8 @@ BEGIN
       AND NOT attisdropped
   ) THEN
     EXECUTE format(
-      'ALTER TABLE %I.%I DROP CONSTRAINT %I_audit_id_key, DROP COLUMN audit_id',
-      replace($2,'"',''), replace($1,'"',''), replace($1,'"',''));
+      'ALTER TABLE %I.%I DROP CONSTRAINT %I, DROP COLUMN audit_id',
+      replace($2,'"',''), replace($1,'"',''), replace($1,'"','') || '_audit_id_key');
   ELSE
     RETURN;
   END IF;
@@ -642,7 +642,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
 SELECT
-  array_to_string(array_agg(format('%L, %I', k, replace(v,'"',''))), ', ')
+  array_to_string(array_agg(format('%L, %I', replace(k,'"',''), replace(v,'"',''))), ', ')
 FROM
   unnest($1) k,
   unnest($1) v
