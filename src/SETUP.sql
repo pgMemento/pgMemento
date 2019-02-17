@@ -253,6 +253,23 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     depth,
     tablename;
 
+
+/**********************************************************
+* TRIM_OUTER_QUOTES
+*
+* Helper function to support auditing quoted tables
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.trim_outer_quotes(quoted_string TEXT) RETURNS TEXT AS
+$$
+SELECT
+  CASE WHEN length(btrim($1, '"')) < length($1)
+  THEN replace(substr($1, 2, length($1) - 2),'""','"')
+  ELSE replace($1,'""','"')
+  END;
+$$
+LANGUAGE sql;
+
+
 /**********************************************************
 * UN/REGISTER TABLE
 *
@@ -273,8 +290,8 @@ BEGIN
   SET
     txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
   WHERE
-    table_name = replace($1,'"','')
-    AND schema_name = replace($2,'"','')
+    table_name = pgmemento.trim_outer_quotes($1)
+    AND schema_name = pgmemento.trim_outer_quotes($2)
     AND upper(txid_range) IS NULL
     AND lower(txid_range) IS NOT NULL
   RETURNING
@@ -312,8 +329,8 @@ BEGIN
     FROM
       pgmemento.audit_tables
     WHERE
-      tablename = replace($1,'"','')
-      AND schemaname = replace($2,'"','')
+      tablename = pgmemento.trim_outer_quotes($1)
+      AND schemaname = pgmemento.trim_outer_quotes($2)
   ) THEN
     RETURN NULL;
   ELSE
@@ -323,8 +340,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log 
     WHERE
-      table_name = replace($1,'"','')
-      AND schema_name = replace($2,'"','')
+      table_name = pgmemento.trim_outer_quotes($1)
+      AND schema_name = pgmemento.trim_outer_quotes($2)
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
@@ -352,7 +369,7 @@ BEGIN
       INSERT INTO pgmemento.audit_table_log
         (relid, schema_name, table_name, txid_range)
       VALUES 
-        (($2 || '.' || $1)::regclass::oid, replace($2,'"',''), replace($1,'"',''), numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
+        (($2 || '.' || $1)::regclass::oid, pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
       RETURNING id INTO tab_id;
 
       -- insert columns of new audited table into 'audit_column_log'
@@ -388,7 +405,7 @@ BEGIN
       -- rename unique constraint for audit_id column
       IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I TO %I',
-          replace($2,'"',''), replace($1,'"',''), old_table_name || '_audit_id_key', replace($1,'"','') || '_audit_id_key');
+          pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), old_table_name || '_audit_id_key', pgmemento.trim_outer_quotes($1) || '_audit_id_key');
       END IF;
     END IF;
   END IF;
@@ -414,8 +431,8 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  tablename TEXT := replace($1,'"','');
-  schemaname TEXT := replace($2,'"','');
+  tablename TEXT := pgmemento.trim_outer_quotes($1);
+  schemaname TEXT := pgmemento.trim_outer_quotes($2);
 BEGIN
   IF EXISTS (
     SELECT
@@ -486,7 +503,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -499,7 +516,7 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  schemaname TEXT := replace($2,'"','');
+  schemaname TEXT := pgmemento.trim_outer_quotes($2);
 BEGIN
   EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schemaname, $1);
   EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schemaname, $1);
@@ -523,7 +540,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -559,7 +576,7 @@ BEGIN
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
-      replace($2,'"',''), replace($1,'"',''));
+      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
   END IF;
 END;
 $$
@@ -578,7 +595,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -605,7 +622,7 @@ BEGIN
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I, DROP COLUMN audit_id',
-      replace($2,'"',''), replace($1,'"',''), replace($1,'"','') || '_audit_id_key');
+      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($1) || '_audit_id_key');
   ELSE
     RETURN;
   END IF;
@@ -626,7 +643,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -642,7 +659,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
 SELECT
-  array_to_string(array_agg(format('%L, %I', replace(k,'"',''), replace(v,'"',''))), ', ')
+  array_to_string(array_agg(format('%L, %I', pgmemento.trim_outer_quotes(k), pgmemento.trim_outer_quotes(v))), ', ')
 FROM
   unnest($1) k,
   unnest($1) v
@@ -664,13 +681,13 @@ BEGIN
     EXECUTE format(
       'INSERT INTO pgmemento.row_log(event_id, audit_id, changes)
          SELECT $1, audit_id, jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content FROM %I.%I ORDER BY audit_id',
-         replace($4,'"',''), replace($3,'"','')) USING $1;
+         pgmemento.trim_outer_quotes($4), pgmemento.trim_outer_quotes($3)) USING $1;
   ELSE
     -- log content of entire table 
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (event_id, audit_id, changes)
          SELECT $1, audit_id, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         replace($3,'"',''), replace($4,'"',''), replace($3,'"','')) USING $1;
+         pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($4), pgmemento.trim_outer_quotes($3)) USING $1;
   END IF;
 END;
 $$
@@ -969,7 +986,7 @@ BEGIN
   -- first, check if table is not empty
   EXECUTE format(
     'SELECT 1 FROM %I.%I LIMIT 1',
-    replace($2,'"',''), replace($1,'"',''))
+    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1))
     INTO is_empty;
 
   IF is_empty <> 0 THEN
@@ -1003,7 +1020,7 @@ BEGIN
          || 'SELECT $1, t.audit_id, NULL::jsonb AS changes FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
          || 'WHERE r.audit_id IS NULL' || pkey_columns,
-         replace($2,'"',''), replace($1,'"','')) USING e_id;
+         pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1)) USING e_id;
     END IF;
   END IF;
 END;
@@ -1023,8 +1040,8 @@ FROM
 WHERE
   a.schema_name = d.schemaname
   AND a.table_name = d.tablename
-  AND a.schema_name = replace($1,'"','')
-  AND d.schemaname = replace($1,'"','')
+  AND a.schema_name = pgmemento.trim_outer_quotes($1)
+  AND d.schemaname = pgmemento.trim_outer_quotes($1)
   AND upper(a.txid_range) IS NULL
   AND lower(a.txid_range) IS NOT NULL
 ORDER BY
@@ -1074,7 +1091,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -1128,7 +1145,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$

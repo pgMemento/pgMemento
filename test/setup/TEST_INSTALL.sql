@@ -99,7 +99,7 @@ BEGIN
     p.pronamespace = n.oid
     AND n.nspname = 'pgmemento';
 
-  ASSERT array_length(pgm_objects,1) = 78, 'Error: Incorrect number of stored procedures!';
+  ASSERT array_length(pgm_objects,1) = 79, 'Error: Incorrect number of stored procedures!';
   ASSERT pgm_objects[1] = 'audit_table_check;record;tid integer, tab_name text, tab_schema text, OUT log_tab_oid oid, OUT log_tab_name text, OUT log_tab_schema text, OUT log_tab_id integer, OUT recent_tab_name text, OUT recent_tab_schema text, OUT recent_tab_id integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[2] = 'column_array_to_column_list;text;columns text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[3] = 'create_restore_template;SETOF void;until_tid integer, template_name text, table_name text, schema_name text DEFAULT ''public''::text, preserve_template boolean DEFAULT false', 'Error: Expected different function and/or arguments';
@@ -176,8 +176,9 @@ BEGIN
   ASSERT pgm_objects[74] = 'table_create_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[75] = 'table_drop_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[76] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[77] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[78] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
+  ASSERT pgm_objects[77] = 'trim_outer_quotes;text;quoted_string text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[78] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[79] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
 END
 $$
 LANGUAGE plpgsql;

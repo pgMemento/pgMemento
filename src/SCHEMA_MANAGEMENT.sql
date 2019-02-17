@@ -94,7 +94,7 @@ BEGIN
 
   EXECUTE format(
     'ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')',
-    replace($2,'"',''), replace($1,'"',''));
+    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -113,7 +113,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($2,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($2)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -184,12 +184,12 @@ BEGIN
       -- test query
       EXECUTE format(
         'SELECT 1 FROM %I.%I a, %I.%I b WHERE a.%I = b.%I LIMIT 1',
-        replace($2,'"',''), replace($1,'"',''), replace($2,'"',''), fkey.ref_table, fkey.fkey_column, fkey.ref_column);
+        pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($2), fkey.ref_table, fkey.fkey_column, fkey.ref_column);
 
       -- recreate foreign key of original table
       EXECUTE format(
         'ALTER TABLE %I.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %I.%I ON UPDATE %I ON DELETE %I MATCH %I',
-        replace($2,'"',''), replace($1,'"',''), fkey.fkey_name, fkey.fkey_column, replace($2,'"',''), fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
+        pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), fkey.fkey_name, fkey.fkey_column, pgmemento.trim_outer_quotes($2), fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
 
       EXCEPTION
         WHEN OTHERS THEN
@@ -215,7 +215,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($2,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($2)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -242,7 +242,7 @@ BEGIN
   -- rebuild user defined indexes
   FOR stmt IN 
     SELECT
-      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', replace($2,'"','')))
+      pgmemento.trim_outer_quotes(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', pgmemento.trim_outer_quotes($2)))
     FROM
       pg_index i
     JOIN
@@ -278,7 +278,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($2,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($2)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
@@ -310,7 +310,7 @@ BEGIN
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = replace($2,'"','')
+      AND n.nspname = pgmemento.trim_outer_quotes($2)
       AND relkind = 'S'
   LOOP
     SELECT nextval($2 || '.' || seq) INTO seq_value;
@@ -319,7 +319,7 @@ BEGIN
     END IF;
     EXECUTE format(
       'CREATE SEQUENCE %I.%I START ' || seq_value,
-      replace($1,'"',''), seq);
+      pgmemento.trim_outer_quotes($1), seq);
   END LOOP;
 END;
 $$
@@ -347,11 +347,11 @@ BEGIN
   IF $4 THEN
     EXECUTE format(
       'CREATE TABLE %I.%I AS SELECT * FROM %I.%I',
-      replace($2,'"',''), replace($1,'"',''), replace($3,'"',''), replace($1,'"',''));
+      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($1));
   ELSE
     EXECUTE format(
       'ALTER TABLE %I.%I SET SCHEMA %I',
-      replace($3,'"',''), replace($1,'"',''), replace($2,'"',''));
+      pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($2));
   END IF;
 END;
 $$
@@ -369,7 +369,7 @@ DECLARE
   seq_value INTEGER;
 BEGIN
   -- create new schema
-  EXECUTE format('CREATE SCHEMA %I', replace($1,'"',''));
+  EXECUTE format('CREATE SCHEMA %I', pgmemento.trim_outer_quotes($1));
 
   -- copy or move sequences
   FOR seq IN 
@@ -380,7 +380,7 @@ BEGIN
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = replace($2,'"','')
+      AND n.nspname = pgmemento.trim_outer_quotes($2)
       AND relkind = 'S'
   LOOP
     IF $4 THEN
@@ -390,11 +390,11 @@ BEGIN
       END IF;
       EXECUTE format(
         'CREATE SEQUENCE %I.%I START ' || seq_value,
-        replace($1,'"',''), seq);
+        pgmemento.trim_outer_quotes($1), seq);
     ELSE
       EXECUTE format(
         'ALTER SEQUENCE %I.%I SET SCHEMA %I',
-        replace($2,'"',''), seq, replace($1,'"',''));
+        pgmemento.trim_outer_quotes($2), seq, pgmemento.trim_outer_quotes($1));
     END IF;
   END LOOP;
 
@@ -406,7 +406,7 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND n.nspname = replace($2,'"','')
+    AND n.nspname = pgmemento.trim_outer_quotes($2)
     AND c.relkind = 'r'
     AND c.relname <> ALL (COALESCE($3,'{}')); 
  
@@ -414,7 +414,7 @@ BEGIN
   IF NOT $4 THEN
     EXECUTE format(
       'DROP SCHEMA %I CASCADE',
-      replace($2,'"',''));
+      pgmemento.trim_outer_quotes($2));
   END IF;
 END
 $$
@@ -448,18 +448,18 @@ BEGIN
   LOOP
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I',
-      replace($2,'"',''), replace($1,'"',''), fkey);
+      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), fkey);
   END LOOP;
 
   -- hit the log_truncate_trigger
   EXECUTE format(
     'TRUNCATE TABLE %I.%I CASCADE',
-    replace($2,'"',''), replace($1,'"',''));
+    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
 
   -- dropping the table
   EXECUTE format(
     'DROP TABLE %I.%I CASCADE',
-    replace($2,'"',''), replace($1,'"',''));
+    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -477,7 +477,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = replace($1,'"','')
+  AND n.nspname = pgmemento.trim_outer_quotes($1)
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}')); 
 $$

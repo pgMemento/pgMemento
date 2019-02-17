@@ -176,8 +176,8 @@ BEGIN
       LEFT JOIN (
         SELECT
           attname AS column_name,
-          replace($1,'"','') AS table_name,
-          replace($2,'"','') AS schema_name
+          pgmemento.trim_outer_quotes($1) AS table_name,
+          pgmemento.trim_outer_quotes($2) AS schema_name
         FROM
           pg_attribute
         WHERE
@@ -225,8 +225,8 @@ BEGIN
           ) AS data_type,
           d.adsrc AS column_default,
           a.attnotnull AS not_null,
-          replace($1,'"','') AS table_name,
-          replace($2,'"','') AS schema_name
+          pgmemento.trim_outer_quotes($1) AS table_name,
+          pgmemento.trim_outer_quotes($2) AS schema_name
         FROM
           pg_attribute a
         LEFT JOIN
@@ -401,7 +401,7 @@ BEGIN
         FROM
           pg_namespace
         WHERE
-          nspname = replace(schema_ident,'"','')
+          nspname = pgmemento.trim_outer_quotes(schema_ident)
       )
       INTO
         fetch_next;
@@ -423,7 +423,7 @@ BEGIN
       ON d.schemaname = n.nspname
       AND d.tablename = c.relname
     WHERE
-      n.nspname = replace(schema_ident,'"','')
+      n.nspname = pgmemento.trim_outer_quotes(schema_ident)
     ORDER BY
       n.oid,
       d.depth DESC
@@ -581,8 +581,8 @@ BEGIN
       FROM
         pgmemento.audit_table_log
       WHERE
-        table_name = replace(split_part(table_ident, '.', 2),'"','')
-        AND schema_name = replace(split_part(table_ident, '.', 1),'"','')
+        table_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 2))
+        AND schema_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 1))
         AND upper(txid_range) IS NULL
         AND lower(txid_range) IS NOT NULL;
 
@@ -599,7 +599,7 @@ BEGIN
         FROM
           pgmemento.audit_table_log
         WHERE
-          table_name = replace(tablename,'"','')
+          table_name = pgmemento.trim_outer_quotes(tablename)
           AND upper(txid_range) IS NULL
           AND lower(txid_range) IS NOT NULL
       LOOP
@@ -674,9 +674,9 @@ BEGIN
                 pgmemento.audit_table_log a
               WHERE
                 c.audit_table_id = a.id
-                AND c.column_name = replace(column_candidate,'"','')
-                AND a.table_name = replace(tablename,'"','')
-                AND a.schema_name = replace(schemaname,'"','')
+                AND c.column_name = pgmemento.trim_outer_quotes(column_candidate)
+                AND a.table_name = pgmemento.trim_outer_quotes(tablename)
+                AND a.schema_name = pgmemento.trim_outer_quotes(schemaname)
                 AND upper(c.txid_range) IS NULL
                 AND lower(c.txid_range) IS NOT NULL
             ) THEN
@@ -879,8 +879,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log
     WHERE
-      table_name = replace(split_part(table_ident, '.', 2),'"','')
-      AND schema_name = replace(split_part(table_ident, '.', 1),'"','')
+      table_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 2))
+      AND schema_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 1))
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
@@ -897,7 +897,7 @@ BEGIN
       FROM
         pgmemento.audit_table_log
       WHERE
-        table_name = replace(tablename,'"','')
+        table_name = pgmemento.trim_outer_quotes(tablename)
         AND upper(txid_range) IS NULL
         AND lower(txid_range) IS NOT NULL
     LOOP

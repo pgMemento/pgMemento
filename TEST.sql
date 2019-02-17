@@ -105,6 +105,6 @@ DROP TABLE object;
 SET search_path TO pg_catalog,public;
 
 DROP EXTENSION postgis CASCADE;
-
 \echo
 \echo 'pgMemento test completed!'
+

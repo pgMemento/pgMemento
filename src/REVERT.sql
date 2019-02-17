@@ -278,7 +278,7 @@ BEGIN
           || quote_ident(c_old.column_name)
           || ' '
           || CASE WHEN c_old.column_default LIKE 'nextval(%'
-                   AND replace(c_old.column_default,'"','') LIKE E'%_seq\'::regclass)' THEN
+                   AND pgmemento.trim_outer_quotes(c_old.column_default) LIKE E'%_seq\'::regclass)' THEN
                CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                     WHEN c_old.data_type = 'integer' THEN 'serial'
                     WHEN c_old.data_type = 'bigint' THEN 'bigserial'
@@ -358,7 +358,7 @@ BEGIN
         quote_ident(c_old.column_name)
         || ' '
         || CASE WHEN c_old.column_default LIKE 'nextval(%'
-                 AND replace(c_old.column_default,'"','') LIKE E'%_seq\'::regclass)' THEN
+                 AND pgmemento.trim_outer_quotes(c_old.column_default) LIKE E'%_seq\'::regclass)' THEN
              CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                   WHEN c_old.data_type = 'integer' THEN 'serial'
                   WHEN c_old.data_type = 'bigint' THEN 'bigserial'
