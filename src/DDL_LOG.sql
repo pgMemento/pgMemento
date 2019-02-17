@@ -667,7 +667,7 @@ BEGIN
               END;
             END LOOP;
           ELSE
-            IF columnname = 'audit_id' OR EXISTS (
+            IF column_candidate = 'audit_id' OR EXISTS (
               SELECT
                 1
               FROM
@@ -683,7 +683,7 @@ BEGIN
             ) THEN
               CASE event_type
                 WHEN 'RENAME' THEN
-                  IF columnname = 'audit_id' THEN
+                  IF column_candidate = 'audit_id' THEN
                     RAISE EXCEPTION 'Renaming the audit_id column is not possible!';
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction

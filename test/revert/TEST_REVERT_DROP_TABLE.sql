@@ -68,7 +68,7 @@ BEGIN
     transaction_id = test_transaction;
 
   ASSERT event_op_ids[1] = 1, 'Error: Exepected id 1 for CREATE TABLE, but found %!', event_op_ids[1];
-  ASSERT event_op_ids[2] = 2, 'Error: Exepected id 2 for ADD AUDIT_ID, but found %!', event_op_ids[2];
+  ASSERT event_op_ids[2] = 21, 'Error: Exepected id 2 for ADD AUDIT_ID, but found %!', event_op_ids[2];
   ASSERT event_op_ids[3] = 3, 'Error: Exepected id 3 for INSERT, but found %!', event_op_ids[3];
 END;
 $$
