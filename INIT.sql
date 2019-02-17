@@ -33,7 +33,7 @@ SELECT pgmemento.create_schema_event_trigger(CASE WHEN lower(:'trigger_create_ta
 
 \echo
 \echo 'Start auditing for tables in ':schema_name' schema ...'
-SELECT pgmemento.create_schema_audit(:'schema_name', CASE WHEN lower(:'log_data') = 'y' OR lower(:'log_data') = 'yes' THEN TRUE ELSE FALSE END, string_to_array(:'except_tables',','));
+SELECT pgmemento.create_schema_audit(quote_ident(:'schema_name'), CASE WHEN lower(:'log_data') = 'y' OR lower(:'log_data') = 'yes' THEN TRUE ELSE FALSE END, string_to_array(:'except_tables',','));
 
 \echo
 \echo 'pgMemento is now initialized on ':schema_name' schema.'

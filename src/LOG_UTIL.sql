@@ -90,9 +90,9 @@ SELECT
 FROM (
   SELECT
     CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
-      pgmemento.jsonb_unroll_for_update($1 || '.' || j.key, j.value, p.typname)
+      pgmemento.jsonb_unroll_for_update($1 || '.' || quote_ident(j.key), j.value, p.typname)
     ELSE
-      $1 || '.' || j.key || '=' || quote_nullable(j.value->>0)
+      $1 || '.' || quote_ident(j.key) || '=' || quote_nullable(j.value->>0)
     END AS set_columns
   FROM
     jsonb_each($2) j
@@ -353,8 +353,8 @@ BEGIN
       FROM
         pgmemento.audit_table_log 
       WHERE
-        table_name = $2
-        AND schema_name = $3
+        table_name = pgmemento.trim_outer_quotes($2)
+        AND schema_name = pgmemento.trim_outer_quotes($3)
         AND txid_range @> $1::numeric;
 END;
 $$
@@ -389,8 +389,8 @@ JOIN
   pgmemento.audit_table_log t
   ON t.id = c.audit_table_id
 WHERE
-  t.table_name = $2
-  AND t.schema_name = $3
+  t.table_name = pgmemento.trim_outer_quotes($2)
+  AND t.schema_name = pgmemento.trim_outer_quotes($3)
   AND t.txid_range @> $1::numeric
   AND c.txid_range @> $1::numeric;
 $$
