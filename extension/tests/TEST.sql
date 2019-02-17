@@ -32,20 +32,20 @@ SET client_min_messages TO WARNING;
 -- prepare test database
 \echo
 \echo 'Install pgMemento'
-\i INSTALL_PGMEMENTO.sql
+CREATE EXTENSION if not exists pgmemento;
 
 -- add PostGIS extension
-CREATE EXTENSION postgis;
+CREATE EXTENSION if not exists postgis;
 
 \i test/SUITE.sql
-
-\echo
-\echo 'Uninstall pgMemento'
-DROP SCHEMA pgmemento CASCADE;
-
-SET search_path TO pg_catalog,public;
 
 DROP EXTENSION postgis CASCADE;
 
 \echo
+\echo 'Uninstall pgMemento'
+DROP EXTENSION pgmemento CASCADE;
+
+\echo
+\! psql --version
 \echo 'pgMemento test completed!'
+\echo
