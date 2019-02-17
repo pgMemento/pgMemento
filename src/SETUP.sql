@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.8     2019-02-14   ADD AUDIT_ID event gets its own op_id               FKun
 -- 0.6.7     2018-11-19   new log events for adding and dropping audit_id     FKun 
 -- 0.6.6     2018-11-10   rename log_table_state to log_table_baseline        FKun
 --                        new option for drop_table_audit to drop all logs
@@ -755,7 +756,7 @@ BEGIN
     WHEN 'CREATE TABLE' THEN operation_id := 1;
     WHEN 'RENAME TABLE' THEN operation_id := 12;
     WHEN 'ADD COLUMN' THEN operation_id := 2;
-    WHEN 'ADD AUDIT_ID' THEN operation_id := 2;
+    WHEN 'ADD AUDIT_ID' THEN operation_id := 21;
     WHEN 'RENAME COLUMN' THEN operation_id := 22;
     WHEN 'INSERT' THEN operation_id := 3;
     WHEN 'UPDATE' THEN operation_id := 4;

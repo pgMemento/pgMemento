@@ -23,37 +23,9 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento drop log components'
 
-\echo
-\echo 'TEST ':n'.1: Drop audit_id column'
-DO
-$$
-DECLARE
-  tab TEXT := 'object';
-BEGIN
-  -- drop audit_id column. It should fire a DDL trigger to fill audit tables and update audit_column_log
-  PERFORM pgmemento.drop_table_audit_id(tab, 'public');
-
-  -- test if audit_id column has been dropped
-  ASSERT (
-    SELECT NOT EXISTS(
-      SELECT
-        1
-      FROM
-        pg_attribute
-      WHERE
-        attrelid = ('public.' || tab)::regclass::oid
-        AND attnum > 0
-        AND NOT attisdropped
-        AND attname = 'audit_id'
-    )
-  ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
-END;
-$$
-LANGUAGE plpgsql;
-
 
 \echo
-\echo 'TEST ':n'.2: Drop log trigger'
+\echo 'TEST ':n'.1: Drop log trigger'
 DO
 $$
 DECLARE
@@ -94,7 +66,7 @@ LANGUAGE plpgsql;
 
 
 \echo
-\echo 'TEST ':n'.3: Drop event trigger'
+\echo 'TEST ':n'.2: Drop event trigger'
 DO
 $$
 BEGIN
@@ -124,6 +96,35 @@ BEGIN
         ON t.evtname = p.pgm_event_trigger
     )
   ), 'Error: Some event trigger still exist. Drop function did not work properly!';
+END;
+$$
+LANGUAGE plpgsql;
+
+
+\echo
+\echo 'TEST ':n'.3: Drop audit_id column'
+DO
+$$
+DECLARE
+  tab TEXT := 'object';
+BEGIN
+  -- drop audit_id column. It should fire a DDL trigger to fill audit tables and update audit_column_log
+  PERFORM pgmemento.drop_table_audit_id(tab, 'public');
+
+  -- test if audit_id column has been dropped
+  ASSERT (
+    SELECT NOT EXISTS(
+      SELECT
+        1
+      FROM
+        pg_attribute
+      WHERE
+        attrelid = ('public.' || tab)::regclass::oid
+        AND attnum > 0
+        AND NOT attisdropped
+        AND attname = 'audit_id'
+    )
+  ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
 END;
 $$
 LANGUAGE plpgsql;
