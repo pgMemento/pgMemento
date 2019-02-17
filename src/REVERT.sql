@@ -111,7 +111,7 @@ BEGIN
       SELECT
         string_agg(
           'DROP COLUMN '
-          || c.column_name,
+          || quote_ident(c.column_name),
           ', ' ORDER BY c.id DESC
         ) INTO stmt
       FROM
@@ -144,8 +144,8 @@ BEGIN
     BEGIN
       -- collect information of renamed table
       SELECT
-        'RENAME COLUMN ' || c_old.column_name ||
-        ' TO ' || c_new.column_name
+        'RENAME COLUMN ' || quote_ident(c_old.column_name) ||
+        ' TO ' || quote_ident(c_new.column_name)
       INTO
         stmt
       FROM
@@ -205,7 +205,7 @@ BEGIN
             CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
               pgmemento.jsonb_unroll_for_update(j.key, j.value, p.typname)
             ELSE
-              j.key || '=' || quote_nullable(j.value->>0)
+              quote_ident(j.key) || '=' || quote_nullable(j.value->>0)
             END AS set_columns
           FROM
             jsonb_each($3) j
@@ -245,7 +245,7 @@ BEGIN
       SELECT
         string_agg(
           format('ALTER COLUMN %I SET DATA TYPE %s USING pgmemento.restore_change(%L, audit_id, %L, NULL::%s)',
-            c_new.column_name, c_old.data_type, $1, c_old.column_name, c_old.data_type),
+            c_new.column_name, c_old.data_type, $1, quote_ident(c_old.column_name), c_old.data_type),
           ', ' ORDER BY c_new.id
         ) INTO stmt
       FROM
@@ -281,10 +281,10 @@ BEGIN
       SELECT
         string_agg(
           'ADD COLUMN '
-          || c_old.column_name
+          || quote_ident(c_old.column_name)
           || ' '
           || CASE WHEN c_old.column_default LIKE 'nextval(%'
-                   AND c_old.column_default LIKE E'%_seq\'::regclass)' THEN
+                   AND pgmemento.trim_outer_quotes(c_old.column_default) LIKE E'%_seq\'::regclass)' THEN
                CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                     WHEN c_old.data_type = 'integer' THEN 'serial'
                     WHEN c_old.data_type = 'bigint' THEN 'bigserial'
@@ -361,10 +361,10 @@ BEGIN
     -- collect information of columns of dropped table
     SELECT
       string_agg(
-        c_old.column_name
+        quote_ident(c_old.column_name)
         || ' '
         || CASE WHEN c_old.column_default LIKE 'nextval(%'
-                 AND c_old.column_default LIKE E'%_seq\'::regclass)' THEN
+                 AND pgmemento.trim_outer_quotes(c_old.column_default) LIKE E'%_seq\'::regclass)' THEN
              CASE WHEN c_old.data_type = 'smallint' THEN 'smallserial'
                   WHEN c_old.data_type = 'integer' THEN 'serial'
                   WHEN c_old.data_type = 'bigint' THEN 'bigserial'
