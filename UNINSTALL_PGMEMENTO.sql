@@ -46,7 +46,7 @@ DROP SCHEMA pgmemento CASCADE;
 
 \echo
 \echo 'Updating search path ...'
-SELECT pgmemento.replace(current_setting('search_path'), ', pgmemento', '') AS db_path \gset
+SELECT replace(current_setting('search_path'), ', pgmemento', '') AS db_path \gset
 ALTER DATABASE :"DBNAME" SET search_path TO :db_path;
 
 \echo

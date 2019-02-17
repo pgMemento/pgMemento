@@ -242,7 +242,7 @@ BEGIN
   -- rebuild user defined indexes
   FOR stmt IN 
     SELECT
-      pgmemento.trim_outer_quotes(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', pgmemento.trim_outer_quotes($2)))
+      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', pgmemento.trim_outer_quotes($2)))
     FROM
       pg_index i
     JOIN
