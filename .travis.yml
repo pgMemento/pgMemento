@@ -2,6 +2,9 @@ language: SQL
 dist: trusty
 sudo: true
 
+services:
+  - docker
+
 addons:
   postgresql: "9.5"
   apt:
@@ -14,3 +17,4 @@ before_install:
 
 script:
     - psql -U postgres -d pgmemento_testdb -a -f TEST.sql
+    - ./extension/tests/run.sh
