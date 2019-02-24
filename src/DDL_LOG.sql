@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.6.9     2019-02-24   new function flatten_ddl to remove comments      FKun
 -- 0.6.8     2019-02-14   permit drop audit_id in pre alter trigger        FKun
 -- 0.6.7     2019-02-09   fetch_ident: improved parsing of DDL context     FKun
 -- 0.6.6     2018-11-19   log ADD COLUMN events in pre alter trigger       FKun
@@ -43,6 +44,8 @@
 * FUNCTIONS:
 *   create_schema_event_trigger(trigger_create_table BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
+*   fetch_ident(context TEXT) RETURNS TEXT
+*   flatten_ddl(ddl_command TEXT) RETURNS TEXT
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
 *
@@ -71,7 +74,7 @@ DECLARE
   ddl_pos INTEGER;
 BEGIN
   -- split context by lines
-  objs := regexp_split_to_array($1, E'\\n+');
+  objs := regexp_split_to_array($1, E'\\r?\\n+');
 
   -- if context is greater than 1 line, trigger was fired from inside a function
   IF array_length(objs,1) > 1 THEN
@@ -94,6 +97,82 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql IMMUTABLE STRICT;
+
+
+/**********************************************************
+* flatten_ddl
+*
+* Helper function for to remove comments and line breaks
+* from parsed DDL command
+**********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.flatten_ddl(ddl_command TEXT) RETURNS TEXT AS
+$$
+SELECT
+  string_agg(
+    CASE WHEN position('--' in ddl_part) > 0 THEN
+      left(ddl_part, position('--' in ddl_part) - 1)
+    ELSE
+      ddl_part
+    END,
+    CASE WHEN right(ddl_part, 1) = ' ' THEN
+      ''
+    ELSE
+      ' '
+    END
+  )
+FROM
+  unnest(regexp_split_to_array(
+    regexp_replace($1, '/\\*.*?\\*/', ''),
+    E'\\r?\\n'
+  ) AS s (ddl_part);
+$$
+LANGUAGE sql STRICT;
+
+
+/**********************************************************
+* fetch_ident
+*
+* Helper function to return first word from DDL context
+* which could be a schema, table or column name
+* (incl. quotes, commas and other special characters)
+**********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(context TEXT) RETURNS TEXT AS
+$$
+DECLARE
+  sql_ident TEXT := '';
+  quote_pos INTEGER := 1;
+  quote_count INTEGER := 0;
+  do_next BOOLEAN := TRUE;
+BEGIN
+  FOR i IN 1..length($1) LOOP
+    EXIT WHEN do_next = FALSE;
+    -- parse as long there is no space or within quotes
+    IF (substr($1,i,1) <> ' ' AND substr($1,i,1) <> ',' AND substr($1,i,1) <> ';')
+       OR (substr(sql_ident,quote_pos,1) = '"' AND (
+       (right(sql_ident, 1) = '"') = (quote_pos = length(sql_ident))
+      ))
+    THEN
+      sql_ident := sql_ident || substr($1,i,1);
+      IF substr($1,i,1) = '"' THEN
+        quote_count := quote_count + 1;
+        IF quote_count > 2 THEN
+          quote_pos := length(sql_ident);
+          quote_count := 1;
+        ELSE
+          quote_pos := position('"' in sql_ident);
+        END IF;
+      END IF;
+    ELSE
+      IF length(sql_ident) > 0 THEN
+        do_next := FALSE;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN sql_ident;
+END;
+$$
+LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
@@ -295,52 +374,6 @@ LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
-* fetch_ident
-*
-* Helper function for to parse first word from DDL context
-* which could be a schema, table or column name
-* (incl. quotes, commas and other special characters)
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(context TEXT) RETURNS TEXT AS
-$$
-DECLARE
-  sql_ident TEXT := '';
-  quote_pos INTEGER := 1;
-  quote_count INTEGER := 0;
-  do_next BOOLEAN := TRUE;
-BEGIN
-  FOR i IN 1..length($1) LOOP
-    EXIT WHEN do_next = FALSE;
-    -- parse as long there is no space or within quotes
-    IF (substr($1,i,1) <> ' ' AND substr($1,i,1) <> ',' AND substr($1,i,1) <> ';')
-       OR (substr(sql_ident,quote_pos,1) = '"' AND (
-       (right(sql_ident, 1) = '"') = (quote_pos = length(sql_ident))
-      ))
-    THEN
-      sql_ident := sql_ident || substr($1,i,1);
-      IF substr($1,i,1) = '"' THEN
-        quote_count := quote_count + 1;
-        IF quote_count > 2 THEN
-          quote_pos := length(sql_ident);
-          quote_count := 1;
-        ELSE
-          quote_pos := position('"' in sql_ident);
-        END IF;
-      END IF;
-    ELSE
-      IF length(sql_ident) > 0 THEN
-        do_next := FALSE;
-      END IF;
-    END IF;
-  END LOOP;
-
-  RETURN sql_ident;
-END;
-$$
-LANGUAGE plpgsql STRICT;
-
-
-/**********************************************************
 * EVENT TRIGGER PROCEDURE schema_drop_pre_trigger
 *
 * Procedure that is called BEFORE schema will be dropped.
@@ -368,15 +401,8 @@ BEGIN
     ddl_text := stack;
   END IF;
 
-  -- check if input string contains comments
-  IF ddl_text LIKE '%--%'
-  OR ddl_text LIKE '%/*%'
-  OR ddl_text LIKE '%*/%' THEN
-    RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
-  END IF;
-
-  -- remove line breaks from the DDL string
-  ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
+  -- remove comments and line breaks from the DDL string
+  ddl_text := pgmemento.flatten_ddl(ddl_text);
 
   WHILE fetch_next LOOP
     -- extracting the schema identifier from the DDL command
@@ -532,16 +558,8 @@ BEGIN
      lower(ddl_text) LIKE '%drop %' OR 
      lower(ddl_text) LIKE '%rename %'
   THEN
-    -- check if input string contains comments
-    IF ddl_text LIKE '%--%' OR
-       ddl_text LIKE '%/*%' OR
-       ddl_text LIKE '%*/%'
-    THEN
-      RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
-    END IF;
-
-    -- remove line breaks from the DDL string
-    ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
+    -- remove comments and line breaks from the DDL string
+    ddl_text := pgmemento.flatten_ddl(ddl_text);
 
     WHILE fetch_next LOOP
       -- extracting the table identifier from the DDL command
@@ -667,7 +685,7 @@ BEGIN
               END;
             END LOOP;
           ELSE
-            IF columnname = 'audit_id' OR EXISTS (
+            IF column_candidate = 'audit_id' OR EXISTS (
               SELECT
                 1
               FROM
@@ -683,7 +701,7 @@ BEGIN
             ) THEN
               CASE event_type
                 WHEN 'RENAME' THEN
-                  IF columnname = 'audit_id' THEN
+                  IF column_candidate = 'audit_id' THEN
                     RAISE EXCEPTION 'Renaming the audit_id column is not possible!';
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
@@ -852,15 +870,8 @@ BEGIN
     ddl_text := stack;
   END IF;
 
-  -- check if input string contains comments
-  IF ddl_text LIKE '%--%'
-  OR ddl_text LIKE '%/*%'
-  OR ddl_text LIKE '%*/%' THEN
-    RAISE EXCEPTION 'Query contains comments. Unable to log event properly. Please, remove them. Query: %', ddl_text;
-  END IF;
-
-  -- remove line breaks from the DDL string
-  ddl_text := regexp_replace(ddl_text, '[\r\n]+', ' ', 'g');
+  -- remove comments and line breaks from the DDL string
+  ddl_text := pgmemento.flatten_ddl(ddl_text);
 
   WHILE fetch_next LOOP
     -- extracting the table identifier from the DDL command
