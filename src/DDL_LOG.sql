@@ -124,7 +124,7 @@ FROM
   unnest(regexp_split_to_array(
     regexp_replace($1, '/\\*.*?\\*/', ''),
     E'\\r?\\n'
-  ) AS s (ddl_part);
+  )) AS s (ddl_part);
 $$
 LANGUAGE sql STRICT;
 
