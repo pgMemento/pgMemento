@@ -114,15 +114,11 @@ SELECT
     ELSE
       ddl_part
     END,
-    CASE WHEN right(ddl_part, 1) = ' ' THEN
-      ''
-    ELSE
-      ' '
-    END
+    ' '
   )
 FROM
   unnest(regexp_split_to_array(
-    regexp_replace($1, '/\\*.*?\\*/', ''),
+    regexp_replace($1, '/\*(.*?)\*/', '', 'g'),
     E'\\r?\\n'
   )) AS s (ddl_part);
 $$
