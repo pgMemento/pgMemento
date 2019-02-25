@@ -16,6 +16,7 @@
 --
 -- Version | Date       | Description                                       | Author
 -- 0.6.8     2019-02-14   ADD AUDIT_ID event gets its own op_id               FKun
+--                        new helper function trim_outer_quotes
 -- 0.6.7     2018-11-19   new log events for adding and dropping audit_id     FKun 
 -- 0.6.6     2018-11-10   rename log_table_state to log_table_baseline        FKun
 --                        new option for drop_table_audit to drop all logs
@@ -74,6 +75,7 @@
 *   log_table_event(event_txid BIGINT, table_oid OID, op_type TEXT) RETURNS INTEGER
 *   log_table_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS INTEGER
+*   trim_outer_quotes(quoted_string TEXT) RETURNS TEXT
 *   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *  
 * TRIGGER FUNCTIONS
