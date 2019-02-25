@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
 -- 0.6.7     2018-11-04   have two restore_record_definition functions        FKun
 -- 0.6.6     2018-11-02   consider schema changes when restoring versions     FKun
 -- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
@@ -57,7 +58,7 @@
 *   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     aid BIGINT DEFAULT NULL, all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_record(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
-*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
@@ -355,7 +356,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_record(
   schema_name TEXT,
   aid BIGINT,
   jsonb_output BOOLEAN DEFAULT FALSE
-  ) RETURNS RECORD AS
+  ) RETURNS SETOF RECORD AS
 $$
 DECLARE
   -- init query string
@@ -368,7 +369,11 @@ BEGIN
 
   -- execute the SQL command
   EXECUTE restore_query_text INTO restore_result;
-  RETURN restore_result;
+
+  IF restore_result IS NOT NULL THEN
+    RETURN NEXT restore_result;
+  END IF;
+  RETURN;
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;

@@ -157,7 +157,7 @@ BEGIN
   ASSERT pgm_objects[55] = 'register_audit_table;integer;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[56] = 'restore_change;anyelement;during_tid integer, aid bigint, column_name text, INOUT restored_value anyelement', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[57] = 'restore_query;text;start_from_tid integer, end_at_tid integer, table_name text, schema_name text DEFAULT ''public''::text, aid bigint DEFAULT NULL::bigint, all_versions boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[58] = 'restore_record;record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[58] = 'restore_record;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[59] = 'restore_record_definition;text;tid integer, table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[60] = 'restore_record_definition;text;start_from_tid integer, end_at_tid integer, table_oid oid', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[61] = 'restore_records;SETOF record;start_from_tid integer, end_at_tid integer, table_name text, schema_name text, aid bigint, jsonb_output boolean DEFAULT false', 'Error: Expected different function and/or arguments';
