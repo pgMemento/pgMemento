@@ -182,7 +182,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  RETURN sql_ident;
+  RETURN fetch_result;
 END;
 $$
 LANGUAGE plpgsql STRICT;
