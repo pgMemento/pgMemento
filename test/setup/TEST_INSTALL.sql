@@ -123,7 +123,7 @@ BEGIN
   ASSERT pgm_objects[21] = 'drop_table_audit_id;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[22] = 'drop_table_log_trigger;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[23] = 'drop_table_state;SETOF void;table_name text, target_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[24] = 'fetch_ident;text;context text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[24] = 'fetch_ident;text;context text,fetch_count integer DEFAULT 1', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[25] = 'fkey_schema_state;SETOF void;target_schema_name text, original_schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[26] = 'fkey_table_state;SETOF void;table_name text, target_schema_name text, original_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[27] = 'flatten_ddl;text;ddl_command text', 'Error: Expected different function and/or arguments';
