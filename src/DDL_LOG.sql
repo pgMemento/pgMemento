@@ -44,7 +44,7 @@
 * FUNCTIONS:
 *   create_schema_event_trigger(trigger_create_table BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
-*   fetch_ident(context TEXT) RETURNS TEXT
+*   fetch_ident(context TEXT, fetch_count INTEGER DEFAULT 1) RETURNS TEXT
 *   flatten_ddl(ddl_command TEXT) RETURNS TEXT
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
@@ -132,14 +132,23 @@ LANGUAGE sql STRICT;
 * which could be a schema, table or column name
 * (incl. quotes, commas and other special characters)
 **********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(context TEXT) RETURNS TEXT AS
+CREATE OR REPLACE FUNCTION pgmemento.fetch_ident(
+  context TEXT,
+  fetch_count INTEGER DEFAULT 1
+  ) RETURNS TEXT AS
 $$
 DECLARE
+  do_next BOOLEAN := TRUE;
   sql_ident TEXT := '';
   quote_pos INTEGER := 1;
   quote_count INTEGER := 0;
-  do_next BOOLEAN := TRUE;
+  obj_count INTEGER := 0;
+  fetch_result TEXT;
 BEGIN
+  IF $2 <= 0 THEN
+    RAISE EXCEPTION 'Second input must be greather than 0!';
+  END IF;
+
   FOR i IN 1..length($1) LOOP
     EXIT WHEN do_next = FALSE;
     -- parse as long there is no space or within quotes
@@ -160,12 +169,30 @@ BEGIN
       END IF;
     ELSE
       IF length(sql_ident) > 0 THEN
-        do_next := FALSE;
+        obj_count := obj_count + 1;
+        IF fetch_result IS NULL THEN
+          fetch_result := sql_ident;
+        ELSE
+          fetch_result := fetch_result || ' ' || sql_ident;
+        END IF;
+        IF obj_count = $2 THEN
+          do_next := FALSE;
+        END IF;
+        sql_ident := '';
+        quote_pos := 1;
+        quote_count := 0;
       END IF;
     END IF;
   END LOOP;
 
-  RETURN sql_ident;
+  IF length(sql_ident) > 0 THEN
+    IF fetch_result IS NULL THEN
+      fetch_result := sql_ident;
+    ELSE
+      fetch_result := fetch_result || ' ' || sql_ident;
+    END IF;
+  END IF;
+  RETURN fetch_result;
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -333,11 +360,10 @@ BEGIN
         ON col.column_name = acl.column_name
         AND col.table_name = acl.table_name
         AND col.schema_name = acl.schema_name
-      WHERE (
-        col.column_default <> acl.column_default
-        OR col.not_null <> acl.not_null
-        OR col.data_type <> acl.data_type
-      )
+      WHERE
+        col.column_default IS DISTINCT FROM acl.column_default
+        OR col.not_null IS DISTINCT FROM acl.not_null
+        OR col.data_type IS DISTINCT FROM acl.data_type
     ), insert_new_versions AS (
       INSERT INTO pgmemento.audit_column_log
         (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
@@ -529,8 +555,9 @@ DECLARE
   event_type TEXT;
   column_type TEXT;
   added_columns BOOLEAN := FALSE;
-  altered_columns TEXT[] := '{}'::text[];
   dropped_columns TEXT[] := '{}'::text[];
+  altered_columns TEXT[] := '{}'::text[];
+  altered_columns_log TEXT[] := '{}'::text[];
   e_id INTEGER;
 BEGIN
   -- get context in which trigger has been fired
@@ -547,7 +574,10 @@ BEGIN
   END IF;
 
   -- are columns renamed, altered or dropped
-  IF lower(ddl_text) LIKE '%using%' OR
+  IF lower(ddl_text) LIKE '% type %' OR
+     lower(ddl_text) LIKE '% using %' OR
+     lower(ddl_text) LIKE '% not null%' OR
+     lower(ddl_text) LIKE '%default%' OR
      lower(ddl_text) LIKE '%add column%' OR
      lower(ddl_text) LIKE '%add %' OR 
      lower(ddl_text) LIKE '%drop column%' OR
@@ -702,10 +732,16 @@ BEGIN
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
                   PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
-                WHEN 'ALTER' THEN
-                  altered_columns := array_append(altered_columns, column_candidate);
                 WHEN 'DROP' THEN
                   dropped_columns := array_append(dropped_columns, column_candidate);
+                WHEN 'ALTER' THEN
+                  altered_columns := array_append(altered_columns, column_candidate);
+                  
+                  -- check if logging column content is really required
+                  column_type := pgmemento.fetch_ident(ddl_text, 5);
+                  IF lower(column_type) LIKE '% collate %' OR lower(column_type) LIKE '% using %' THEN
+                    altered_columns_log := array_append(altered_columns_log, column_candidate);
+                  END IF;
                 ELSE
                   RAISE NOTICE 'Event type % unknown', event_type;
               END CASE;
@@ -739,7 +775,9 @@ BEGIN
       e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
 
       -- log data of entire column(s)
-      PERFORM pgmemento.log_table_state(e_id, altered_columns, tablename, schemaname);
+      IF array_length(altered_columns_log, 1) > 0 THEN
+        PERFORM pgmemento.log_table_state(e_id, altered_columns_log, tablename, schemaname);
+      END IF;
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
