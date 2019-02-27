@@ -145,6 +145,10 @@ DECLARE
   obj_count INTEGER := 0;
   fetch_result TEXT;
 BEGIN
+  IF $2 <= 0 THEN
+    RAISE EXCEPTION 'Second input must be greather than 0!';
+  END IF;
+
   FOR i IN 1..length($1) LOOP
     EXIT WHEN do_next = FALSE;
     -- parse as long there is no space or within quotes
@@ -171,17 +175,23 @@ BEGIN
         ELSE
           fetch_result := fetch_result || ' ' || sql_ident;
         END IF;
-        IF obj_count < $2 THEN
-          sql_ident := '';
-          quote_pos := 1;
-          quote_count := 0;
-        ELSE
+        IF obj_count = $2 THEN
           do_next := FALSE;
         END IF;
+        sql_ident := '';
+        quote_pos := 1;
+        quote_count := 0;
       END IF;
     END IF;
   END LOOP;
 
+  IF length(sql_ident) > 0 THEN
+    IF fetch_result IS NULL THEN
+      fetch_result := sql_ident;
+    ELSE
+      fetch_result := fetch_result || ' ' || sql_ident;
+    END IF;
+  END IF;
   RETURN fetch_result;
 END;
 $$
