@@ -264,8 +264,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
 
 COMMENT ON VIEW pgmemento.audit_tables_dependency IS 'Lists the dependencies between audited tables which is important for reverts';
 COMMENT ON COLUMN pgmemento.audit_tables_dependency.relid IS 'The OID of the table';
-COMMENT ON COLUMN pgmemento.audit_tables_dependency.schema_name IS 'The schema name the table belongs to';
-COMMENT ON COLUMN pgmemento.audit_tables_dependency.table_name IS 'The name of the table';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.schemaname IS 'The schema name the table belongs to';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.tablename IS 'The name of the table';
 COMMENT ON COLUMN pgmemento.audit_tables_dependency.depth IS 'The depth of foreign key references';
 
 
