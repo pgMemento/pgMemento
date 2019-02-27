@@ -157,6 +157,12 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
     schemaname,
     tablename;
 
+COMMENT ON VIEW pgmemento.audit_tables IS 'Lists which tables are audited by pgMemento (a.k.a. have an audit_id column)';
+COMMENT ON COLUMN pgmemento.audit_tables.schemaname IS 'The schema the audited table belongs to';
+COMMENT ON COLUMN pgmemento.audit_tables.tablename IS 'Name of the audited table';
+COMMENT ON COLUMN pgmemento.audit_tables.txid_min IS 'The minimal transaction ID referenced to the audited table in the table_event_log';
+COMMENT ON COLUMN pgmemento.audit_tables.txid_max IS 'The maximal transaction ID referenced to the audited table in the table_event_log';
+COMMENT ON COLUMN pgmemento.audit_tables.tg_is_active IS 'Flag, that shows if logging is activated for the table or not';
 
 /***********************************************************
 * AUDIT_TABLES_DEPENDENCY VIEW
@@ -255,6 +261,12 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     schemaname,
     depth,
     tablename;
+
+COMMENT ON VIEW pgmemento.audit_tables_dependency IS 'Lists the dependencies between audited tables which is important for reverts';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.relid IS 'The OID of the table';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.schema_name IS 'The schema name the table belongs to';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.table_name IS 'The name of the table';
+COMMENT ON COLUMN pgmemento.audit_tables_dependency.depth IS 'The depth of foreign key references';
 
 
 /**********************************************************
