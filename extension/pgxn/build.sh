@@ -25,8 +25,7 @@ cp META.json $EXTFOLDER/. ;
 echo "done";
 
 echo -n "Copying the documentation ... ";
-cp ../../README.md $EXTFOLDER/doc/. ;
-cp ../../LICENSE $EXTFOLDER/doc/. ;
+cp ../../README.md $EXTFOLDER/doc/README.pgmemento ;
 echo "done";
 
 echo -n "Building the archive ... "
