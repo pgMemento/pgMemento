@@ -840,33 +840,41 @@ CREATE OR REPLACE FUNCTION pgmemento.table_drop_post_trigger() RETURNS event_tri
 $$
 DECLARE
   obj RECORD;
-  tab_id INTEGER;
+  tid INTEGER;
 BEGIN
   FOR obj IN 
     SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
-      -- if DROP AUDIT_ID event exists for table in the current transaction
-      -- only create a DROP TABLE event, because auditing has already stopped
-      IF EXISTS (
-        SELECT
-          1
-        FROM
-          pgmemento.table_event_log
-        WHERE
-          transaction_id = current_setting('pgmemento.' || txid_current())::int
-          AND table_relid = obj.objid
-          AND op_id = 8
-          AND table_operation = 'DROP AUDIT_ID'
-      ) THEN
-        PERFORM pgmemento.log_table_event(txid_current(), obj.objid, 'DROP TABLE');
-      ELSE
-        -- update txid_range for removed table in audit_table_log table
-        PERFORM pgmemento.unregister_audit_table(
-          split_part(obj.object_identity, '.' ,2),
-          split_part(obj.object_identity, '.' ,1)
-        );
-      END IF;
+      BEGIN
+        tid := current_setting('pgmemento.' || txid_current())::int;
+
+        -- if DROP AUDIT_ID event exists for table in the current transaction
+        -- only create a DROP TABLE event, because auditing has already stopped
+        IF EXISTS (
+          SELECT
+            1
+          FROM
+            pgmemento.table_event_log
+          WHERE
+            transaction_id = current_setting('pgmemento.' || txid_current())::int
+            AND table_relid = obj.objid
+            AND op_id = 8
+            AND table_operation = 'DROP AUDIT_ID'
+        ) THEN
+          PERFORM pgmemento.log_table_event(txid_current(), obj.objid, 'DROP TABLE');
+        ELSE
+          -- update txid_range for removed table in audit_table_log table
+          PERFORM pgmemento.unregister_audit_table(
+            split_part(obj.object_identity, '.' ,2),
+            split_part(obj.object_identity, '.' ,1)
+          );
+        END IF;
+
+        EXCEPTION
+          WHEN undefined_object THEN
+            RETURN; -- no event has been logged, yet. Thus, table was not audited.
+      END;
     END IF;
   END LOOP;
 END;
