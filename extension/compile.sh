@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd $(dirname "$0");
+
 cat "../src/SCHEMA.sql" | grep -v 'DROP SCHEMA' | grep -v 'CREATE SCHEMA'
 
 scripts=("SETUP.sql" "LOG_UTIL.sql" "DDL_LOG.sql" "RESTORE.sql" "REVERT.sql" "SCHEMA_MANAGEMENT.sql");
