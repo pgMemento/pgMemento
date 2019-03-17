@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
+-- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
 -- 0.6.7     2018-11-04   have two restore_record_definition functions        FKun
 -- 0.6.6     2018-11-02   consider schema changes when restoring versions     FKun
 -- 0.6.5     2018-10-28   renamed file to RESTORE.sql                         FKun
@@ -57,7 +59,7 @@
 *   restore_query(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     aid BIGINT DEFAULT NULL, all_versions BOOLEAN DEFAULT FALSE) RETURNS TEXT
 *   restore_record(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
-*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS RECORD
+*     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
@@ -355,7 +357,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_record(
   schema_name TEXT,
   aid BIGINT,
   jsonb_output BOOLEAN DEFAULT FALSE
-  ) RETURNS RECORD AS
+  ) RETURNS SETOF RECORD AS
 $$
 DECLARE
   -- init query string
@@ -368,7 +370,11 @@ BEGIN
 
   -- execute the SQL command
   EXECUTE restore_query_text INTO restore_result;
-  RETURN restore_result;
+
+  IF restore_result IS NOT NULL THEN
+    RETURN NEXT restore_result;
+  END IF;
+  RETURN;
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
@@ -548,7 +554,8 @@ LANGUAGE plpgsql STRICT;
 *
 * See what the table looked like at a given date.
 * The table state will be restored in a separate schema.
-* The user can choose if it will appear as a TABLE or VIEW.
+* The user can choose if it will appear as a TABLE, VIEW
+* or MATERIALIZED VIEW
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.restore_table_state(
   start_from_tid INTEGER,
@@ -577,7 +584,7 @@ BEGIN
     EXECUTE format('CREATE SCHEMA %I', pgmemento.trim_outer_quotes($5));
   END IF;
 
-  -- test if table or view already exist in target schema
+  -- test if table, view or materialized view already exist in target schema
   SELECT
     c.relkind
   INTO
@@ -592,15 +599,18 @@ BEGIN
     AND (
       c.relkind = 'r'
       OR c.relkind = 'v'
+      OR c.relkind = 'm'
     );
 
   IF existing_table_type IS NOT NULL THEN
     IF $7 THEN
-      -- drop existing table
+      -- drop or replace existing objects
       IF existing_table_type = 'r' THEN
         PERFORM pgmemento.drop_table_state($3, $5);
+      ELSIF existing_table_type = 'm' THEN
+        EXECUTE format('DROP MATERIALIZED VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
       ELSE
-        IF $6 = 'TABLE' THEN
+        IF $6 = 'MATERIALIZED VIEW' OR $6 = 'TABLE' THEN
           EXECUTE format('DROP VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
         ELSE
           replace_view := ' OR REPLACE ';
@@ -614,7 +624,7 @@ BEGIN
   END IF;
 
   -- let's go back in time - restore a table state for given transaction interval
-  IF upper($6) = 'VIEW' OR upper($6) = 'TABLE' THEN
+  IF upper($6) = 'VIEW' OR upper($6) = 'MATERIALIZED VIEW' OR upper($6) = 'TABLE' THEN
     restore_query := 'CREATE' 
       || replace_view || $6 
       || format(E' %I.%I AS\n', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3))
@@ -623,7 +633,7 @@ BEGIN
     -- finally execute query string
     EXECUTE restore_query;
   ELSE
-    RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'' or ''TABLE''.', $6;
+    RAISE NOTICE 'Table type ''%'' not supported. Use ''VIEW'', ''MATERIALIZED VIEW'' or ''TABLE''.', $6;
   END IF;
 END;
 $$
