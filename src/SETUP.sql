@@ -118,8 +118,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT
     n.nspname AS schemaname,
     c.relname AS tablename,
-    b.txid_min,
-    b.txid_max,
+    COALESCE(bounds.txid_min, bounds_old.txid_min) AS txid_min,
+    COALESCE(bounds.txid_max, bounds_old.txid_max) AS txid_max,
     CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
       TRUE
     ELSE
@@ -130,12 +130,15 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   JOIN
     pg_namespace n
     ON c.relnamespace = n.oid
+   AND n.nspname <> 'pgmemento'
+   AND n.nspname NOT LIKE 'pg_temp%'
   JOIN
     pg_attribute a
     ON a.attrelid = c.oid
+   AND a.attname = 'audit_id'
   JOIN LATERAL (
     SELECT * FROM pgmemento.get_txid_bounds_to_table(c.oid)
-    ) b ON (true)
+    ) bounds ON (true)
   LEFT JOIN (
     SELECT
       tgrelid,
@@ -146,11 +149,16 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
       tgname = 'log_transaction_trigger'::name
     ) AS tg
     ON c.oid = tg.tgrelid
+  LEFT JOIN
+    pgmemento.audit_table_log atl
+    ON atl.table_name = c.relname
+   AND atl.schema_name = n.nspname
+   AND upper(atl.txid_range) IS NULL
+  LEFT JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(atl.relid)
+    ) bounds_old ON (true)
   WHERE
-    n.nspname <> 'pgmemento'
-    AND n.nspname NOT LIKE 'pg_temp%'
-    AND a.attname = 'audit_id'
-    AND c.relkind = 'r'
+    c.relkind = 'r'
   ORDER BY
     schemaname,
     tablename;

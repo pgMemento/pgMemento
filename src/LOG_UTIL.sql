@@ -307,55 +307,60 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   ) RETURNS RECORD AS
 $$
 BEGIN
-  -- try to get OID of table
-  log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+  BEGIN
+    -- try to get OID of table
+    log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+
+    SELECT
+      t_old.id,
+      t_old.schema_name,
+      t_old.table_name,
+      t_new.id,
+      t_new.schema_name,
+      t_new.table_name
+    INTO
+      log_tab_id,
+      log_tab_schema,
+      log_tab_name,
+      recent_tab_id,
+      recent_tab_schema,
+      recent_tab_name    
+    FROM
+      pgmemento.audit_table_log t_new
+    LEFT JOIN
+      pgmemento.audit_table_log t_old
+      ON t_old.relid = t_new.relid
+     AND t_old.txid_range @> $1::numeric
+    WHERE
+      t_new.relid = log_tab_oid
+      AND upper(t_new.txid_range) IS NULL
+      AND lower(t_new.txid_range) IS NOT NULL;
+
+    EXCEPTION
+      WHEN OTHERS THEN
+        NULL;
+  END;
 
   -- check if the table has existed before tid happened
   -- save schema and name in case it was renamed
-  SELECT
-    t_old.id,
-    t_old.schema_name,
-    t_old.table_name,
-    t_new.id,
-    t_new.schema_name,
-    t_new.table_name
-  INTO
-    log_tab_id,
-    log_tab_schema,
-    log_tab_name,
-    recent_tab_id,
-    recent_tab_schema,
-    recent_tab_name    
-  FROM
-    pgmemento.audit_table_log t_new
-  LEFT JOIN
-    pgmemento.audit_table_log t_old
-    ON t_old.relid = t_new.relid
-   AND t_old.txid_range @> $1::numeric
-  WHERE
-    t_new.relid = log_tab_oid
-    AND upper(t_new.txid_range) IS NULL
-    AND lower(t_new.txid_range) IS NOT NULL;
-
-  EXCEPTION
-    WHEN OTHERS THEN
-      -- check if the table exists in audit_table_log
-      SELECT
-        id,
-        relid,
-        schema_name,
-        table_name
-      INTO
-        log_tab_id,
-        log_tab_oid,
-        log_tab_schema,
-        log_tab_name
-      FROM
-        pgmemento.audit_table_log 
-      WHERE
-        table_name = pgmemento.trim_outer_quotes($2)
-        AND schema_name = pgmemento.trim_outer_quotes($3)
-        AND txid_range @> $1::numeric;
+  IF log_tab_id IS NULL AND recent_tab_id IS NULL THEN
+    SELECT
+      id,
+      relid,
+      schema_name,
+      table_name
+    INTO
+      log_tab_id,
+      log_tab_oid,
+      log_tab_schema,
+      log_tab_name
+    FROM
+      pgmemento.audit_table_log 
+    WHERE
+      table_name = pgmemento.trim_outer_quotes($2)
+      AND schema_name = pgmemento.trim_outer_quotes($3)
+      AND txid_range @> $1::numeric;
+  END IF;
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
