@@ -184,7 +184,7 @@ COMMENT ON COLUMN pgmemento.audit_tables.tg_is_active IS 'Flag, that shows if lo
 * to not violate foreign keys.
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
-WITH RECURSIVE table_dependency(
+  WITH RECURSIVE table_dependency(
     parent_oid,
     child_oid,
     table_name,
@@ -270,8 +270,8 @@ WITH RECURSIVE table_dependency(
         OR (d.table_name = atl.table_name AND d.schema_name = atl.schema_name))
       WHERE
         d.child_oid IS NULL
-       AND upper(atl.txid_range) IS NULL
-       AND lower(atl.txid_range) IS NOT NULL
+        AND upper(atl.txid_range) IS NULL
+        AND lower(atl.txid_range) IS NOT NULL
   ) td
   ORDER BY
     schemaname,
