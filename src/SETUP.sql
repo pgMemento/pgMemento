@@ -184,7 +184,7 @@ COMMENT ON COLUMN pgmemento.audit_tables.tg_is_active IS 'Flag, that shows if lo
 * to not violate foreign keys.
 ***********************************************************/
 CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
-  WITH RECURSIVE table_dependency(
+WITH RECURSIVE table_dependency(
     parent_oid,
     child_oid,
     table_name,
@@ -206,8 +206,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       pg_class cl
       ON cl.oid = c.conrelid
     JOIN pgmemento.audit_table_log a
-      ON (a.relid = c.conrelid OR a.table_name = cl.relname)
-     AND a.schema_name = n.nspname
+      ON (a.relid = c.conrelid
+      OR (a.table_name = cl.relname AND a.schema_name = n.nspname))
      AND upper(a.txid_range) IS NULL
      AND lower(a.txid_range) IS NOT NULL
     WHERE
@@ -229,8 +229,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         pg_class cl
         ON cl.oid = c.conrelid
       JOIN pgmemento.audit_table_log a
-        ON (a.relid = c.conrelid OR a.table_name = cl.relname)
-       AND a.schema_name = n.nspname
+        ON (a.relid = c.conrelid
+        OR (a.table_name = cl.relname AND a.schema_name = n.nspname))
        AND upper(a.txid_range) IS NULL
        AND lower(a.txid_range) IS NOT NULL
       JOIN table_dependency d
@@ -266,11 +266,12 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         pgmemento.audit_table_log atl
       LEFT JOIN
         table_dependency d
-        ON (d.child_oid = atl.relid OR d.table_name = atl.table_name)
-       AND upper(atl.txid_range) IS NULL
-       AND lower(atl.txid_range) IS NOT NULL
+        ON (d.child_oid = atl.relid
+        OR (d.table_name = atl.table_name AND d.schema_name = atl.schema_name))
       WHERE
         d.child_oid IS NULL
+       AND upper(atl.txid_range) IS NULL
+       AND lower(atl.txid_range) IS NOT NULL
   ) td
   ORDER BY
     schemaname,
