@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
 -- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
 -- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
 -- 0.6.7     2018-11-04   have two restore_record_definition functions        FKun
@@ -62,7 +63,7 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
+*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_log_id INTEGER) RETURNS TEXT
 *   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
@@ -170,7 +171,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_query(
   ) RETURNS TEXT AS
 $$
 DECLARE
-  tab_oid OID;
+  log_id INTEGER;
   tab_name TEXT;
   tab_schema TEXT;
   tab_id INTEGER;
@@ -184,7 +185,7 @@ DECLARE
 BEGIN
   -- first check if table can be restored
   SELECT
-    log_tab_oid,
+    table_log_id,
     log_tab_name,
     log_tab_schema,
     log_tab_id,
@@ -192,7 +193,7 @@ BEGIN
     recent_tab_schema,
     recent_tab_id
   INTO
-    tab_oid,
+    log_id,
     tab_name,
     tab_schema,
     tab_id,
@@ -243,7 +244,7 @@ BEGIN
       find_logs,
       extract_logs
     FROM
-      pgmemento.get_column_list_by_txid_range($1, $2, tab_oid) c_old
+      pgmemento.get_column_list_by_txid_range($1, $2, table_log_id) c_old
     LEFT JOIN
       pgmemento.audit_column_log c_new
       ON c_old.ordinal_position = c_new.ordinal_position
@@ -304,7 +305,7 @@ BEGIN
     || E'      pgmemento.table_event_log e ON e.id = r.event_id\n'
     || format(E'    WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
-         format(E'      AND e.table_relid = %L\n', tab_oid)
+         format(E'      AND e.table_name = %L AND e.schema_name = %L\n', tab_name, tab_schema)
        ELSE
          format(E'      AND r.audit_id = %L\n', $5)
        END
@@ -477,7 +478,7 @@ LANGUAGE sql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
-  table_oid OID
+  table_log_id INTEGER
   ) RETURNS TEXT AS
 $$
 SELECT

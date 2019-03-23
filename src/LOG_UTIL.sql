@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
 -- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
 --                        composite data types
 -- 0.6.2     2018-11-05   delete_table_event_log now takes OID           FKun
@@ -43,9 +44,10 @@
 *   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
 *     OUT log_tab_oid OID, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
 *     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER) RETURNS RECORD
-*   delete_audit_table_log(table_oid OID) RETURNS SETOF OID
+*   delete_audit_table_log(table_log_id INTEGER) RETURNS SETOF INTEGER
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
-*   delete_table_event_log(tid INTEGER, table_oid OID) RETURNS SETOF INTEGER
+*   delete_table_event_log(table_name TEXT, schema_name TEXT) RETURNS SETOF INTEGER
+*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
 *   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
@@ -193,22 +195,39 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
-  table_oid OID
+  table_name TEXT,
+  schema_name TEXT
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
   pgmemento.table_event_log
 WHERE
   transaction_id = $1
-  AND table_relid = $2
+  AND table_name = $2
+  AND schema_name = $3
+RETURNING
+  id;
+$$
+LANGUAGE sql STRICT;
+
+CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
+  table_name TEXT,
+  schema_name TEXT
+  ) RETURNS SETOF INTEGER AS
+$$
+DELETE FROM
+  pgmemento.table_event_log
+WHERE
+  table_name = $1
+  AND schema_name = $2
 RETURNING
   id;
 $$
 LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
-  table_oid OID
-  ) RETURNS SETOF OID AS
+  table_log_id INTEGER
+  ) RETURNS SETOF INTEGER AS
 $$
 BEGIN
   -- only allow delete if table has already been dropped
@@ -218,25 +237,27 @@ BEGIN
     FROM
       pgmemento.audit_table_log 
     WHERE
-      relid = $1
+      log_id = $1
       AND upper(txid_range) IS NOT NULL
   ) THEN
     -- remove corresponding table events from event log
-    DELETE FROM
-      pgmemento.table_event_log 
+    PERFORM
+      pgmemento.delete_table_event_log(table_name, schema_name)
+    FROM
+      pgmemento.audit_table_log 
     WHERE
-      table_relid = $1;
+      log_id = $1;
 
     RETURN QUERY
       DELETE FROM
         pgmemento.audit_table_log 
       WHERE
-        relid = $1
+        log_id = $1
         AND upper(txid_range) IS NOT NULL
       RETURNING
-        relid;
+        log_id;
   ELSE
-    RAISE NOTICE 'Either audit table with relid % is not found or the table still exists.', $1; 
+    RAISE NOTICE 'Either audit table with log_id % is not found or the table still exists.', $1; 
   END IF;
 END;
 $$
@@ -297,73 +318,38 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   IN tid INTEGER,
   IN tab_name TEXT,
   IN tab_schema TEXT,
-  OUT log_tab_oid OID,
+  OUT table_log_id INTEGER,
   OUT log_tab_name TEXT,
   OUT log_tab_schema TEXT,
   OUT log_tab_id INTEGER,
   OUT recent_tab_name TEXT,
   OUT recent_tab_schema TEXT,
-  OUT recent_tab_id INTEGER
+  OUT recent_tab_id INTEGER,
   ) RETURNS RECORD AS
 $$
-BEGIN
-  BEGIN
-    -- try to get OID of table
-    log_tab_oid := ($3 || '.' || $2)::regclass::oid;
-
-    SELECT
-      t_old.id,
-      t_old.schema_name,
-      t_old.table_name,
-      t_new.id,
-      t_new.schema_name,
-      t_new.table_name
-    INTO
-      log_tab_id,
-      log_tab_schema,
-      log_tab_name,
-      recent_tab_id,
-      recent_tab_schema,
-      recent_tab_name    
-    FROM
-      pgmemento.audit_table_log t_new
-    LEFT JOIN
-      pgmemento.audit_table_log t_old
-      ON t_old.relid = t_new.relid
-     AND t_old.txid_range @> $1::numeric
-    WHERE
-      t_new.relid = log_tab_oid
-      AND upper(t_new.txid_range) IS NULL
-      AND lower(t_new.txid_range) IS NOT NULL;
-
-    EXCEPTION
-      WHEN OTHERS THEN
-        NULL;
-  END;
-
-  -- check if the table has existed before tid happened
-  -- save schema and name in case it was renamed
-  IF log_tab_id IS NULL AND recent_tab_id IS NULL THEN
-    SELECT
-      id,
-      relid,
-      schema_name,
-      table_name
-    INTO
-      log_tab_id,
-      log_tab_oid,
-      log_tab_schema,
-      log_tab_name
-    FROM
-      pgmemento.audit_table_log 
-    WHERE
-      table_name = pgmemento.trim_outer_quotes($2)
-      AND schema_name = pgmemento.trim_outer_quotes($3)
-      AND txid_range @> $1::numeric;
-  END IF;
-END;
+-- check if the table has existed before tid happened
+-- save schema and name in case it was renamed
+SELECT
+  t_old.log_id AS table_log_id,
+  t_old.table_name AS log_tab_name,
+  t_old.schema_name AS log_tab_schema,
+  t_old.id AS log_tab_id,
+  t_new.schema_name AS recent_tab_name,
+  t_new.table_name AS recent_tab_schema,
+  t_new.id AS recent_tab_id
+FROM
+  pgmemento.audit_table_log t_new
+LEFT JOIN
+  pgmemento.audit_table_log t_old
+  ON t_old.log_id = t_new.log_id
+ AND t_old.txid_range @> $1::numeric
+WHERE
+  t_new.table_name = pgmemento.trim_outer_quotes($2)
+  AND t_new.schema_name = pgmemento.trim_outer_quotes($3)
+  AND upper(t_new.txid_range) IS NULL
+  AND lower(t_new.txid_range) IS NOT NULL;
 $$
-LANGUAGE plpgsql STABLE STRICT;
+LANGUAGE sql STABLE STRICT;
 
 
 /**********************************************************
@@ -404,7 +390,7 @@ LANGUAGE sql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.get_column_list_by_txid_range(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
-  table_oid OID,
+  table_log_id INTEGER,
   OUT column_name TEXT,
   OUT column_count INTEGER,
   OUT data_type TEXT,
@@ -430,7 +416,7 @@ FROM (
     pgmemento.audit_table_log t
     ON t.id = c.audit_table_id
   WHERE
-    t.relid = $3
+    t.log_id = $3
     AND t.txid_range && numrange(1::numeric, $2::numeric)
     AND c.txid_range && numrange(1::numeric, $2::numeric)
   GROUP BY

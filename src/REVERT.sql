@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.0     2019-03-23   reflect schema changes in UDFs                  FKun
 -- 0.6.4     2019-02-14   Changed revert ADD AUDIT_ID events              FKun
 -- 0.6.3     2018-11-20   revert updates with composite data types        FKun
 -- 0.6.2     2018-09-24   improved reverts when column type is altered    FKun
@@ -88,7 +89,7 @@ BEGIN
         pgmemento.audit_table_log t_old,
         pgmemento.audit_table_log t_new
       WHERE
-        t_old.relid = t_new.relid
+        t_old.log_id = t_new.log_id
         AND t_old.table_name = $5
         AND t_old.schema_name = $6
         AND upper(t_new.txid_range) = $1
@@ -451,12 +452,13 @@ BEGIN
       ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
-      ON a.relid = e.table_relid
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name 
      AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.relid = e.table_relid
+      ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
       ON r.event_id = e.id AND e.op_id <> 5
@@ -502,12 +504,13 @@ BEGIN
       ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
-      ON a.relid = e.table_relid
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name
      AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.relid = e.table_relid
+      ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
       ON r.event_id = e.id AND e.op_id <> 5
@@ -557,7 +560,8 @@ BEGIN
     FROM (
       SELECT
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         transaction_id AS tid,
         min(event_id) AS first_event,
         max(event_id) AS last_event,
@@ -569,7 +573,8 @@ BEGIN
           r.audit_id,
           r.changes,
           e.id AS event_id,
-          e.table_relid,
+          e.table_name,
+          e.schema_name,
           e.transaction_id,
           CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
         FROM
@@ -582,7 +587,8 @@ BEGIN
       ) s
       GROUP BY
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         ddl_event,
         transaction_id
     ) q
@@ -594,11 +600,12 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.relid = q.table_relid
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name 
      AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.relid = q.table_relid
+      ON d.table_log_id = a.log_id
     WHERE
       NOT (
         e1.op_id = 1
@@ -644,7 +651,8 @@ BEGIN
     FROM (
       SELECT
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         min(transaction_id) AS tid,
         min(event_id) AS first_event,
         max(event_id) AS last_event,
@@ -656,7 +664,8 @@ BEGIN
           r.audit_id,
           r.changes,
           e.id AS event_id,
-          e.table_relid,
+          e.table_name,
+          e.schema_name,
           e.transaction_id,
           CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
         FROM
@@ -669,7 +678,8 @@ BEGIN
       ) s
       GROUP BY
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         ddl_event
     ) q
     JOIN
@@ -680,11 +690,12 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.relid = q.table_relid
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name 
      AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.relid = q.table_relid
+      ON d.table_log_id = a.log_id
     WHERE
       NOT (
         e1.op_id = 1
