@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.6.4     2019-03-23   audit_table_check can handle relid mismatch    FKun
 -- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
 --                        composite data types
 -- 0.6.2     2018-11-05   delete_table_event_log now takes OID           FKun
@@ -306,10 +307,12 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   OUT recent_tab_id INTEGER
   ) RETURNS RECORD AS
 $$
+DECLARE
+  tab_oid OID;
 BEGIN
   BEGIN
     -- try to get OID of table
-    log_tab_oid := ($3 || '.' || $2)::regclass::oid;
+    tab_oid := ($3 || '.' || $2)::regclass::oid;
 
     SELECT
       t_old.id,
@@ -332,9 +335,10 @@ BEGIN
       ON t_old.relid = t_new.relid
      AND t_old.txid_range @> $1::numeric
     WHERE
-      t_new.relid = log_tab_oid
-      AND upper(t_new.txid_range) IS NULL
-      AND lower(t_new.txid_range) IS NOT NULL;
+      (t_new.relid = tab_oid
+      OR (t_new.table_name = $2 AND t_new.schema_name = $3))
+     AND upper(t_new.txid_range) IS NULL
+     AND lower(t_new.txid_range) IS NOT NULL;
 
     EXCEPTION
       WHEN undefined_table THEN
@@ -343,7 +347,7 @@ BEGIN
 
   -- check if the table has existed before tid happened
   -- save schema and name in case it was renamed
-  IF log_tab_id IS NULL AND recent_tab_id IS NULL THEN
+  IF log_tab_id IS NULL THEN
     SELECT
       id,
       relid,
@@ -361,6 +365,9 @@ BEGIN
       AND schema_name = pgmemento.trim_outer_quotes($3)
       AND txid_range @> $1::numeric;
   END IF;
+
+  -- use recent oid if log_tab_oid IS NULL
+  log_tab_oid := COALESCE(log_tab_oid, tab_oid); 
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
