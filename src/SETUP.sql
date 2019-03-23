@@ -183,6 +183,7 @@ COMMENT ON COLUMN pgmemento.audit_tables.tg_is_active IS 'Flag, that shows if lo
 * Therefore, knowledge about table dependencies is required
 * to not violate foreign keys.
 ***********************************************************/
+CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
   WITH RECURSIVE table_dependency(
     parent_oid,
     child_oid,
