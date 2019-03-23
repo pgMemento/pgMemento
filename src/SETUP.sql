@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.6.9     2019-03-23   Audit views list tables even on relid mismatch      FKun
 -- 0.6.8     2019-02-14   ADD AUDIT_ID event gets its own op_id               FKun
 --                        new helper function trim_outer_quotes
 -- 0.6.7     2018-11-19   new log events for adding and dropping audit_id     FKun 
@@ -120,8 +121,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   SELECT
     n.nspname AS schemaname,
     c.relname AS tablename,
-    b.txid_min,
-    b.txid_max,
+    COALESCE(bounds.txid_min, bounds_old.txid_min) AS txid_min,
+    COALESCE(bounds.txid_max, bounds_old.txid_max) AS txid_max,
     CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
       TRUE
     ELSE
@@ -132,12 +133,15 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   JOIN
     pg_namespace n
     ON c.relnamespace = n.oid
+   AND n.nspname <> 'pgmemento'
+   AND n.nspname NOT LIKE 'pg_temp%'
   JOIN
     pg_attribute a
     ON a.attrelid = c.oid
+   AND a.attname = 'audit_id'
   JOIN LATERAL (
     SELECT * FROM pgmemento.get_txid_bounds_to_table(c.oid)
-    ) b ON (true)
+    ) bounds ON (true)
   LEFT JOIN (
     SELECT
       tgrelid,
@@ -148,11 +152,16 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
       tgname = 'log_transaction_trigger'::name
     ) AS tg
     ON c.oid = tg.tgrelid
+  LEFT JOIN
+    pgmemento.audit_table_log atl
+    ON atl.table_name = c.relname
+   AND atl.schema_name = n.nspname
+   AND upper(atl.txid_range) IS NULL
+  LEFT JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(atl.relid)
+    ) bounds_old ON (true)
   WHERE
-    n.nspname <> 'pgmemento'
-    AND n.nspname NOT LIKE 'pg_temp%'
-    AND a.attname = 'audit_id'
-    AND c.relkind = 'r'
+    c.relkind = 'r'
   ORDER BY
     schemaname,
     tablename;
@@ -174,7 +183,6 @@ COMMENT ON COLUMN pgmemento.audit_tables.tg_is_active IS 'Flag, that shows if lo
 * Therefore, knowledge about table dependencies is required
 * to not violate foreign keys.
 ***********************************************************/
-CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
   WITH RECURSIVE table_dependency(
     parent_oid,
     child_oid,
@@ -193,14 +201,17 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     JOIN
       pg_namespace n
       ON n.oid = c.connamespace
+    JOIN
+      pg_class cl
+      ON cl.oid = c.conrelid
     JOIN pgmemento.audit_table_log a
-      ON a.relid = c.conrelid
+      ON (a.relid = c.conrelid OR a.table_name = cl.relname)
      AND a.schema_name = n.nspname
+     AND upper(a.txid_range) IS NULL
+     AND lower(a.txid_range) IS NOT NULL
     WHERE
       c.contype = 'f'
       AND c.conrelid <> c.confrelid
-      AND upper(a.txid_range) IS NULL
-      AND lower(a.txid_range) IS NOT NULL
     UNION ALL
       SELECT DISTINCT ON (c.conrelid)
         c.confrelid AS parent_oid,
@@ -213,16 +224,19 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       JOIN
         pg_namespace n
         ON n.oid = c.connamespace
+      JOIN
+        pg_class cl
+        ON cl.oid = c.conrelid
       JOIN pgmemento.audit_table_log a
-        ON a.relid = c.conrelid
+        ON (a.relid = c.conrelid OR a.table_name = cl.relname)
        AND a.schema_name = n.nspname
+       AND upper(a.txid_range) IS NULL
+       AND lower(a.txid_range) IS NOT NULL
       JOIN table_dependency d
         ON d.child_oid = c.confrelid
       WHERE
         c.contype = 'f'
         AND d.child_oid <> c.conrelid
-        AND upper(a.txid_range) IS NULL
-        AND lower(a.txid_range) IS NOT NULL
   )
   SELECT
     child_oid AS relid,
@@ -251,11 +265,11 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         pgmemento.audit_table_log atl
       LEFT JOIN
         table_dependency d
-        ON d.child_oid = atl.relid
+        ON (d.child_oid = atl.relid OR d.table_name = atl.table_name)
+       AND upper(atl.txid_range) IS NULL
+       AND lower(atl.txid_range) IS NOT NULL
       WHERE
         d.child_oid IS NULL
-        AND upper(atl.txid_range) IS NULL
-        AND lower(atl.txid_range) IS NOT NULL
   ) td
   ORDER BY
     schemaname,
