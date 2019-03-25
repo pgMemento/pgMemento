@@ -52,4 +52,13 @@ DROP FUNCTION IF EXISTS pgmemento.restore_record(
 \i src/SCHEMA_MANAGEMENT.sql
 
 \echo
+\echo 'Update ADD AUDIT_ID events'
+UPDATE
+  pgmemento.table_event_log
+SET
+  op_id = 21
+WHERE
+  table_operation = 'ADD AUDIT_ID';
+
+\echo
 \echo 'pgMemento upgrade completed!'
