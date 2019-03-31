@@ -1,0 +1,42 @@
+{
+    "name": "pgMemento",
+    "abstract": "Audit trail with schema versioning for PostgreSQL using transaction-based logging",
+    "version": "0.7.0",
+    "maintainer": [
+        "Felix Kunde <felix-kunde@gmx.de>"
+    ],
+    "license": "LGPL-3.0",
+    "meta-spec": {
+        "version": "1.0.0",
+        "url": "http://pgxn.org/meta/spec.txt"
+    },
+    "provides": {
+        "pgmemento": {
+            "abstract": "Audit trail versioning",
+            "file": "sql/pgmemento.sql",
+            "docfile": "doc/README.pgmemento",
+            "version": "0.7.0"
+        }
+    },
+    "resources": {
+        "bugtracker": {
+            "web": "https://github.com/pgMemento/pgMemento/issues/"
+        },
+        "repository": {
+            "url":  "https://github.com/pgMemento/pgMemento.git",
+            "web":  "https://github.com/pgMemento/pgMemento/",
+            "type": "git"
+        }
+    },
+    "tags": [
+        "audit",
+        "auditing",
+        "trail",
+        "log",
+        "logging",
+        "history",
+        "versioning",
+        "journaling",
+        "pgmemento"
+    ]
+}
