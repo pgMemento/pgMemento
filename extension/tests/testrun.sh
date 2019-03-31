@@ -31,41 +31,11 @@ EOF
 
 
 echo "Taking the data history point snapshot";
-cat <<'EOF' | psql pgmemento_backup postgres -qAt > /tmp/restore_data.sql
-  create function
-    generate_restore_query()
-    returns varchar
-  as $$
-  declare
-    txid_min_ int;
-    txid_max_ int;
-    audit_id_ int;
-    result_ varchar;
-
-  begin
-    select audit_id into audit_id_ from valuable_data where id = 2;
-
-    select
-      txid_min,
-      txid_max
-    into
-      txid_min_,
-      txid_max_
-    from
-      pgmemento.audit_tables
-    where
-      schemaname like 'public'
-    and
-      tablename like 'valuable_data';
-
-    select
-      format('select * from pgmemento.restore_record(%1$s, %2$s, ''valuable_data'', ''public'', %3$s) ', txid_min_, txid_max_, audit_id_)
-      || (select pgmemento.restore_record_definition(txid_max_, 'valuable_data', 'public')) into result_;
-
-    return result_;
-  end; $$ language plpgsql;
-
-  select generate_restore_query();
+cat <<'EOF' | psql pgmemento_backup postgres -qAt > /tmp/revert_data.sql
+  select format(
+    'select pgmemento.revert_transaction(%1$s)',
+    (select max(id) from pgmemento.transaction_log)
+  );
 EOF
 
 
@@ -96,15 +66,15 @@ EOF
 
 psql pgmemento_restore postgres -c "$TEST_MUTATED";
 
-echo "Trying to revert the mutated data back to the snapshot";
-psql pgmemento_restore postgres < /tmp/restore_data.sql
+echo "Trying to revert the mutated data";
+psql pgmemento_restore postgres < /tmp/revert_data.sql
 
-read -r -d '\0' TEST_RESTORED <<'EOF'
+read -r -d '\0' TEST_REVERTED <<'EOF'
   do $$ begin
     assert (select value from valuable_data where id=2) = 'two';
   end; $$;\0
 EOF
 
-psql pgmemento_restore postgres -c "$TEST_RESTORED"
+psql pgmemento_restore postgres -c "$TEST_REVERTED"
 
 echo "SUCCESS";
