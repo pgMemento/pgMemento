@@ -7,8 +7,8 @@ psql postgres postgres -c 'CREATE DATABASE pgmemento_test;'
 
 cd /home/pgmemento;
 
-#echo "Running extension tests...";
-#psql pgmemento_test postgres -f /home/pgmemento/extension/tests/TEST.sql
+echo "Running extension tests...";
+psql pgmemento_test postgres -f /home/pgmemento/extension/tests/TEST.sql
 
 ### Test we have backups covered
 
