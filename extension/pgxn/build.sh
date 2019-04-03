@@ -2,8 +2,7 @@
 
 set -e
 
-CURPATH=$(dirname "$0")
-cd $CURPATH;
+cd $(dirname "$0")
 
 echo -n "Copying the control file ... ";
 VERSION=$(grep default_version ../pgmemento.control | sed -e "s/default_version[[:space:]]*=[[:space:]]*'\\([^']*\\)'/\\1/")

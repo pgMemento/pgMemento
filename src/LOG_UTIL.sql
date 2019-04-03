@@ -17,6 +17,7 @@
 --
 -- Version | Date       | Description                                  | Author
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
+-- 0.6.4     2019-03-23   audit_table_check can handle relid mismatch    FKun
 -- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
 --                        composite data types
 -- 0.6.2     2018-11-05   delete_table_event_log now takes OID           FKun

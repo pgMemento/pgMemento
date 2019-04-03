@@ -16,6 +16,7 @@
 --
 -- Version | Date       | Description                                       | Author
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs and VIEWs            FKun
+-- 0.6.9     2019-03-23   Audit views list tables even on relid mismatch      FKun
 -- 0.6.8     2019-02-14   ADD AUDIT_ID event gets its own op_id               FKun
 --                        new helper function trim_outer_quotes
 -- 0.6.7     2018-11-19   new log events for adding and dropping audit_id     FKun
@@ -238,8 +239,6 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       WHERE
         ct.contype = 'f'
         AND d.child_oid <> ct.conrelid
-        AND upper(a.txid_range) IS NULL
-        AND lower(a.txid_range) IS NOT NULL
   )
   SELECT
     child_oid AS relid,

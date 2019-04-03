@@ -1,4 +1,4 @@
--- UPGRADE_v05_to_v06.sql
+-- UPGRADE_v05_to_v061.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.1     2019-03-23   updated version number                         FKun
 -- 0.2.0     2018-11-20   restart auditing after upgrade                 FKun
 -- 0.1.0     2018-07-23   initial commit                                 FKun
 --
@@ -25,7 +26,7 @@ SET client_min_messages TO WARNING;
 \set ON_ERROR_STOP ON
 
 \echo
-\echo 'Updgrade pgMemento from v0.5 to v0.6 ...'
+\echo 'Updgrade pgMemento from v0.5 to v0.6.1 ...'
 
 \echo
 \echo 'Remember activated triggers'

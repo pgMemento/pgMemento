@@ -2,8 +2,8 @@
 
 set -e
 
-psql postgres postgres -c 'drop database if exists pgmemento_test;'
-psql postgres postgres -c 'create database pgmemento_test;'
+psql postgres postgres -c 'DROP DATABASE IF EXISTS pgmemento_test;'
+psql postgres postgres -c 'CREATE DATABASE pgmemento_test;'
 
 cd /home/pgmemento;
 
@@ -17,60 +17,27 @@ if [[ "$NO_BACKUP_RECOVERY" != "" ]] ; then
 fi
 
 echo "Running backup tests...";
-psql postgres postgres -c 'create database pgmemento_backup';
+psql postgres postgres -c 'CREATE DATABASE pgmemento_backup';
 
 echo "Creating initial data for backup";
 cat <<'EOF' | psql pgmemento_backup postgres
-  create extension pgmemento;
-  select pgmemento.create_schema_event_trigger(true);
-  select pgmemento.create_schema_audit('public', true);
+  CREATE EXTENSION pgmemento;
+  SELECT pgmemento.create_schema_event_trigger(true);
+  SELECT pgmemento.create_schema_audit('public', true);
 
-  create table valuable_data (id int, value varchar);
-  insert into valuable_data (id, value) values (1, 'one'), (2, 'two'), (3, 'three');
+  CREATE TABLE valuable_data (id INTEGER, value VARCHAR);
+  INSERT INTO valuable_data (id, value) VALUES (1, 'one'), (2, 'two'), (3, 'three');
+  UPDATE valuable_data SET value = 'mutated two' WHERE id = 2;
 EOF
 
-
-echo "Taking the data history point snapshot";
+echo "Query state of 'two' before update";
 cat <<'EOF' | psql pgmemento_backup postgres -qAt > /tmp/restore_data.sql
-  create function
-    generate_restore_query()
-    returns varchar
-  as $$
-  declare
-    txid_min_ int;
-    txid_max_ int;
-    audit_id_ int;
-    result_ varchar;
-
-  begin
-    select audit_id into audit_id_ from valuable_data where id = 2;
-
-    select
-      txid_min,
-      txid_max
-    into
-      txid_min_,
-      txid_max_
-    from
-      pgmemento.audit_tables
-    where
-      schemaname like 'public'
-    and
-      tablename like 'valuable_data';
-
-    select
-      format('select * from pgmemento.restore_record(%1$s, %2$s, ''valuable_data'', ''public'', %3$s) ', txid_min_, txid_max_, audit_id_)
-      || (select pgmemento.restore_record_definition(txid_max_, 'valuable_data', 'public')) into result_;
-
-    return result_;
-  end; $$ language plpgsql;
-
-  select generate_restore_query();
+  SELECT format(
+    'SELECT set_config(''pgmemento.restore_value'', pgmemento.restore_value(%1$s, %2$s, ''value'', NULL::varchar), FALSE) AS restore',
+    (SELECT txid_max FROM pgmemento.audit_tables WHERE tablename = 'valuable_data'),
+    (SELECT audit_id FROM valuable_data WHERE id = 2)
+  );
 EOF
-
-
-echo "Mutating the data after the snapshot";
-psql pgmemento_backup postgres -c "update valuable_data set value = 'mutated two' where id = 2"
 
 echo "Taking the mutated data backup";
 pg_dump -U postgres -Oxo pgmemento_backup > /tmp/backup.sql;
@@ -89,22 +56,22 @@ psql pgmemento_restore postgres < /tmp/backup.sql
 echo "Validating we have mutated data restored";
 
 read -r -d '\0' TEST_MUTATED <<'EOF'
-  do $$ begin
-    assert (select value from valuable_data where id=2) = 'mutated two';
-  end; $$;\0
+  DO $$ BEGIN
+    ASSERT (SELECT value FROM valuable_data WHERE id = 2) = 'mutated two';
+  END; $$;\0
 EOF
 
 psql pgmemento_restore postgres -c "$TEST_MUTATED";
 
-echo "Trying to revert the mutated data back to the snapshot";
-psql pgmemento_restore postgres < /tmp/restore_data.sql
+echo "Validating restore query works";
 
-read -r -d '\0' TEST_RESTORED <<'EOF'
-  do $$ begin
-    assert (select value from valuable_data where id=2) = 'two';
-  end; $$;\0
+read -r -d '\0' TEST_RESTORE <<'EOF'
+  DO $$ BEGIN
+    ASSERT (SELECT current_setting('pgmemento.restore_value')) = 'two';
+  END; $$;\0
 EOF
 
-psql pgmemento_restore postgres -c "$TEST_RESTORED"
+psql pgmemento_restore postgres -f /tmp/restore_data.sql -c "$TEST_RESTORE" -1
 
 echo "SUCCESS";
+
