@@ -71,7 +71,7 @@ read -r -d '\0' TEST_RESTORE <<'EOF'
   END; $$;\0
 EOF
 
-psql pgmemento_restore postgres -f /tmp/restore_data.sql -c "$TEST_RESTORE"
+psql pgmemento_restore postgres -f /tmp/restore_data.sql -c "$TEST_RESTORE" -1
 
 echo "SUCCESS";
 
