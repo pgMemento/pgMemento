@@ -37,7 +37,7 @@ SET client_min_messages TO WARNING;
 -- add PostGIS extension
 CREATE EXTENSION postgis;
 
-\i test/SUITE.sql
+--\i test/SUITE.sql
 
 \echo
 \echo 'Uninstall pgMemento'

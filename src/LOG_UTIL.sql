@@ -325,7 +325,7 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   OUT log_tab_id INTEGER,
   OUT recent_tab_name TEXT,
   OUT recent_tab_schema TEXT,
-  OUT recent_tab_id INTEGER,
+  OUT recent_tab_id INTEGER
   ) RETURNS RECORD AS
 $$
 -- check if the table has existed before tid happened

@@ -257,6 +257,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       table_dependency
     GROUP BY
       child_oid,
+      table_log_id,
       schema_name,
       table_name
     UNION ALL
@@ -354,6 +355,7 @@ CREATE OR REPLACE FUNCTION pgmemento.register_audit_table(
 $$
 DECLARE
   tab_id INTEGER;
+  table_log_id INTEGER;
   old_table_name TEXT;
   old_schema_name TEXT;
 BEGIN
@@ -604,7 +606,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
 $$
 BEGIN
   -- log as 'add column' event, as it is not done by event triggers
-  PERFORM pgmemento.log_table_event(txid_current(),($2 || '.' || $1)::regclass::oid, 'ADD AUDIT_ID');
+  PERFORM pgmemento.log_table_event(txid_current(), $1, $2, 'ADD AUDIT_ID');
 
   -- add 'audit_id' column to table if it does not exist, yet
   IF NOT EXISTS (
@@ -796,7 +798,7 @@ BEGIN
   END IF;
 
   -- assign id for operation type
-  CASE $3
+  CASE $4
     WHEN 'CREATE TABLE' THEN operation_id := 1;
     WHEN 'RENAME TABLE' THEN operation_id := 12;
     WHEN 'ADD COLUMN' THEN operation_id := 2;
@@ -810,6 +812,7 @@ BEGIN
     WHEN 'TRUNCATE' THEN operation_id := 8;
     WHEN 'DROP AUDIT_ID' THEN operation_id := 8;
     WHEN 'DROP TABLE' THEN operation_id := 9;
+    ELSE RAISE EXCEPTION 'Unknown op_id %', $4;
   END CASE;
 
   -- try to log corresponding table event
@@ -818,7 +821,7 @@ BEGIN
     (transaction_id, op_id, table_operation, table_relid, table_name, schema_name)
   VALUES
     (transaction_log_id, operation_id, $4, ($3 || '.' || $2)::regclass::oid, $2, $3)
-  ON CONFLICT (transaction_id, table_log_id, op_id)
+  ON CONFLICT (transaction_id, table_name, schema_name, op_id)
     DO NOTHING
   RETURNING id
   INTO table_event_log_id;

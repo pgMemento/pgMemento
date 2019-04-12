@@ -73,13 +73,14 @@ BEGIN
     AND c.relkind = 'S'
     AND c.relname <> 'test_seq';
 
-  ASSERT array_length(pgm_objects,1) = 6, 'Error: Incorrect number of sequences!';
+  ASSERT array_length(pgm_objects,1) = 7, 'Error: Incorrect number of sequences!';
   ASSERT pgm_objects[1] = 'audit_column_log_id_seq', 'Error: audit_column_log_id_seq not found!';
   ASSERT pgm_objects[2] = 'audit_id_seq', 'Error: audit_id_seq not found!';
   ASSERT pgm_objects[3] = 'audit_table_log_id_seq', 'Error: audit_table_log_id_seq not found!';
   ASSERT pgm_objects[4] = 'row_log_id_seq', 'Error: row_log_id_seq not found!';
   ASSERT pgm_objects[5] = 'table_event_log_id_seq', 'Error: table_event_log_id_seq not found!';
-  ASSERT pgm_objects[6] = 'transaction_log_id_seq', 'Error: transaction_log_id_seq not found!';
+  ASSERT pgm_objects[6] = 'table_log_id_seq', 'Error: table_log_id_seq not found!';
+  ASSERT pgm_objects[7] = 'transaction_log_id_seq', 'Error: transaction_log_id_seq not found!';
 
   -- check for stored procedures
   SELECT
@@ -112,8 +113,8 @@ BEGIN
   ASSERT pgm_objects[10] = 'create_table_log_trigger;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[11] = 'delete_audit_table_log;SETOF integer;table_log_id integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[12] = 'delete_key;SETOF bigint;aid bigint, key_name text, old_value anyelement', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[13] = 'delete_table_event_log;SETOF integer;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[14] = 'delete_table_event_log;SETOF integer;tid integer, table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[13] = 'delete_table_event_log;SETOF integer;tid integer, table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[14] = 'delete_table_event_log;SETOF integer;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[15] = 'delete_txid_log;integer;tid integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[16] = 'drop_schema_audit;SETOF void;schema_name text DEFAULT ''public''::text, keep_log boolean DEFAULT true, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[17] = 'drop_schema_audit_id;SETOF void;schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
