@@ -193,7 +193,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     SELECT DISTINCT ON (ct.conrelid)
       ct.confrelid AS parent_oid,
       ct.conrelid AS child_oid,
-      a.log_id,
+      a.log_id AS table_log_id,
       a.table_name,
       a.schema_name,
       1 AS depth
@@ -217,7 +217,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       SELECT DISTINCT ON (ct.conrelid)
         ct.confrelid AS parent_oid,
         ct.conrelid AS child_oid,
-        a.log_id,
+        a.log_id AS table_log_id,
         a.table_name,
         n.nspname AS schema_name,
         d.depth + 1 AS depth
@@ -249,7 +249,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
   FROM (
     SELECT
       child_oid,
-      log_id,
+      log_id AS table_log_id,
       schema_name,
       table_name,
       max(depth) AS depth
@@ -262,7 +262,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     UNION ALL
       SELECT
         atl.relid,
-        atl.log_id,
+        atl.log_id AS table_log_id,
         atl.schema_name,
         atl.table_name,
         0 AS depth
@@ -270,9 +270,9 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
         pgmemento.audit_table_log atl
       LEFT JOIN
         table_dependency d
-        ON d.log_id = atl.log_id
+        ON d.table_log_id = atl.log_id
       WHERE
-        d.log_id IS NULL
+        d.table_log_id IS NULL
         AND upper(atl.txid_range) IS NULL
         AND lower(atl.txid_range) IS NOT NULL
   ) td
