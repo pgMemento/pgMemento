@@ -43,16 +43,16 @@
 *
 * FUNCTIONS:
 *   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
-*     OUT log_tab_oid OID, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
+*     OUT table_log_id INTEGER, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
 *     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER) RETURNS RECORD
 *   delete_audit_table_log(table_log_id INTEGER) RETURNS SETOF INTEGER
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
-*   delete_table_event_log(table_name TEXT, schema_name TEXT) RETURNS SETOF INTEGER
-*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT) RETURNS SETOF INTEGER
+*   delete_table_event_log(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
 *   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
-*   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID,
+*   get_column_list_by_txid_range(start_from_tid INTEGER, end_at_tid INTEGER, table_log_id INTEGER,
 *     OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER,
 *     OUT txid_range numrange) RETURNS SETOF RECORD
 *   get_max_txid_to_audit_id(aid BIGINT) RETURNS INTEGER
@@ -197,7 +197,7 @@ LANGUAGE sql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
   table_name TEXT,
-  schema_name TEXT
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
@@ -213,7 +213,7 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   table_name TEXT,
-  schema_name TEXT
+  schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
