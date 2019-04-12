@@ -249,7 +249,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
   FROM (
     SELECT
       child_oid,
-      log_id AS table_log_id,
+      log_id,
       schema_name,
       table_name,
       max(depth) AS depth
@@ -262,7 +262,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
     UNION ALL
       SELECT
         atl.relid,
-        atl.log_id AS table_log_id,
+        atl.log_id,
         atl.schema_name,
         atl.table_name,
         0 AS depth
