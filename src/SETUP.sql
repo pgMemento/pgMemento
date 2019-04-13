@@ -402,7 +402,7 @@ BEGIN
 
         EXCEPTION
           WHEN undefined_object THEN
-            table_log_id := nextval('table_log_id_seq');
+            table_log_id := nextval('pgmemento.table_log_id_seq');
       END;
 
       -- if so, unregister first before making new inserts
@@ -812,7 +812,7 @@ BEGIN
     WHEN 'TRUNCATE' THEN operation_id := 8;
     WHEN 'DROP AUDIT_ID' THEN operation_id := 8;
     WHEN 'DROP TABLE' THEN operation_id := 9;
-    ELSE RAISE EXCEPTION 'Unknown op_id %', $4;
+    ELSE RAISE EXCEPTION 'Unknown op_type %', $4;
   END CASE;
 
   -- try to log corresponding table event

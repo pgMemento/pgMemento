@@ -517,8 +517,8 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = tid
-        AND table_name = split_part(obj.object_identity, '.' ,1)
-        AND schema_name = split_part(obj.object_identity, '.' ,2)
+        AND table_name = split_part(obj.object_identity, '.' ,2)
+        AND schema_name = split_part(obj.object_identity, '.' ,1)
         AND op_id IN (12, 2, 21, 22, 5, 6)
     ) THEN
       PERFORM pgmemento.modify_ddl_log_tables(
@@ -549,8 +549,10 @@ DECLARE
   stack TEXT;
   fetch_next BOOLEAN := TRUE;
   table_ident TEXT := '';
+  rec RECORD;
   schemaname TEXT;
   tablename TEXT;
+  table_log_id INTEGER;
   ntables INTEGER := 0;
   column_candidate TEXT;
   event_type TEXT;
@@ -620,10 +622,12 @@ BEGIN
       -- check if table is audited
       SELECT
         quote_ident(table_name),
-        quote_ident(schema_name)
+        quote_ident(schema_name),
+        log_id
       INTO
         tablename,
-        schemaname
+        schemaname,
+        table_log_id
       FROM
         pgmemento.audit_table_log
       WHERE
@@ -639,9 +643,10 @@ BEGIN
       tablename := table_ident;
 
       -- check if table is audited and not ambiguous
-      FOR schemaname IN
+      FOR rec IN
         SELECT
-          quote_ident(schema_name)
+          quote_ident(schema_name) AS schema_name,
+          log_id
         FROM
           pgmemento.audit_table_log
         WHERE
@@ -650,6 +655,12 @@ BEGIN
           AND lower(txid_range) IS NOT NULL
       LOOP
         ntables := ntables + 1;
+        IF ntables > 1 THEN
+          -- table name is found more than once in audit_table_log
+          RAISE EXCEPTION 'Please specify the schema name in the ALTER TABLE command.';
+        END IF;
+        schemaname := rec.schema_name;
+        table_log_id := rec.log_id;
       END LOOP;
     END IF;
 
@@ -658,15 +669,10 @@ BEGIN
       RETURN;
     END IF;
 
-    IF ntables > 1 THEN
-      -- table name is found more than once in audit_table_log
-      RAISE EXCEPTION 'Please specify the schema name in the ALTER TABLE command.';
-    END IF;
-
     -- check if table got renamed and log event if yes
     IF lower(ddl_text) LIKE ' rename to%' THEN
       PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME TABLE');
-      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,10,length(ddl_text))), transaction_log_id::text, TRUE);
+      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,10,length(ddl_text))), table_log_id::text, TRUE);
       RETURN;
     END IF;
 
@@ -861,8 +867,8 @@ BEGIN
             pgmemento.table_event_log
           WHERE
             transaction_id = current_setting('pgmemento.' || txid_current())::int
-            AND table_name = split_part(obj.object_identity, '.' ,1)
-            AND schema_name = split_part(obj.object_identity, '.' ,2)
+            AND table_name = split_part(obj.object_identity, '.' ,2)
+            AND schema_name = split_part(obj.object_identity, '.' ,1)
             AND op_id = 8
             AND table_operation = 'DROP AUDIT_ID'
         ) THEN
