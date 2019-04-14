@@ -401,7 +401,7 @@ BEGIN
           AND lower(txid_range) IS NOT NULL;
 
         EXCEPTION
-          WHEN undefined_object THEN
+          WHEN others THEN
             table_log_id := nextval('pgmemento.table_log_id_seq');
       END;
 

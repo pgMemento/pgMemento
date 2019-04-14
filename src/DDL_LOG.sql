@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.0     2019-04-14   reflect schema changes in UDFs and VIEWs         FKun
 -- 0.6.9     2019-02-24   new function flatten_ddl to remove comments      FKun
 -- 0.6.8     2019-02-14   permit drop audit_id in pre alter trigger        FKun
 -- 0.6.7     2019-02-09   fetch_ident: improved parsing of DDL context     FKun
@@ -531,7 +532,7 @@ BEGIN
         AND lower(txid_range) IS NOT NULL;
 
      EXCEPTION
-       WHEN undefined_object THEN
+       WHEN others THEN
          tablename := split_part(obj.object_identity, '.' ,2);
          schemaname := split_part(obj.object_identity, '.' ,1);
     END;
@@ -702,9 +703,6 @@ BEGIN
       PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))), table_log_id::text, TRUE);
       RETURN;
     END IF;
-
-    -- save log_id from audit_table_log
-    PERFORM set_config('pgmemento.' || schemaname || '.' || tablename, table_log_id::text, TRUE);
 
     -- start parsing columns
     WHILE length(ddl_text) > 0 LOOP
