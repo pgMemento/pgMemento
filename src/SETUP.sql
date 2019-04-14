@@ -386,7 +386,7 @@ BEGIN
       BEGIN
         -- check if table exists in 'audit_table_log' with another name (and open range)
         table_log_id := current_setting('pgmemento.' || $2 || '.' || $1)::int;
-
+        RAISE NOTICE 'the id: %', table_log_id;
         SELECT
           table_name,
           schema_name

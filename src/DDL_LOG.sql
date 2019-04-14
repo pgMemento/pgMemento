@@ -503,12 +503,39 @@ $$
 DECLARE
   obj RECORD;
   tid INTEGER;
+  table_log_id INTEGER;
+  tablename TEXT;
+  schemaname TEXT;
 BEGIN
   tid := current_setting('pgmemento.' || txid_current())::int;
 
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
+    BEGIN
+      -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
+      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
+
+      -- get old table and schema name for this log_id
+      SELECT
+        table_name,
+        schema_name
+      INTO
+        tablename,
+        schemaname
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        log_id = table_log_id
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+
+     EXCEPTION
+       WHEN undefined_object THEN
+         tablename := split_part(obj.object_identity, '.' ,2);
+         schemaname := split_part(obj.object_identity, '.' ,1);
+    END;
+
     -- check for existing table events
     IF EXISTS (
       SELECT
@@ -517,8 +544,8 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = tid
-        AND table_name = split_part(obj.object_identity, '.' ,2)
-        AND schema_name = split_part(obj.object_identity, '.' ,1)
+        AND table_name = tablename
+        AND schema_name = schemaname
         AND op_id IN (12, 2, 21, 22, 5, 6)
     ) THEN
       PERFORM pgmemento.modify_ddl_log_tables(
@@ -672,9 +699,12 @@ BEGIN
     -- check if table got renamed and log event if yes
     IF lower(ddl_text) LIKE ' rename to%' THEN
       PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME TABLE');
-      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,10,length(ddl_text))), table_log_id::text, TRUE);
+      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))), table_log_id::text, TRUE);
       RETURN;
     END IF;
+
+    -- save log_id from audit_table_log
+    PERFORM set_config('pgmemento.' || schemaname || '.' || tablename, table_log_id::text, TRUE);
 
     -- start parsing columns
     WHILE length(ddl_text) > 0 LOOP
