@@ -244,7 +244,7 @@ BEGIN
       find_logs,
       extract_logs
     FROM
-      pgmemento.get_column_list_by_txid_range($1, $2, table_log_id) c_old
+      pgmemento.get_column_list_by_txid_range($1, $2, log_id) c_old
     LEFT JOIN
       pgmemento.audit_column_log c_new
       ON c_old.ordinal_position = c_new.ordinal_position

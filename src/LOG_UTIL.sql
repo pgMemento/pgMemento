@@ -335,8 +335,8 @@ SELECT
   t_old.table_name AS log_tab_name,
   t_old.schema_name AS log_tab_schema,
   t_old.id AS log_tab_id,
-  t_new.schema_name AS recent_tab_name,
-  t_new.table_name AS recent_tab_schema,
+  t_new.table_name AS recent_tab_name,
+  t_new.schema_name AS recent_tab_schema,
   t_new.id AS recent_tab_id
 FROM
   pgmemento.audit_table_log t_new

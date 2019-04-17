@@ -31,9 +31,14 @@ DECLARE
   column_list TEXT;
 BEGIN
   SELECT
-    pgmemento.restore_record_definition(1, 18, 'public.object'::regclass::oid)
+    pgmemento.restore_record_definition(1, 18, log_id)
   INTO
-    column_list;
+    column_list
+  FROM
+    pgmemento.audit_table_log
+  WHERE
+    table_name = 'object'
+    AND schema_name = 'public';
 
   ASSERT column_list = 'AS (id integer, lineage text, audit_id bigint, event_id integer, transaction_id integer)', 'Incorrect column definition list: %', column_list;
   

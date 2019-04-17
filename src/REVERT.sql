@@ -82,7 +82,10 @@ BEGIN
     BEGIN
       -- collect information of renamed table
       SELECT
-        t_new.table_name
+        format('%I.%I',
+          t_old.schema_name,
+          t_old.table_name
+        )
       INTO
         stmt
       FROM
@@ -90,19 +93,19 @@ BEGIN
         pgmemento.audit_table_log t_new
       WHERE
         t_old.log_id = t_new.log_id
-        AND t_old.table_name = $5
-        AND t_old.schema_name = $6
+        AND t_new.table_name = $5
+        AND t_new.schema_name = $6
         AND upper(t_new.txid_range) = $1
         AND lower(t_old.txid_range) = $1;
 
       -- try to re-rename table
       IF stmt IS NOT NULL THEN
-        EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', $6, $5, stmt);
+        EXECUTE 'ALTER TABLE ' || stmt || format(' RENAME TO %I', $5);
       END IF;
 
       EXCEPTION
         WHEN undefined_table THEN
-          RAISE NOTICE 'Could not revert RENAME TABLE event for table %.%: %', $6, $5, SQLERRM;
+          RAISE NOTICE 'Could not revert RENAME TABLE event for table %: %', stmt, SQLERRM;
     END;
 
   -- ADD COLUMN case
@@ -454,7 +457,7 @@ BEGIN
       pgmemento.audit_table_log a 
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name 
-     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+     AND (a.txid_range @> t.id::numeric
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
@@ -506,7 +509,7 @@ BEGIN
       pgmemento.audit_table_log a 
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+     AND (a.txid_range @> t.id::numeric
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
@@ -600,9 +603,9 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.table_name = e.table_name
-     AND a.schema_name = e.schema_name 
-     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      ON a.table_name = q.table_name
+     AND a.schema_name = q.schema_name 
+     AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -690,9 +693,9 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.table_name = e.table_name
-     AND a.schema_name = e.schema_name 
-     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      ON a.table_name = q.table_name
+     AND a.schema_name = q.schema_name 
+     AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
