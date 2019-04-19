@@ -38,7 +38,7 @@ VALUES
 \i test/revert/TEST_REVERT_ALTER_COLUMN.sql;
 \i test/revert/TEST_REVERT_ADD_COLUMN.sql;
 \i test/revert/TEST_REVERT_ALTER_TABLE.sql;
---\i test/revert/TEST_REVERT_CREATE_TABLE.sql;
+\i test/revert/TEST_REVERT_CREATE_TABLE.sql;
 
 \i test/revert/TEST_REVERT_TRUNCATE.sql;
 \i test/revert/TEST_REVERT_DELETE.sql;

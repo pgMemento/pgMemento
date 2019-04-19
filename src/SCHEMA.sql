@@ -91,7 +91,6 @@ CREATE TABLE pgmemento.table_event_log
   transaction_id INTEGER NOT NULL,
   op_id SMALLINT NOT NULL,
   table_operation VARCHAR(18),
-  table_relid OID NOT NULL,
   table_name TEXT NOT NULL,
   schema_name TEXT NOT NULL
 );
@@ -104,7 +103,6 @@ COMMENT ON COLUMN pgmemento.table_event_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.table_event_log.transaction_id IS 'Foreign Key to transaction_log table';
 COMMENT ON COLUMN pgmemento.table_event_log.op_id IS 'ID of event type';
 COMMENT ON COLUMN pgmemento.table_event_log.table_operation IS 'Text for of event type';
-COMMENT ON COLUMN pgmemento.table_event_log.table_relid IS '[DEPRECTAED] The table''s OID';
 COMMENT ON COLUMN pgmemento.table_event_log.table_name IS 'Name of table that fired the trigger';
 COMMENT ON COLUMN pgmemento.table_event_log.schema_name IS 'Schema of firing table';
 

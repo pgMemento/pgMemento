@@ -818,9 +818,9 @@ BEGIN
   -- try to log corresponding table event
   -- on conflict do nothing
   INSERT INTO pgmemento.table_event_log
-    (transaction_id, op_id, table_operation, table_relid, table_name, schema_name)
+    (transaction_id, op_id, table_operation, table_name, schema_name)
   VALUES
-    (transaction_log_id, operation_id, $4, ($3 || '.' || $2)::regclass::oid, $2, $3)
+    (transaction_log_id, operation_id, $4, $2, $3)
   ON CONFLICT (transaction_id, table_name, schema_name, op_id)
     DO NOTHING
   RETURNING id

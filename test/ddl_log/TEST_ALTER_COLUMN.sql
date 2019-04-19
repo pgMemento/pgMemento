@@ -54,7 +54,8 @@ BEGIN
     pgmemento.table_event_log 
   WHERE
     transaction_id = test_transaction
-    AND table_relid = 'public.tests'::regclass::oid
+    AND table_name = 'tests'
+    AND schema_name = 'public'
     AND op_id = 5;
 
   -- query for logged transaction

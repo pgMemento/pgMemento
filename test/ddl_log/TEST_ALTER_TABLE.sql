@@ -90,7 +90,8 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    table_name = 'test'
+    AND schema_name = 'public'
     AND upper(txid_range) = test_transaction;
 
   -- save table log id for next test
@@ -110,7 +111,8 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    table_name = 'tests'
+    AND schema_name = 'public'
     AND lower(txid_range) = test_transaction;
 
   -- save table log id for next test

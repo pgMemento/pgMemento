@@ -41,7 +41,8 @@ BEGIN
     pgmemento.table_event_log
   WHERE
     op_id = 7
-    AND table_relid = 'public.object'::regclass::oid;
+    AND table_name = 'object'
+    AND schema_name = 'public';
 
   -- query for logged transaction
   SELECT
