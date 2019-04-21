@@ -141,12 +141,12 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_transaction INTEGER;
+  test_transaction NUMERIC;
   colnames TEXT[];
   datatypes TEXT[];
   tid_ranges numrange[];
 BEGIN
-  test_transaction := current_setting('pgmemento.revert_drop_table_test2')::int;
+  test_transaction := current_setting('pgmemento.revert_drop_table_test2')::numeric;
 
   -- get logs of columns of dropped table
   SELECT
@@ -169,9 +169,9 @@ BEGIN
   ASSERT datatypes[1] = 'integer', 'Expected integer data type, but found ''%'' instead', datatypes[1];
   ASSERT datatypes[2] = 'geometry(PointZ,4326)', 'Expected geometry(PointZ,4326) data type, but found ''%'' instead', datatypes[2];
   ASSERT datatypes[3] = 'json', 'Expected json data type, but found ''%'' instead', datatypes[3];
-  ASSERT lower(tid_ranges[1]) = test_transaction, 'Error: Lower transaction id % does not match the id % of DROP TABLE event', lower(tid_ranges[1]), test_transaction;
-  ASSERT lower(tid_ranges[2]) = test_transaction, 'Error: Lower transaction id % does not match the id % of DROP TABLE event', lower(tid_ranges[2]), test_transaction;
-  ASSERT lower(tid_ranges[3]) = test_transaction, 'Error: Lower transaction id % does not match the id % of DROP TABLE event', lower(tid_ranges[3]), test_transaction;
+  ASSERT lower(tid_ranges[1]) = test_transaction, 'Error: Lower transaction id % does not match the id % of RECREATE TABLE event', lower(tid_ranges[1]), test_transaction;
+  ASSERT lower(tid_ranges[2]) = test_transaction, 'Error: Lower transaction id % does not match the id % of RECREATE TABLE event', lower(tid_ranges[2]), test_transaction;
+  ASSERT lower(tid_ranges[3]) = test_transaction, 'Error: Lower transaction id % does not match the id % of RECREATE TABLE event', lower(tid_ranges[3]), test_transaction;
 END;
 $$
 LANGUAGE plpgsql;

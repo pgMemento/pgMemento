@@ -328,29 +328,58 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   OUT recent_tab_id INTEGER
   ) RETURNS RECORD AS
 $$
--- check if the table has existed before tid happened
--- save schema and name in case it was renamed
-SELECT
-  t_old.log_id AS table_log_id,
-  t_old.table_name AS log_tab_name,
-  t_old.schema_name AS log_tab_schema,
-  t_old.id AS log_tab_id,
-  t_new.table_name AS recent_tab_name,
-  t_new.schema_name AS recent_tab_schema,
-  t_new.id AS recent_tab_id
-FROM
-  pgmemento.audit_table_log t_new
-LEFT JOIN
-  pgmemento.audit_table_log t_old
-  ON t_old.log_id = t_new.log_id
- AND t_old.txid_range @> $1::numeric
-WHERE
-  t_new.table_name = pgmemento.trim_outer_quotes($2)
-  AND t_new.schema_name = pgmemento.trim_outer_quotes($3)
-  AND upper(t_new.txid_range) IS NULL
-  AND lower(t_new.txid_range) IS NOT NULL;
+BEGIN
+  -- get recent and possible previous parameter for audited table
+  SELECT
+    a_old.log_id,
+    a_old.table_name,
+    a_old.schema_name,
+    a_old.id, 
+    a_new.table_name,
+    a_new.schema_name,
+    a_new.id
+  INTO
+    table_log_id,
+    log_tab_name,
+    log_tab_schema,
+    log_tab_id, 
+    recent_tab_name,
+    recent_tab_schema,
+    recent_tab_id
+  FROM
+    pgmemento.audit_table_log a_new
+  LEFT JOIN
+    pgmemento.audit_table_log a_old
+    ON a_old.log_id = a_new.log_id
+   AND a_old.txid_range @> $1::numeric
+  WHERE
+    a_new.table_name = pgmemento.trim_outer_quotes($2)
+    AND a_new.schema_name = pgmemento.trim_outer_quotes($3)
+    AND upper(a_new.txid_range) IS NULL
+    AND lower(a_new.txid_range) IS NOT NULL;
+
+  -- if table does not exist use name to query logs
+  IF recent_tab_name IS NULL THEN
+    SELECT
+      log_id,
+      table_name,
+      schema_name,
+      id
+    INTO
+      table_log_id,
+      log_tab_name,
+      log_tab_schema,
+      log_tab_id 
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      table_name = pgmemento.trim_outer_quotes($2)
+      AND schema_name = pgmemento.trim_outer_quotes($3)
+      AND txid_range @> $1::numeric;
+  END IF;
+END;
 $$
-LANGUAGE sql STABLE STRICT;
+LANGUAGE plpgsql STABLE STRICT;
 
 
 /**********************************************************
