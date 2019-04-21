@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.1     2019-04-21   introduce new event RECREATE TABLE with op_id       FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs and VIEWs            FKun
 -- 0.6.9     2019-03-23   Audit views list tables even on relid mismatch      FKun
 -- 0.6.8     2019-02-14   ADD AUDIT_ID event gets its own op_id               FKun
@@ -387,18 +388,31 @@ BEGIN
         -- check if table exists in 'audit_table_log' with another name (and open range)
         table_log_id := current_setting('pgmemento.' || $2 || '.' || $1)::int;
 
-        SELECT
-          table_name,
-          schema_name
-        INTO
-          old_table_name,
-          old_schema_name
-        FROM
-          pgmemento.audit_table_log
-        WHERE
-          log_id = table_log_id
-          AND upper(txid_range) IS NULL
-          AND lower(txid_range) IS NOT NULL;
+        IF NOT EXISTS (
+         SELECT
+           1
+         FROM
+           pgmemento.table_event_log
+         WHERE
+           transaction_id = current_setting('pgmemento.' || txid_current())::int
+           AND table_name = $1
+           AND schema_name = $2
+           AND op_id = 1
+           AND table_operation = 'RECREATE TABLE'
+        ) THEN
+          SELECT
+            table_name,
+            schema_name
+          INTO
+            old_table_name,
+            old_schema_name
+          FROM
+            pgmemento.audit_table_log
+          WHERE
+            log_id = table_log_id
+            AND upper(txid_range) IS NULL
+            AND lower(txid_range) IS NOT NULL;
+        END IF;
 
         EXCEPTION
           WHEN others THEN
@@ -800,6 +814,7 @@ BEGIN
   -- assign id for operation type
   CASE $4
     WHEN 'CREATE TABLE' THEN operation_id := 1;
+    WHEN 'RECREATE TABLE' THEN operation_id := 1;
     WHEN 'RENAME TABLE' THEN operation_id := 12;
     WHEN 'ADD COLUMN' THEN operation_id := 2;
     WHEN 'ADD AUDIT_ID' THEN operation_id := 21;

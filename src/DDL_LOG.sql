@@ -533,9 +533,13 @@ BEGIN
 
      EXCEPTION
        WHEN others THEN
-         tablename := split_part(obj.object_identity, '.' ,2);
-         schemaname := split_part(obj.object_identity, '.' ,1);
+         NULL; -- no log id set or no open txid_range. Use names from obj.
     END;
+
+    IF tablename IS NULL THEN
+      tablename := split_part(obj.object_identity, '.' ,2);
+      schemaname := split_part(obj.object_identity, '.' ,1);
+    END IF;
 
     -- check for existing table events
     IF EXISTS (

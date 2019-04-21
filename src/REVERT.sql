@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                  FKun
 -- 0.6.4     2019-02-14   Changed revert ADD AUDIT_ID events              FKun
 -- 0.6.3     2018-11-20   revert updates with composite data types        FKun
@@ -64,6 +65,7 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
 $$
 DECLARE
   stmt TEXT;
+  table_log_id INTEGER;
 BEGIN
   CASE
   -- CREATE TABLE case
@@ -364,6 +366,7 @@ BEGIN
   WHEN $4 = 9 THEN
     -- collect information of columns of dropped table
     SELECT
+      t.log_id,
       string_agg(
         quote_ident(c_old.column_name)
         || ' '
@@ -380,7 +383,10 @@ BEGIN
            END
         || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
         ', ' ORDER BY c_old.ordinal_position
-      ) INTO stmt
+      )
+    INTO
+      table_log_id,
+      stmt
     FROM
       pgmemento.audit_table_log t
     JOIN
@@ -403,10 +409,14 @@ BEGIN
       AND c_old.column_name <> 'audit_id'
       AND t_new.table_name IS NULL
       AND t.table_name = $5
-      AND t.schema_name = $6;
+      AND t.schema_name = $6
+    GROUP BY
+      t.log_id;
 
     -- try to create table
     IF stmt IS NOT NULL THEN
+      PERFORM pgmemento.log_table_event(txid_current(), $5, $6, 'RECREATE TABLE');
+      PERFORM set_config('pgmemento.' || $6 || '.' || $5, table_log_id::text, TRUE);
       EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I (' || stmt || ')', $6, $5);
     END IF;
 

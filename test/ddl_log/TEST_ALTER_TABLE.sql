@@ -76,6 +76,8 @@ DECLARE
   test_transaction INTEGER;
   tabid INTEGER;
   tabname TEXT;
+  old_tab_log_id INTEGER;
+  new_tab_log_id INTEGER;
   tid_range numrange;
 BEGIN
   test_transaction := current_setting('pgmemento.rename_table_test')::int;
@@ -83,10 +85,12 @@ BEGIN
   -- get old parameters of renamed table
   SELECT
     id,
-    table_name
+    table_name,
+    log_id
   INTO
     tabid,
-    tabname
+    tabname,
+    old_tab_log_id
   FROM
     pgmemento.audit_table_log
   WHERE
@@ -103,10 +107,12 @@ BEGIN
   SELECT
     id,
     table_name,
+    log_id,
     txid_range
   INTO
     tabid,
     tabname,
+    new_tab_log_id,
     tid_range
   FROM
     pgmemento.audit_table_log
@@ -119,6 +125,7 @@ BEGIN
   PERFORM set_config('pgmemento.rename_table_test3', tabid::text, FALSE);
 
   ASSERT tabname = 'tests', 'Did not find table ''%'' in audit_table_log', tabname;
+  ASSERT old_tab_log_id = new_tab_log_id, 'Error: audit_table_log.log_id mismatch: old % vs. new %', old_tab_log_id, new_tab_log_id;
   ASSERT upper(tid_range) IS NULL, 'Error: Renamed table should still exist and upper boundary of transaction range should be NULL, % instead', upper(tid_range);
 END;
 $$
