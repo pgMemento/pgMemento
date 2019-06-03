@@ -431,7 +431,7 @@ BEGIN
     schema_ident := pgmemento.fetch_ident(ddl_text);
 
     -- exit loop when nothing has been fetched
-    IF length(schema_ident) = 0 THEN
+    IF schema_ident IS NULL OR length(schema_ident) = 0 THEN
       EXIT;
     END IF; 
 
@@ -592,7 +592,7 @@ BEGIN
       table_ident := pgmemento.fetch_ident(ddl_text);
 
       -- exit loop when nothing has been fetched
-      IF length(table_ident) = 0 THEN
+      IF table_ident IS NULL OR length(table_ident) = 0 THEN
         EXIT;
       END IF;
 
@@ -680,7 +680,7 @@ BEGIN
       column_candidate := pgmemento.fetch_ident(ddl_text);
 
       -- exit loop when nothing has been fetched
-      IF length(column_candidate) = 0 THEN
+      IF column_candidate IS NULL OR length(column_candidate) = 0 THEN
         EXIT;
       END IF; 
 
@@ -925,7 +925,7 @@ BEGIN
     table_ident := pgmemento.fetch_ident(ddl_text);
 
     -- exit loop when nothing has been fetched
-    IF length(table_ident) = 0 THEN
+    IF table_ident IS NULL OR length(table_ident) = 0 THEN
       EXIT;
     END IF;
 
