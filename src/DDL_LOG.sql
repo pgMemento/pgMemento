@@ -626,6 +626,11 @@ BEGIN
       -- extracting the table identifier from the DDL command
       table_ident := pgmemento.fetch_ident(ddl_text);
 
+      -- exit loop when nothing has been fetched
+      IF length(table_ident) = 0 THEN
+        EXIT;
+      END IF;
+
       -- shrink ddl_text by table_ident
       ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
 
@@ -965,6 +970,11 @@ BEGIN
   WHILE fetch_next LOOP
     -- extracting the table identifier from the DDL command
     table_ident := pgmemento.fetch_ident(ddl_text);
+
+    -- exit loop when nothing has been fetched
+    IF length(table_ident) = 0 THEN
+      EXIT;
+    END IF;
 
     -- shrink ddl_text by table_ident
     ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
