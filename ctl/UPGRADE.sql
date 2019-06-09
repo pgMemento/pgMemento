@@ -8,96 +8,80 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script alters the existing tables to follo the new transaction ID
--- logging scheme of v0.6.
+-- This script alters the tables to follow the new logging scheme of v0.7.
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-06-09   change to upgrade from v0.6.1 to v0.7            FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-07-23   initial commit                                   FKun
 --
 
--- add columns to transaction_log that are new in v0.6
-ALTER TABLE pgmemento.transaction_log
-  ADD COLUMN process_id INTEGER,
-  ADD COLUMN client_port INTEGER,
-  ADD COLUMN application_name TEXT,
-  ADD COLUMN session_info JSONB;
-
--- create new foreign key to transaction_log
--- and table_operation field with more characters
+-- TABLE_EVENT_LOG
+-- replace table_relid with columns table_name and schema_name
 ALTER TABLE pgmemento.table_event_log
-  ADD COLUMN transaction_id2 INTEGER,
-  ADD COLUMN table_operation2 VARCHAR(18);
+  ADD COLUMN table_name TEXT,
+  ADD COLUMN schema_name TEXT;
 
 UPDATE pgmemento.table_event_log e
-  SET transaction_id2 = t.id
-  FROM pgmemento.transaction_log t
-  WHERE e.transaction_id = t.txid;
+   SET table_name = atl.table_name,
+       schema_name = atl.schema_name
+  FROM pgmemento.audit_table_log atl
+ WHERE atl.relid = e.table_relid
+   AND (atl.txid_range @> e.transaction_id::numeric
+    OR lower(atl.txid_range) = e.transaction_id::numeric);
 
-UPDATE pgmemento.table_event_log
-  SET table_operation2 = table_operation;
-
-ALTER TABLE pgmemento.table_event_log
-  ADD CONSTRAINT table_event_log_txid_fk2
-    FOREIGN KEY (transaction_id2)
-    REFERENCES pgmemento.transaction_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
-CREATE UNIQUE INDEX table_event_log_unique_idx2 ON pgmemento.table_event_log USING BTREE (transaction_id2, table_relid, op_id);
-
--- remove redundant parts for table_event_log
-ALTER TABLE pgmemento.table_event_log
-  DROP CONSTRAINT IF EXISTS table_event_log_txid_fk;
-
+-- update UNIQUE index and set columns to NOT NULL
 DROP INDEX IF EXISTS table_event_log_unique_idx;
 
 ALTER TABLE pgmemento.table_event_log
-  DROP COLUMN IF EXISTS transaction_id,
-  DROP COLUMN IF EXISTS table_operation;
+  DROP COLUMN table_relid,
+  ALTER COLUMN table_name SET NOT NULL,
+  ALTER COLUMN schema_name SET NOT NULL;
 
--- remove old constraints and indexes from transaction_log
-ALTER TABLE pgmemento.transaction_log
-  DROP CONSTRAINT IF EXISTS transaction_log_unique_txid;
+COMMENT ON COLUMN pgmemento.table_event_log.table_name IS 'Name of table that fired the trigger';
+COMMENT ON COLUMN pgmemento.table_event_log.schema_name IS 'Schema of firing table';
 
-DROP INDEX IF EXISTS transaction_log_txid_idx;
+CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_name, schema_name, op_id);
 
--- rename new columns and index to old names
-ALTER TABLE pgmemento.table_event_log
-  RENAME COLUMN transaction_id2 TO transaction_id;
 
-ALTER TABLE pgmemento.table_event_log
-  RENAME COLUMN table_operation2 TO table_operation;
+-- AUDIT_TABLE_LOG
+-- introduce new column log_id with sequence
+DROP SEQUENCE IF EXISTS pgmemento.table_log_id_seq;
+CREATE SEQUENCE pgmemento.table_log_id_seq
+  INCREMENT BY 1
+  MINVALUE 0
+  MAXVALUE 2147483647
+  START WITH 1
+  CACHE 1
+  NO CYCLE
+  OWNED BY NONE;
 
-ALTER TABLE pgmemento.table_event_log
-  RENAME CONSTRAINT table_event_log_txid_fk2 TO table_event_log_txid_fk;
+ALTER TABLE pgmemento.audit_table_log
+  ADD COLUMN log_id INTEGER;
 
-ALTER INDEX table_event_log_unique_idx2 RENAME TO table_event_log_unique_idx;
+COMMENT ON COLUMN pgmemento.audit_table_log.log_id IS 'ID to trace a changing table';
+COMMENT ON COLUMN pgmemento.audit_table_log.relid IS '[DEPRECATED] The table''s OID to trace a table when changed';
 
--- update range columns in DDL log tables and use transaction_log IDs instead of internal txids
--- also define the range type as (] instead of [)
+-- generate log_ids
 UPDATE pgmemento.audit_table_log atl
-  SET txid_range = numrange(t1.id, t2.id, '(]')
-  FROM pgmemento.audit_table_log a
-  JOIN pgmemento.transaction_log t1
-    ON lower(a.txid_range) = t1.txid
-  LEFT JOIN pgmemento.transaction_log t2
-    ON upper(a.txid_range) = t2.txid
-    WHERE a.id = atl.id;
+   SET log_id = s.log_id
+  FROM (
+       SELECT relid, nextval('pgmemento.table_log_id_seq') AS log_id
+         FROM (
+              SELECT DISTINCT relid
+                FROM pgmemento.audit_table_log
+            ORDER BY relid
+              ) r
+       ) s
+ WHERE atl.relid = s.relid;
 
-UPDATE pgmemento.audit_column_log acl
-  SET txid_range = numrange(t1.id, t2.id, '(]')
-  FROM pgmemento.audit_column_log a
-  JOIN pgmemento.transaction_log t1
-    ON lower(a.txid_range) = t1.txid
-  LEFT JOIN pgmemento.transaction_log t2
-    ON upper(a.txid_range) = t2.txid
-    WHERE a.id = acl.id;
+-- set log_id to NOT NULL and create index
+ALTER TABLE pgmemento.audit_table_log
+  ALTER COLUMN log_id SET NOT NULL;
 
--- create indexes new in v0.6
-CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, stmt_date);
-CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
+ALTER INDEX IF EXISTS table_log_idx RENAME TO table_log_name_idx;
+CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
+
