@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script upgrades a pgMemento extension of v0.5 to v0.6. All functions
+-- This script upgrades a pgMemento extension of v0.6.0 to v0.6.1. All functions
 -- will be replaced and tables will be altered (see changelog for more details)
 --
 -------------------------------------------------------------------------------
