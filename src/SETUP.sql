@@ -1181,3 +1181,29 @@ WHERE
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql;
+
+
+/**********************************************************
+* INIT PGMEMENTO
+*
+* Starts pgMemento in given a schema
+***********************************************************/
+
+CREATE OR REPLACE FUNCTION pgmemento.init(
+  schema_name TEXT DEFAULT 'public'::text,
+  except_tables TEXT[] DEFAULT '{}',
+  log_state BOOLEAN DEFAULT TRUE,
+  trigger_create_table BOOLEAN DEFAULT TRUE
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  -- create event trigger to log schema changes
+  PERFORM pgmemento.create_schema_event_trigger($4);
+
+  -- start auditing for tables in given schema'
+  PERFORM pgmemento.create_schema_audit(quote_ident($1), $3, $2);
+
+  RAISE NOTICE 'pgMemento is now initialized on % schema.', schema_name;
+END;
+$$
+LANGUAGE plpgsql;
