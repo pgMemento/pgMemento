@@ -12,10 +12,6 @@ psql pgmemento_test postgres -f /home/pgmemento/extension/tests/TEST.sql
 
 ### Test we have backups covered
 
-if [[ "$NO_BACKUP_RECOVERY" != "" ]] ; then
-  exit
-fi
-
 echo "Running backup tests...";
 psql postgres postgres -c 'CREATE DATABASE pgmemento_backup';
 
