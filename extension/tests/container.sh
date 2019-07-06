@@ -5,8 +5,7 @@ set -e
 cd $(dirname "$0");
 
 PG_VERSION=$1
-NO_BACKUP_RECOVERY=$2
-TESTCMD=$3
+TESTCMD=$2
 
 docker build -t pgmemento-test--$PG_VERSION - < ./Dockerfile-$PG_VERSION;
 CONTAINER=$(docker run -d -v $(pwd)/../..:/home/pgmemento pgmemento-test--$PG_VERSION);

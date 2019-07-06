@@ -96,7 +96,8 @@ BEGIN
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.test'::regclass::oid
+    table_name = 'test'
+    AND schema_name = 'public'
     AND upper(txid_range) IS NULL;
 
   -- save table log id for next test

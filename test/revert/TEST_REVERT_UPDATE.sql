@@ -52,7 +52,8 @@ BEGIN
     pgmemento.table_event_log
   WHERE
     op_id = 4
-    AND table_relid = 'public.object'::regclass::oid
+    AND table_name = 'object'
+    AND schema_name = 'public'
   GROUP BY
     op_id;
 

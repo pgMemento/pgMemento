@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.0     2019-04-14   reflect schema changes in UDFs and VIEWs         FKun
 -- 0.6.9     2019-02-24   new function flatten_ddl to remove comments      FKun
 -- 0.6.8     2019-02-14   permit drop audit_id in pre alter trigger        FKun
 -- 0.6.7     2019-02-09   fetch_ident: improved parsing of DDL context     FKun
@@ -478,11 +479,11 @@ BEGIN
       d.depth DESC
   LOOP
     -- log the whole content of the dropped table as truncated
-    e_id := pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'TRUNCATE');
+    e_id := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
     PERFORM pgmemento.log_table_state(e_id, '{}'::text[], rec.tablename, rec.schemaname);
 
     -- now log drop table event
-    PERFORM pgmemento.log_table_event(txid_current(), (rec.schemaname || '.' || rec.tablename)::regclass::oid, 'DROP TABLE');
+    PERFORM pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'DROP TABLE');
 
     -- unregister table from log tables
     PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
@@ -503,12 +504,43 @@ $$
 DECLARE
   obj RECORD;
   tid INTEGER;
+  table_log_id INTEGER;
+  tablename TEXT;
+  schemaname TEXT;
 BEGIN
   tid := current_setting('pgmemento.' || txid_current())::int;
 
   FOR obj IN 
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
+    BEGIN
+      -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
+      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
+
+      -- get old table and schema name for this log_id
+      SELECT
+        table_name,
+        schema_name
+      INTO
+        tablename,
+        schemaname
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        log_id = table_log_id
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+
+     EXCEPTION
+       WHEN others THEN
+         NULL; -- no log id set or no open txid_range. Use names from obj.
+    END;
+
+    IF tablename IS NULL THEN
+      tablename := split_part(obj.object_identity, '.' ,2);
+      schemaname := split_part(obj.object_identity, '.' ,1);
+    END IF;
+
     -- check for existing table events
     IF EXISTS (
       SELECT
@@ -517,7 +549,8 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = tid
-        AND table_relid = obj.objid
+        AND table_name = tablename
+        AND schema_name = schemaname
         AND op_id IN (12, 2, 21, 22, 5, 6)
     ) THEN
       PERFORM pgmemento.modify_ddl_log_tables(
@@ -548,8 +581,10 @@ DECLARE
   stack TEXT;
   fetch_next BOOLEAN := TRUE;
   table_ident TEXT := '';
+  rec RECORD;
   schemaname TEXT;
   tablename TEXT;
+  table_log_id INTEGER;
   ntables INTEGER := 0;
   column_candidate TEXT;
   event_type TEXT;
@@ -624,10 +659,12 @@ BEGIN
       -- check if table is audited
       SELECT
         quote_ident(table_name),
-        quote_ident(schema_name)
+        quote_ident(schema_name),
+        log_id
       INTO
         tablename,
-        schemaname
+        schemaname,
+        table_log_id
       FROM
         pgmemento.audit_table_log
       WHERE
@@ -643,9 +680,10 @@ BEGIN
       tablename := table_ident;
 
       -- check if table is audited and not ambiguous
-      FOR schemaname IN
+      FOR rec IN
         SELECT
-          quote_ident(schema_name)
+          quote_ident(schema_name) AS schema_name,
+          log_id
         FROM
           pgmemento.audit_table_log
         WHERE
@@ -654,6 +692,12 @@ BEGIN
           AND lower(txid_range) IS NOT NULL
       LOOP
         ntables := ntables + 1;
+        IF ntables > 1 THEN
+          -- table name is found more than once in audit_table_log
+          RAISE EXCEPTION 'Please specify the schema name in the ALTER TABLE command.';
+        END IF;
+        schemaname := rec.schema_name;
+        table_log_id := rec.log_id;
       END LOOP;
     END IF;
 
@@ -662,14 +706,10 @@ BEGIN
       RETURN;
     END IF;
 
-    IF ntables > 1 THEN
-      -- table name is found more than once in audit_table_log
-      RAISE EXCEPTION 'Please specify the schema name in the ALTER TABLE command.';
-    END IF;
-
     -- check if table got renamed and log event if yes
     IF lower(ddl_text) LIKE ' rename to%' THEN
-      PERFORM pgmemento.log_table_event(txid_current(), table_ident::regclass::oid, 'RENAME TABLE');
+      PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME TABLE');
+      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))), table_log_id::text, TRUE);
       RETURN;
     END IF;
 
@@ -736,7 +776,7 @@ BEGIN
                     RAISE EXCEPTION 'Renaming the audit_id column is not possible!';
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
-                  PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'RENAME COLUMN');
+                  PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME COLUMN');
                 WHEN 'DROP' THEN
                   dropped_columns := array_append(dropped_columns, column_candidate);
                 WHEN 'ALTER' THEN
@@ -772,12 +812,12 @@ BEGIN
 
     IF added_columns THEN
       -- log ADD COLUMN table event
-      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ADD COLUMN');
+      e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ADD COLUMN');
     END IF;
 
     IF array_length(altered_columns, 1) > 0 THEN
       -- log ALTER COLUMN table event
-      e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'ALTER COLUMN');
+      e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ALTER COLUMN');
 
       -- log data of entire column(s)
       IF array_length(altered_columns_log, 1) > 0 THEN
@@ -788,7 +828,7 @@ BEGIN
     IF array_length(dropped_columns, 1) > 0 THEN
       IF NOT ('audit_id' = ANY(dropped_columns)) THEN
         -- log DROP COLUMN table event
-        e_id := pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP COLUMN');
+        e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP COLUMN');
 
         -- log data of entire column(s)
         PERFORM pgmemento.log_table_state(e_id, dropped_columns, tablename, schemaname);
@@ -819,7 +859,8 @@ BEGIN
       -- log as 'create table' event
       PERFORM pgmemento.log_table_event(
         txid_current(),
-        (split_part(obj.object_identity, '.' ,1) || '.' || split_part(obj.object_identity, '.' ,2))::regclass::oid,
+        split_part(obj.object_identity, '.' ,2),
+        split_part(obj.object_identity, '.' ,1),
         'CREATE TABLE'
       );
 
@@ -863,11 +904,17 @@ BEGIN
             pgmemento.table_event_log
           WHERE
             transaction_id = current_setting('pgmemento.' || txid_current())::int
-            AND table_relid = obj.objid
+            AND table_name = split_part(obj.object_identity, '.' ,2)
+            AND schema_name = split_part(obj.object_identity, '.' ,1)
             AND op_id = 8
             AND table_operation = 'DROP AUDIT_ID'
         ) THEN
-          PERFORM pgmemento.log_table_event(txid_current(), obj.objid, 'DROP TABLE');
+          PERFORM pgmemento.log_table_event(
+            txid_current(),
+            split_part(obj.object_identity, '.' ,2),
+            split_part(obj.object_identity, '.' ,1),
+            'DROP TABLE'
+          );
         ELSE
           -- update txid_range for removed table in audit_table_log table
           PERFORM pgmemento.unregister_audit_table(
@@ -1000,11 +1047,11 @@ BEGIN
     RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
   ELSE
     -- log the whole content of the dropped table as truncated
-    e_id :=  pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'TRUNCATE');
+    e_id :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
     PERFORM pgmemento.log_table_state(e_id, '{}'::text[], tablename, schemaname);
 
     -- now log drop table event
-    PERFORM pgmemento.log_table_event(txid_current(), (schemaname || '.' || tablename)::regclass::oid, 'DROP TABLE');
+    PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
   END IF;
 END;
 $$
