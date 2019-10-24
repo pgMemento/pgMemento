@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-20   initial commit                                   FKun
 --
 
@@ -38,7 +39,7 @@ $$
 DECLARE
   truncate_audit_ids INTEGER[];
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- collect ids into array before doing a TRUNCATE
   SELECT
@@ -65,14 +66,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND op_id = 8;
+    AND op_id = pgmemento.get_operation_id('TRUNCATE');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -82,7 +83,7 @@ BEGIN
       SELECT
         t.t_audit_id
       FROM
-        (SELECT unnest(truncate_audit_ids) AS t_audit_id) t
+        unnest(truncate_audit_ids) AS t(t_audit_id)
       LEFT JOIN
         pgmemento.row_log r
         ON t.t_audit_id = r.audit_id 

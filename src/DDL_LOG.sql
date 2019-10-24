@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.1     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.7.0     2019-04-14   reflect schema changes in UDFs and VIEWs         FKun
 -- 0.6.9     2019-02-24   new function flatten_ddl to remove comments      FKun
 -- 0.6.8     2019-02-14   permit drop audit_id in pre alter trigger        FKun
@@ -409,7 +410,7 @@ DECLARE
   fetch_next BOOLEAN := TRUE;
   schema_ident TEXT;
   rec RECORD;
-  e_id INTEGER;
+  stmt_ts TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
@@ -479,8 +480,8 @@ BEGIN
       d.depth DESC
   LOOP
     -- log the whole content of the dropped table as truncated
-    e_id := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
-    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], rec.tablename, rec.schemaname);
+    stmt_ts := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
+    PERFORM pgmemento.log_table_state(stmt_ts, '{}'::text[], rec.tablename, rec.schemaname, 'TRUNCATE');
 
     -- now log drop table event
     PERFORM pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'DROP TABLE');
@@ -593,7 +594,7 @@ DECLARE
   dropped_columns TEXT[] := '{}'::text[];
   altered_columns TEXT[] := '{}'::text[];
   altered_columns_log TEXT[] := '{}'::text[];
-  e_id INTEGER;
+  stmt_ts TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
@@ -812,26 +813,26 @@ BEGIN
 
     IF added_columns THEN
       -- log ADD COLUMN table event
-      e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ADD COLUMN');
+      stmt_ts := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ADD COLUMN');
     END IF;
 
     IF array_length(altered_columns, 1) > 0 THEN
       -- log ALTER COLUMN table event
-      e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ALTER COLUMN');
+      stmt_ts := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ALTER COLUMN');
 
       -- log data of entire column(s)
       IF array_length(altered_columns_log, 1) > 0 THEN
-        PERFORM pgmemento.log_table_state(e_id, altered_columns_log, tablename, schemaname);
+        PERFORM pgmemento.log_table_state(stmt_ts, altered_columns_log, tablename, schemaname, 'ALTER COLUMN');
       END IF;
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
       IF NOT ('audit_id' = ANY(dropped_columns)) THEN
         -- log DROP COLUMN table event
-        e_id := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP COLUMN');
+        stmt_ts := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP COLUMN');
 
         -- log data of entire column(s)
-        PERFORM pgmemento.log_table_state(e_id, dropped_columns, tablename, schemaname);
+        PERFORM pgmemento.log_table_state(stmt_ts, dropped_columns, tablename, schemaname, 'DROP COLUMN');
       ELSE
         RAISE EXCEPTION 'To remove the audit_id column, please use pgmemento.drop_table_audit!';
       END IF;
@@ -949,7 +950,7 @@ DECLARE
   schemaname TEXT;
   tablename TEXT;
   ntables INTEGER := 0;
-  e_id INTEGER;
+  stmt_ts TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- get context in which trigger has been fired
   GET DIAGNOSTICS stack = PG_CONTEXT;
@@ -1047,8 +1048,8 @@ BEGIN
     RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
   ELSE
     -- log the whole content of the dropped table as truncated
-    e_id :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
-    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], tablename, schemaname);
+    stmt_ts :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
+    PERFORM pgmemento.log_table_state(stmt_ts, '{}'::text[], tablename, schemaname, 'TRUNCATE');
 
     -- now log drop table event
     PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');

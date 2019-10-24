@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-07-17   initial commit                                   FKun
 --
 
@@ -30,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- create a new test table
   CREATE TABLE public.test (
@@ -57,14 +58,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 1;
+    AND op_id = pgmemento.get_operation_id('CREATE TABLE');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 END;

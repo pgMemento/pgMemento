@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
 --
 
@@ -31,7 +32,8 @@ DECLARE
   delete_id INTEGER; 
   delete_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
+  delete_op_id SMALLINT := pgmemento.get_operation_id('DELETE');
   jsonb_log JSONB;
 BEGIN
   -- DELETE entry that has been inserted for other tests
@@ -54,14 +56,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND op_id = 7;
+    AND op_id = delete_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -74,7 +76,10 @@ BEGIN
     pgmemento.row_log
   WHERE
     audit_id = delete_audit_id
-    AND event_id = test_event;
+    AND stmt_time = test_event
+    AND op_id = delete_op_id
+    AND table_name = 'object'
+    AND schema_name = 'public';
 
   ASSERT jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
 END;

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-10   initial commit                                   FKun
 --
 
@@ -29,7 +30,7 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  event_op_ids INTEGER[];
+  event_times TIMESTAMP WITH TIME ZONE[];
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Reverting create table"}'::text, FALSE);
@@ -40,7 +41,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 1
+    op_id = pgmemento.get_operation_id('CREATE TABLE')
     AND transaction_id = 2;
 
   -- query for logged transaction
@@ -60,18 +61,18 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    array_agg(id ORDER BY id)
+    array_agg(stmt_time ORDER BY id)
   INTO
-    event_op_ids
+    event_times
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND (op_id = 8
-     OR op_id = 9);
+    AND (op_id = pgmemento.get_operation_id('TRUNCATE')
+     OR op_id = pgmemento.get_operation_id('DROP TABLE'));
 
-  ASSERT event_op_ids[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
-  ASSERT event_op_ids[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
+  ASSERT event_times[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
+  ASSERT event_times[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
 END;
 $$
 LANGUAGE plpgsql;

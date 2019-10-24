@@ -14,9 +14,11 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                       | Author
--- 0.6.2     2019-02-27   comments for tables and columns                     FKun
--- 0.6.1     2018-07-23   schema part cut from SETUP.sql                      FKun
+-- Version | Date       | Description                                        | Author
+-- 0.7.0     2019-10-20   more columns for row_log and remove FK to events     FKun
+--                        store more events with statement_timestamp
+-- 0.6.2     2019-02-27   comments for tables and columns                      FKun
+-- 0.6.1     2018-07-23   schema part cut from SETUP.sql                       FKun
 --
 
 /**********************************************************
@@ -39,7 +41,7 @@
 *   column_log_table_idx
 *   row_log_audit_idx
 *   row_log_changes_idx
-*   row_log_event_idx
+*   row_log_time_idx
 *   table_event_log_unique_idx
 *   table_log_idx
 *   table_log_range_idx
@@ -60,7 +62,7 @@ CREATE TABLE pgmemento.transaction_log
 (
   id SERIAL,
   txid BIGINT NOT NULL,
-  stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  txid_time TIMESTAMP WITH TIME ZONE NOT NULL,
   process_id INTEGER,
   user_name TEXT,
   client_name TEXT,
@@ -75,7 +77,7 @@ ALTER TABLE pgmemento.transaction_log
 COMMENT ON TABLE pgmemento.transaction_log IS 'Stores metadata about each transaction';
 COMMENT ON COLUMN pgmemento.transaction_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.transaction_log.txid IS 'The internal transaction ID by PostgreSQL (can cycle)';
-COMMENT ON COLUMN pgmemento.transaction_log.stmt_date IS 'Stores the result of transaction_timestamp() function';
+COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 COMMENT ON COLUMN pgmemento.transaction_log.process_id IS 'Stores the result of pg_backend_pid() function';
 COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of current_user function';
 COMMENT ON COLUMN pgmemento.transaction_log.client_name IS 'Stores the result of inet_client_addr() function';
@@ -89,6 +91,7 @@ CREATE TABLE pgmemento.table_event_log
 (
   id SERIAL,
   transaction_id INTEGER NOT NULL,
+  stmt_time TIMESTAMP WITH TIME ZONE NOT NULL,
   op_id SMALLINT NOT NULL,
   table_operation VARCHAR(18),
   table_name TEXT NOT NULL,
@@ -101,6 +104,7 @@ ALTER TABLE pgmemento.table_event_log
 COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happing during one transaction against one table';
 COMMENT ON COLUMN pgmemento.table_event_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.table_event_log.transaction_id IS 'Foreign Key to transaction_log table';
+COMMENT ON COLUMN pgmemento.table_event_log.stmt_time IS 'Stores the result of statement_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.op_id IS 'ID of event type';
 COMMENT ON COLUMN pgmemento.table_event_log.table_operation IS 'Text for of event type';
 COMMENT ON COLUMN pgmemento.table_event_log.table_name IS 'Name of table that fired the trigger';
@@ -111,8 +115,12 @@ DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
 CREATE TABLE pgmemento.row_log
 (
   id BIGSERIAL,
-  event_id INTEGER NOT NULL,
+  txid_time TIMESTAMP WITH TIME ZONE,
+  stmt_time TIMESTAMP WITH TIME ZONE,
   audit_id BIGINT NOT NULL,
+  op_id SMALLINT NOT NULL,
+  table_name TEXT NOT NULL,
+  schema_name TEXT NOT NULL,
   changes JSONB
 );
 
@@ -121,7 +129,8 @@ ALTER TABLE pgmemento.row_log
 
 COMMENT ON TABLE pgmemento.row_log IS 'Stores the historic data a.k.a the audit trail';
 COMMENT ON COLUMN pgmemento.row_log.id IS 'The Primary Key';
-COMMENT ON COLUMN pgmemento.row_log.event_id IS 'Foreign Key to table_event_log table';
+COMMENT ON COLUMN pgmemento.row_log.txid_time IS 'Stores the timestamp of the current transaction';
+COMMENT ON COLUMN pgmemento.row_log.stmt_time IS 'Stores the timestamp of table event';
 COMMENT ON COLUMN pgmemento.row_log.audit_id IS ' The implicit link to a table''s row';
 COMMENT ON COLUMN pgmemento.row_log.changes IS 'The old values of changed columns in a JSONB object';
 
@@ -180,14 +189,6 @@ ALTER TABLE pgmemento.table_event_log
     ON DELETE CASCADE
     ON UPDATE CASCADE;
 
-ALTER TABLE pgmemento.row_log
-  ADD CONSTRAINT row_log_table_fk 
-    FOREIGN KEY (event_id)
-    REFERENCES pgmemento.table_event_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
 ALTER TABLE pgmemento.audit_column_log
   ADD CONSTRAINT audit_column_log_fk
     FOREIGN KEY (audit_table_id)
@@ -210,11 +211,12 @@ DROP INDEX IF EXISTS column_log_table_idx;
 DROP INDEX IF EXISTS column_log_column_idx;
 DROP INDEX IF EXISTS column_log_range_idx;
 
-CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
-CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, stmt_date);
+CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (txid_time);
+CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, txid_time);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
-CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_name, schema_name, op_id);
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
+CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, stmt_time, table_name, schema_name, op_id);
+CREATE INDEX table_even_log_time_idx ON pgmemento.table_event_log USING BTREE (stmt_time);
+CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (stmt_time, op_id, table_name, schema_name);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
 CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-09   initial commit                                   FKun
 --
 
@@ -29,7 +30,7 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  event_op_ids INTEGER[];
+  event_times TIMESTAMP WITH TIME ZONE[];
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Reverting add column"}'::text, FALSE);
@@ -40,7 +41,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 2
+    op_id = pgmemento.get_operation_id('ADD COLUMN')
     AND transaction_id = 5;
 
   -- query for logged transaction
@@ -67,7 +68,7 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = test_transaction
-        AND op_id = 6
+        AND op_id = pgmemento.get_operation_id('DROP COLUMN')
     )
   ), 'Error: Did not find test entry in table_event_log table!';
 END;

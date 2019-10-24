@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-19   initial commit                                   FKun
 --
 
@@ -29,7 +30,8 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
+  update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
   jsonb_log JSONB;
 BEGIN
   -- set session_info to query logged transaction later
@@ -51,7 +53,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 4
+    op_id = update_op_id
     AND table_name = 'object'
     AND schema_name = 'public'
   GROUP BY
@@ -71,14 +73,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 4;
+    AND op_id = update_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -93,7 +95,8 @@ BEGIN
         pgmemento.row_log r
         ON t.audit_id = r.audit_id 
       WHERE
-        r.event_id = test_event
+        r.stmt_time = test_event
+        AND r.op_id = update_op_id
         AND r.changes = jsonb_log
     )
   ),

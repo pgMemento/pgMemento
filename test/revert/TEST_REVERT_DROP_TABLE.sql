@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-03   initial commit                                   FKun
 --
 
@@ -44,7 +45,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 9;
+    op_id = pgmemento.get_operation_id('DROP TABLE');
 
   -- get log_id from audit_table_log and remember it for later tests
   SELECT

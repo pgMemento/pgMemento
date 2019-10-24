@@ -50,13 +50,15 @@ DROP FUNCTION IF EXISTS pgmemento.get_txid_bounds_to_table(table_oid OID, OUT tx
 
 DROP FUNCTION IF EXISTS pgmemento.log_table_event(event_txid BIGINT, table_oid OID, op_type TEXT);
 
+DROP FUNCTION IF EXISTS pgememento.log_table_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT);
+
 DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID);
 
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 
 \echo
 \echo 'Alter tables and recreate functions'
-\i ctl/UPGRADE.sql
+--\i ctl/UPGRADE.sql
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql

@@ -25,7 +25,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="txid" not-null="true">
 		<type name="bigint" length="1"/>
 	</column>
-	<column name="stmt_date" not-null="true">
+	<column name="txid_time" not-null="true">
 		<type name="timestamptz" length="1"/>
 	</column>
 	<column name="process_id">
@@ -50,7 +50,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
 	<constraint name="transaction_log_unique_txid" type="uq-constr" table="pgmemento.transaction_log">
-		<columns names="txid,stmt_date" ref-type="src-columns"/>
+		<columns names="txid,txid_time" ref-type="src-columns"/>
 	</constraint>
 </table>
 
@@ -200,7 +200,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 concurrent="false" unique="false" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="stmt_date"/>
+			<column name="txid_time"/>
 		</idxelement>
 </index>
 

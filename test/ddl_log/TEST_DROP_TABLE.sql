@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-09-25   initial commit                                   FKun
 --
 
@@ -30,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  event_op_ids INTEGER[];
+  event_times TIMESTAMP WITH TIME ZONE[];
 BEGIN
   PERFORM set_config('pgmemento.session_info', '{"test":"drop table will first truncate table"}'::text, TRUE);
 
@@ -55,21 +56,21 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    array_agg(id ORDER BY id)
+    array_agg(stmt_time ORDER BY id)
   INTO
-    event_op_ids
+    event_times
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND (op_id = 8
-     OR op_id = 9);
+    AND (op_id = pgmemento.get_operation_id('TRUNCATE')
+     OR op_id = pgmemento.get_operation_id('DROP TABLE'));
 
-  ASSERT event_op_ids[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
-  ASSERT event_op_ids[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
+  ASSERT event_times[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
+  ASSERT event_times[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
 
-  -- save event_id for next test
-  PERFORM set_config('pgmemento.drop_table_test_event', event_op_ids[1]::text, FALSE);
+  -- save event time for next test
+  PERFORM set_config('pgmemento.drop_table_test_event', event_times[1]::text, FALSE);
 END;
 $$
 LANGUAGE plpgsql;
@@ -149,11 +150,11 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
   log_audit_id BIGINT;
   jsonb_log JSONB;
 BEGIN
-  test_event := current_setting('pgmemento.drop_table_test_event')::int;
+  test_event := current_setting('pgmemento.drop_table_test_event')::timestamp with time zone;
 
   SELECT
     audit_id,
@@ -164,7 +165,10 @@ BEGIN
   FROM
     pgmemento.row_log
   WHERE
-    event_id = test_event;
+    stmt_time = test_event
+    AND op_id = pgmemento.get_operation_id('TRUNCATE')
+    AND table_name = 'tests'
+    AND schema_name = 'public';
 
   ASSERT (jsonb_log->>'id')::bigint = 1, 'Error: Wrong content in row_log table: %', jsonb_log->>'id';
   ASSERT jsonb_log->>'test_geom_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log->>'test_geom_column';

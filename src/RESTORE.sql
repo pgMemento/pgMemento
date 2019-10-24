@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.1     2019-10-24   reflect changes on schema and triggers              FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
 -- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
 -- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
@@ -119,7 +120,10 @@ FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.event_id = e.id
+  ON r.stmt_time = e.stmt_time
+ AND r.op_id = e.op_id
+ AND r.table_name = e.table_name
+ AND r.schema_name = e.schema_name
 WHERE
   r.audit_id = $2
   AND r.changes ? $3
@@ -144,7 +148,10 @@ FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.event_id = e.id
+  ON r.stmt_time = e.stmt_time
+ AND r.op_id = e.op_id
+ AND r.table_name = e.table_name
+ AND r.schema_name = e.schema_name
 WHERE
   r.audit_id = $2
   AND e.transaction_id = $1
@@ -220,7 +227,7 @@ BEGIN
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY f.event_id, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('(PARTITION BY f.stmt_time, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s',
              quote_ident(c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END)
@@ -282,27 +289,30 @@ BEGIN
   query_text := query_text
     || extract_logs
     || E',\n  audit_id'
-    || CASE WHEN $6 THEN E',\n  event_id,\n  transaction_id\n' ELSE E'\n' END
+    || CASE WHEN $6 THEN E',\n  stmt_time,\n  table_operation,\n  transaction_id\n' ELSE E'\n' END
     || E'FROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
-    || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
+    || CASE WHEN $6 THEN 'f.stmt_time, ' ELSE '' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E')\n'
     -- add column selection that has been set up above 
     || find_logs
     || E',\n    f.audit_id'
-    || CASE WHEN $6 THEN E',\n    f.event_id,\n    f.transaction_id\n' ELSE E'\n' END
+    || CASE WHEN $6 THEN E',\n    f.stmt_time,\n    f.table_operation,\n    f.transaction_id\n' ELSE E'\n' END
     -- add subquery f to get last event for given audit_id before given transaction
     || E'  FROM (\n'
     || '    SELECT '
     || CASE WHEN $6 THEN E'\n' ELSE E'DISTINCT ON (r.audit_id)\n' END
-    || E'      r.audit_id, r.event_id, e.op_id, e.transaction_id\n'
+    || E'      r.audit_id, r.stmt_time, e.op_id, e.table_operation, e.transaction_id\n'
     || E'    FROM\n'
     || E'      pgmemento.row_log r\n'
     || E'    JOIN\n'
-    || E'      pgmemento.table_event_log e ON e.id = r.event_id\n'
+    || E'      pgmemento.table_event_log e ON r.stmt_time = e.stmt_time\n'
+    || E'      AND r.op_id = e.op_id\n'
+    || E'      AND r.table_name = e.table_name\n'
+    || E'      AND r.schema_name = e.schema_name\n'
     || format(E'    WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
          format(E'      AND e.table_name = %L AND e.schema_name = %L\n', tab_name, tab_schema)
@@ -314,7 +324,7 @@ BEGIN
     || E'  ) f\n'
     -- left join on row_log table and consider only events younger than the one extracted in subquery f
     || E'  LEFT JOIN\n'
-    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
+    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND a.stmt_time > f.stmt_time\n'
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
     || CASE WHEN join_recent_state THEN
          E'  LEFT JOIN\n'
@@ -327,7 +337,7 @@ BEGIN
     || CASE WHEN $6 THEN '' ELSE E'WHERE\n    f.op_id < 7\n' END
     -- order by oldest log entry for given audit_id
     || E'  ORDER BY\n'
-    || CASE WHEN $6 THEN '    f.event_id, ' ELSE '    ' END
+    || CASE WHEN $6 THEN '    f.stmt_time, ' ELSE '    ' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E'\n) e';
@@ -488,7 +498,7 @@ SELECT
     || ' ' || data_type
   , ', ' ORDER BY ordinal_position, column_count
   )
-  || ', audit_id bigint, event_id integer, transaction_id integer)'
+  || ', audit_id bigint, stmt_time timestamp with time zone, table_operation varchar, transaction_id integer)'
 FROM
   pgmemento.get_column_list_by_txid_range($1, $2, $3);
 $$

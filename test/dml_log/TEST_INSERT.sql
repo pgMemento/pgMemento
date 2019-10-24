@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.2     2018-11-10   reflect changes in SETUP                         FKun
 -- 0.1.1     2017-11-20   added upsert case                                FKun
 -- 0.1.0     2017-11-18   initial commit                                   FKun
@@ -32,7 +33,7 @@ DO
 $$
 DECLARE
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- create baseline for test table
   PERFORM pgmemento.log_table_baseline('object', 'public');
@@ -51,7 +52,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
@@ -89,7 +90,8 @@ $$
 DECLARE
   insert_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
+  insert_op_id SMALLINT := pgmemento.get_operation_id('INSERT');
   jsonb_log JSONB;
 BEGIN
   -- set session_info to query logged transaction later
@@ -119,14 +121,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND op_id = 3;
+    AND op_id = insert_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -139,7 +141,10 @@ BEGIN
     pgmemento.row_log
   WHERE
     audit_id = insert_audit_id
-    AND event_id = test_event;
+    AND stmt_time = test_event
+    AND op_id = insert_op_id
+    AND table_name = 'object'
+    AND schema_name = 'public';
 
   ASSERT jsonb_log IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
@@ -155,6 +160,7 @@ DECLARE
   insert_id INTEGER;
   upsert_audit_id INTEGER;
   test_txid BIGINT := txid_current();
+  event_times TIMESTAMP WITH TIME ZONE[];
   event_op_ids INTEGER[];
   jsonb_log JSONB[];
 BEGIN
@@ -194,27 +200,32 @@ BEGIN
 
   -- query for logged table events
   SELECT
-    array_agg(id ORDER BY id)
+    array_agg(stmt_time ORDER BY id),
+    array_agg(op_id ORDER BY id)
   INTO
+    event_times,
     event_op_ids
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND (op_id = 3 OR op_id = 4);
+    AND (op_id = pgmemento.get_operation_id('INSERT') OR op_id = pgmemento.get_operation_id('UPDATE'));
 
   ASSERT array_length(event_op_ids, 1) = 2, 'Error: Did not find entries in table_event_log table!';
 
   -- query for logged row
   SELECT
-    array_agg(r.changes ORDER BY e.e_id)
+    array_agg(r.changes ORDER BY r.id NULLS FIRST)
   INTO
     jsonb_log
   FROM
-    (SELECT unnest(event_op_ids) AS e_id) e
+    unnest(event_op_ids) AS e(op_id)
   LEFT JOIN
     pgmemento.row_log r
-    ON e.e_id = r.event_id;
+    ON e.op_id = r.op_id
+   AND r.stmt_time = event_times[2]
+   AND r.table_name = 'object'
+   AND r.schema_name = 'public';
 
   ASSERT jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %', jsonb_log[1];
   ASSERT jsonb_log[2] = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong content in row_log table: %', jsonb_log[2];

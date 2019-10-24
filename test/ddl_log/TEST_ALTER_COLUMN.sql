@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
@@ -38,7 +39,8 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
+  alter_column_op_id SMALLINT := pgmemento.get_operation_id('ALTER COLUMN');
   test_tsrange tsrange;
 BEGIN
   -- alter data type of one column
@@ -49,14 +51,14 @@ BEGIN
   PERFORM set_config('pgmemento.alter_column_test', test_transaction::text, FALSE);
 
   SELECT
-    id INTO test_event
+    stmt_time INTO test_event
   FROM
     pgmemento.table_event_log 
   WHERE
     transaction_id = test_transaction
     AND table_name = 'tests'
     AND schema_name = 'public'
-    AND op_id = 5;
+    AND op_id = alter_column_op_id;
 
   -- query for logged transaction
   ASSERT (
@@ -72,18 +74,18 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 5;
+    AND op_id = alter_column_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
-  -- save event_id for next test
+  -- save event time for next test
   PERFORM set_config('pgmemento.alter_column_test_event', test_event::text, FALSE);
 END;
 $$
@@ -134,7 +136,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
 BEGIN
   -- rename a column
   ALTER TABLE public.tests RENAME COLUMN test_tsrange_column TO test_tstzrange_column;
@@ -157,14 +159,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    stmt_time
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 22;
+    AND op_id = pgmemento.get_operation_id('RENAME COLUMN');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 END;
@@ -214,11 +216,11 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_event INTEGER;
+  test_event TIMESTAMP WITH TIME ZONE;
   test_value TEXT;
   jsonb_log JSONB;
 BEGIN
-  test_event := current_setting('pgmemento.alter_column_test_event')::int;
+  test_event := current_setting('pgmemento.alter_column_test_event')::timestamp with time zone;
   test_value := current_setting('pgmemento.alter_column_test_value');
 
   SELECT
@@ -228,7 +230,10 @@ BEGIN
   FROM
     pgmemento.row_log
   WHERE
-    event_id = test_event;
+    stmt_time = test_event
+    AND op_id = pgmemento.get_operation_id('ALTER COLUMN')
+    AND table_name = 'tests'
+    AND schema_name = 'public';
 
   ASSERT jsonb_log IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
