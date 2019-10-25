@@ -45,10 +45,10 @@
 *   audit_table_check(IN tid INTEGER, IN tab_name TEXT, IN tab_schema TEXT,
 *     OUT table_log_id INTEGER, OUT log_tab_name TEXT, OUT log_tab_schema TEXT, OUT log_tab_id INTEGER,
 *     OUT recent_tab_name TEXT, OUT recent_tab_schema TEXT, OUT recent_tab_id INTEGER) RETURNS RECORD
-*   delete_audit_table_log(table_log_id INTEGER) RETURNS SETOF INTEGER
+*   delete_audit_table_log(tablename TEXT, schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_key(aid BIGINT, key_name TEXT, old_value anyelement) RETURNS SETOF BIGINT
-*   delete_table_event_log(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
-*   delete_table_event_log(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_table_event_log(tablename TEXT, schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
+*   delete_table_event_log(tid INTEGER, tablename TEXT, schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF INTEGER
 *   delete_txid_log(tid INTEGER) RETURNS INTEGER
 *   get_column_list_by_txid(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     OUT column_name TEXT, OUT data_type TEXT, OUT ordinal_position INTEGER) RETURNS SETOF RECORD
@@ -123,7 +123,7 @@ LANGUAGE sql STRICT;
 * GET TRANSACTION ID
 *
 * Simple functions to return the transaction_id related to
-* certain database entities 
+* certain database entities
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER AS
 $$
@@ -196,8 +196,8 @@ LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  tablename TEXT,
+  schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
@@ -212,8 +212,8 @@ $$
 LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  tablename TEXT,
+  schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
 DELETE FROM
@@ -227,38 +227,44 @@ $$
 LANGUAGE sql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
-  table_log_id INTEGER
+  tablename TEXT,
+  schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
+DECLARE
+  table_log_id INTEGER;
 BEGIN
+  SELECT
+    log_id
+  INTO
+    table_log_id
+  FROM
+    pgmemento.audit_table_log
+  WHERE
+    table_name = $1
+    AND schema_name = $2
+    AND upper(txid_range) IS NOT NULL;
+
   -- only allow delete if table has already been dropped
-  IF EXISTS (
-    SELECT
-      1
-    FROM
-      pgmemento.audit_table_log 
-    WHERE
-      log_id = $1
-      AND upper(txid_range) IS NOT NULL
-  ) THEN
+  IF table_log_id IS NOT NULL THEN
     -- remove corresponding table events from event log
     PERFORM
       pgmemento.delete_table_event_log(table_name, schema_name)
     FROM
-      pgmemento.audit_table_log 
+      pgmemento.audit_table_log
     WHERE
-      log_id = $1;
+      log_id = table_log_id;
 
     RETURN QUERY
       DELETE FROM
-        pgmemento.audit_table_log 
+        pgmemento.audit_table_log
       WHERE
-        log_id = $1
+        log_id = table_log_id
         AND upper(txid_range) IS NOT NULL
       RETURNING
         log_id;
   ELSE
-    RAISE NOTICE 'Either audit table with log_id % is not found or the table still exists.', $1; 
+    RAISE NOTICE 'Either audit table is not found or the table still exists.';
   END IF;
 END;
 $$
@@ -313,7 +319,7 @@ LANGUAGE sql;
 * AUDIT TABLE CHECK
 *
 * Helper function to check if requested table has existed
-* before tid happened and if the name has been renamed 
+* before tid happened and if the name has been renamed
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   IN tid INTEGER,
@@ -334,7 +340,7 @@ BEGIN
     a_old.log_id,
     a_old.table_name,
     a_old.schema_name,
-    a_old.id, 
+    a_old.id,
     a_new.table_name,
     a_new.schema_name,
     a_new.id
@@ -342,7 +348,7 @@ BEGIN
     table_log_id,
     log_tab_name,
     log_tab_schema,
-    log_tab_id, 
+    log_tab_id,
     recent_tab_name,
     recent_tab_schema,
     recent_tab_id
@@ -369,7 +375,7 @@ BEGIN
       table_log_id,
       log_tab_name,
       log_tab_schema,
-      log_tab_id 
+      log_tab_id
     FROM
       pgmemento.audit_table_log
     WHERE

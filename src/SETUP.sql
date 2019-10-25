@@ -1190,7 +1190,7 @@ BEGIN
     PERFORM pgmemento.unregister_audit_table($1, $2);
   ELSE
     -- remove all logs related to given table
-    PERFORM pgmemento.delete_audit_table_log(($2 || '.' || $1)::regclass::oid);
+    PERFORM pgmemento.delete_audit_table_log($1, $2);
   END IF;
 
   -- drop audit_id column
