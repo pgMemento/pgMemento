@@ -32,8 +32,7 @@ COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of t
 ALTER TABLE pgmemento.table_event_log
   ADD COLUMN stmt_time TIMESTAMP WITH TIME ZONE
   ADD COLUMN table_name TEXT,
-  ADD COLUMN schema_name TEXT
-  ;
+  ADD COLUMN schema_name TEXT;
 
 -- fill new columns with values
 UPDATE pgmemento.table_event_log e

@@ -42,6 +42,8 @@ DROP FUNCTION IF EXISTS pgmemento.delete_audit_table_log(table_oid OID);
 
 DROP FUNCTION IF EXISTS pgmemento.delete_table_event_log(tid INTEGER, table_oid OID);
 
+DROP FUNCTION IF EXISTS pgmemento.delete_table_event_log(table_name TEXT, schema_name TEXT);
+
 DROP FUNCTION IF EXISTS pgmemento.get_column_list_by_txid_range(
   start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID,
   OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER, OUT txid_range numrange);
@@ -58,7 +60,7 @@ DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 
 \echo
 \echo 'Alter tables and recreate functions'
---\i ctl/UPGRADE.sql
+\i ctl/UPGRADE.sql
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql
