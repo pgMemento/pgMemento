@@ -1,5 +1,5 @@
 language: SQL
-dist: trusty
+dist: bionic
 sudo: true
 
 matrix:
