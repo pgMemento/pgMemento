@@ -1,2 +1,2 @@
 FROM postgres:10
-RUN apt-get update -y && apt-get install -y postgresql-10-postgis cmake libpq-dev postgresql-server-dev-10 zip unzip python-pip
+RUN apt-get update -y && apt-get install -y postgresql-10-postgis-2.5 cmake libpq-dev postgresql-server-dev-10 zip unzip python-pip
