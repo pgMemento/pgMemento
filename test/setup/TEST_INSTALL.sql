@@ -88,7 +88,7 @@ BEGIN
     array_agg(
       p.proname || ';' ||
       pg_catalog.pg_get_function_result(p.oid) ||
-      CASE WHEN pg_catalog.pg_get_function_arguments(p.oid) = '' 
+      CASE WHEN pg_catalog.pg_get_function_arguments(p.oid) = ''
         THEN ''::text
         ELSE ';' || pg_catalog.pg_get_function_arguments(p.oid)
       END
@@ -183,7 +183,7 @@ BEGIN
   ASSERT pgm_objects[79] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[80] = 'trim_outer_quotes;text;quoted_string text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[81] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[82] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
+  ASSERT pgm_objects[82] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';
 END;
 $$
 LANGUAGE plpgsql;

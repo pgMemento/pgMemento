@@ -124,7 +124,7 @@ LANGUAGE sql STRICT;
 * GET TRANSACTION ID
 *
 * Simple functions to return the transaction_id related to
-* certain database entities 
+* certain database entities
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_txids_to_audit_id(aid BIGINT) RETURNS SETOF INTEGER AS
 $$
@@ -228,7 +228,7 @@ BEGIN
   INTO
     table_log_id
   FROM
-    pgmemento.audit_table_log 
+    pgmemento.audit_table_log
   WHERE
     table_name = $1
     AND schema_name = $2
@@ -240,20 +240,20 @@ BEGIN
     PERFORM
       pgmemento.delete_table_event_log(table_name, schema_name)
     FROM
-      pgmemento.audit_table_log 
+      pgmemento.audit_table_log
     WHERE
       log_id = table_log_id;
 
     RETURN QUERY
       DELETE FROM
-        pgmemento.audit_table_log 
+        pgmemento.audit_table_log
       WHERE
         log_id = table_log_id
         AND upper(txid_range) IS NOT NULL
       RETURNING
         log_id;
   ELSE
-    RAISE NOTICE 'Either audit table is not found or the table still exists.'; 
+    RAISE NOTICE 'Either audit table is not found or the table still exists.';
   END IF;
 END;
 $$
@@ -308,7 +308,7 @@ LANGUAGE sql;
 * AUDIT TABLE CHECK
 *
 * Helper function to check if requested table has existed
-* before tid happened and if the name has been renamed 
+* before tid happened and if the name has been renamed
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   IN tid INTEGER,
@@ -329,7 +329,7 @@ BEGIN
     a_old.log_id,
     a_old.table_name,
     a_old.schema_name,
-    a_old.id, 
+    a_old.id,
     a_new.table_name,
     a_new.schema_name,
     a_new.id
@@ -337,7 +337,7 @@ BEGIN
     table_log_id,
     log_tab_name,
     log_tab_schema,
-    log_tab_id, 
+    log_tab_id,
     recent_tab_name,
     recent_tab_schema,
     recent_tab_id
@@ -364,7 +364,7 @@ BEGIN
       table_log_id,
       log_tab_name,
       log_tab_schema,
-      log_tab_id 
+      log_tab_id
     FROM
       pgmemento.audit_table_log
     WHERE
