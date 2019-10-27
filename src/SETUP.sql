@@ -196,7 +196,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables_dependency AS
       ct.conrelid AS child_oid,
       a.log_id AS table_log_id,
       a.table_name,
-      a.schema_name,
+      n.nspname AS schema_name,
       1 AS depth
     FROM
       pg_class c
@@ -440,7 +440,7 @@ BEGIN
           tab_id AS audit_table_id,
           a.attname AS column_name,
           a.attnum AS ordinal_position,
-          d.adsrc AS column_default,
+          pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
           a.attnotnull AS not_null,
           substr(
             format_type(a.atttypid, a.atttypmod),
@@ -1190,7 +1190,7 @@ BEGIN
     PERFORM pgmemento.unregister_audit_table($1, $2);
   ELSE
     -- remove all logs related to given table
-    PERFORM pgmemento.delete_audit_table_log(($2 || '.' || $1)::regclass::oid);
+    PERFORM pgmemento.delete_audit_table_log($1, $2);
   END IF;
 
   -- drop audit_id column

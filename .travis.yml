@@ -1,5 +1,5 @@
 language: SQL
-dist: trusty
+dist: bionic
 sudo: true
 
 matrix:
@@ -25,6 +25,9 @@ matrix:
     - name: extension-11
       env: TEST=extension PG=11
 
+    - name: extension-12
+      env: TEST=extension PG=12
+
     - name: pgxn-9.5
       env: TEST=pgxn PG=95
 
@@ -36,6 +39,9 @@ matrix:
 
     - name: pgxn-11
       env: TEST=pgxn PG=11
+
+    - name: pgxn-12
+      env: TEST=pgxn PG=12
 
 services:
   - docker

@@ -87,7 +87,7 @@ BEGIN
     array_agg(
       p.proname || ';' ||
       pg_catalog.pg_get_function_result(p.oid) ||
-      CASE WHEN pg_catalog.pg_get_function_arguments(p.oid) = '' 
+      CASE WHEN pg_catalog.pg_get_function_arguments(p.oid) = ''
         THEN ''::text
         ELSE ';' || pg_catalog.pg_get_function_arguments(p.oid)
       END
@@ -111,10 +111,10 @@ BEGIN
   ASSERT pgm_objects[8] = 'create_table_audit;SETOF void;table_name text, schema_name text DEFAULT ''public''::text, log_state boolean DEFAULT true', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[9] = 'create_table_audit_id;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[10] = 'create_table_log_trigger;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[11] = 'delete_audit_table_log;SETOF integer;table_log_id integer', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[11] = 'delete_audit_table_log;SETOF integer;tablename text, schemaname text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[12] = 'delete_key;SETOF bigint;aid bigint, key_name text, old_value anyelement', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[13] = 'delete_table_event_log;SETOF integer;tid integer, table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[14] = 'delete_table_event_log;SETOF integer;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[13] = 'delete_table_event_log;SETOF integer;tid integer, tablename text, schemaname text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[14] = 'delete_table_event_log;SETOF integer;tablename text, schemaname text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[15] = 'delete_txid_log;integer;tid integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[16] = 'drop_schema_audit;SETOF void;schema_name text DEFAULT ''public''::text, keep_log boolean DEFAULT true, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[17] = 'drop_schema_audit_id;SETOF void;schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
@@ -181,7 +181,7 @@ BEGIN
   ASSERT pgm_objects[78] = 'table_drop_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[79] = 'trim_outer_quotes;text;quoted_string text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[80] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[81] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';  
+  ASSERT pgm_objects[81] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';
 END
 $$
 LANGUAGE plpgsql;

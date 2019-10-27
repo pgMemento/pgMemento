@@ -36,7 +36,7 @@ cat <<'EOF' | psql pgmemento_backup postgres -qAt > /tmp/restore_data.sql
 EOF
 
 echo "Taking the mutated data backup";
-pg_dump -U postgres -Oxo pgmemento_backup > /tmp/backup.sql;
+pg_dump -U postgres -Ox pgmemento_backup > /tmp/backup.sql;
 
 echo "Drop the original database";
 psql postgres postgres -c 'drop database pgmemento_backup;'
@@ -70,4 +70,3 @@ EOF
 echo "$(cat /tmp/restore_data.sql); $TEST_RESTORE" | psql pgmemento_restore postgres -1
 
 echo "SUCCESS";
-

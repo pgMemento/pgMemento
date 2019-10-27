@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script provides functions to track table changes in all database 
+-- This script provides functions to track table changes in all database
 -- schemas using event triggers.
 -------------------------------------------------------------------------------
 --
@@ -202,7 +202,7 @@ LANGUAGE plpgsql STRICT;
 /**********************************************************
 * MODIFY DDL LOGS
 *
-* Helper function to update tables audit_table_log and 
+* Helper function to update tables audit_table_log and
 * audit_column_log
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.modify_ddl_log_tables(
@@ -221,7 +221,7 @@ BEGIN
     INSERT INTO pgmemento.audit_column_log
       (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
     (
-      SELECT 
+      SELECT
         nextval('pgmemento.audit_column_log_id_seq') AS id,
         tab_id AS audit_table_id,
         a.attname AS column_name,
@@ -231,7 +231,7 @@ BEGIN
           position('.' IN format_type(a.atttypid, a.atttypmod))+1,
           length(format_type(a.atttypid, a.atttypmod))
         ) AS data_type,
-        d.adsrc AS column_default,
+        pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
         a.attnotnull AS not_null,
         numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
       FROM
@@ -301,7 +301,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
     FROM
       dropped_columns dc
     WHERE
@@ -327,7 +327,7 @@ BEGIN
             position('.' IN format_type(a.atttypid, a.atttypmod))+1,
             length(format_type(a.atttypid, a.atttypmod))
           ) AS data_type,
-          d.adsrc AS column_default,
+          pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
           a.attnotnull AS not_null,
           pgmemento.trim_outer_quotes($1) AS table_name,
           pgmemento.trim_outer_quotes($2) AS schema_name
@@ -372,7 +372,7 @@ BEGIN
         SELECT
           nextval('pgmemento.audit_column_log_id_seq') AS id,
           audit_table_id,
-          column_name, 
+          column_name,
           ordinal_position,
           data_type,
           column_default,
@@ -385,7 +385,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]') 
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
     FROM
       updated_columns uc
     WHERE
@@ -434,7 +434,7 @@ BEGIN
     -- exit loop when nothing has been fetched
     IF schema_ident IS NULL OR length(schema_ident) = 0 THEN
       EXIT;
-    END IF; 
+    END IF;
 
     -- shrink ddl_text by schema_ident
     ddl_text := substr(ddl_text, position(schema_ident in ddl_text) + length(schema_ident), length(ddl_text));
@@ -459,10 +459,10 @@ BEGIN
   END LOOP;
 
   -- truncate tables to log the data
-  FOR rec IN 
+  FOR rec IN
     SELECT
       quote_ident(n.nspname) AS schemaname,
-      quote_ident(c.relname) AS tablename 
+      quote_ident(c.relname) AS tablename
     FROM
       pg_class c
     JOIN
@@ -510,7 +510,7 @@ DECLARE
 BEGIN
   tid := current_setting('pgmemento.' || txid_current())::int;
 
-  FOR obj IN 
+  FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     BEGIN
@@ -614,9 +614,9 @@ BEGIN
      lower(ddl_text) LIKE '% not null%' OR
      lower(ddl_text) LIKE '%default%' OR
      lower(ddl_text) LIKE '%add column%' OR
-     lower(ddl_text) LIKE '%add %' OR 
+     lower(ddl_text) LIKE '%add %' OR
      lower(ddl_text) LIKE '%drop column%' OR
-     lower(ddl_text) LIKE '%drop %' OR 
+     lower(ddl_text) LIKE '%drop %' OR
      lower(ddl_text) LIKE '%rename %'
   THEN
     -- remove comments and line breaks from the DDL string
@@ -653,7 +653,7 @@ BEGIN
         END;
       END IF;
     END LOOP;
-    
+
     -- get table and schema name
     IF table_ident LIKE '%.%' THEN
       -- check if table is audited
@@ -722,7 +722,7 @@ BEGIN
       -- exit loop when nothing has been fetched
       IF column_candidate IS NULL OR length(column_candidate) = 0 THEN
         EXIT;
-      END IF; 
+      END IF;
 
       -- shrink ddl_text by column_candidate
       ddl_text := substr(ddl_text, position(column_candidate in ddl_text) + length(column_candidate), length(ddl_text));
@@ -749,7 +749,7 @@ BEGIN
                     added_columns := TRUE;
                   END IF;
                 END IF;
-              
+
                 EXCEPTION
                   WHEN syntax_error THEN
                     CONTINUE;
@@ -781,7 +781,7 @@ BEGIN
                   dropped_columns := array_append(dropped_columns, column_candidate);
                 WHEN 'ALTER' THEN
                   altered_columns := array_append(altered_columns, column_candidate);
-                  
+
                   -- check if logging column content is really required
                   column_type := pgmemento.fetch_ident(ddl_text, 5);
                   IF lower(column_type) LIKE '% collate %' OR lower(column_type) LIKE '% using %' THEN
@@ -852,7 +852,7 @@ $$
 DECLARE
   obj record;
 BEGIN
-  FOR obj IN 
+  FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
@@ -888,7 +888,7 @@ DECLARE
   obj RECORD;
   tid INTEGER;
 BEGIN
-  FOR obj IN 
+  FOR obj IN
     SELECT * FROM pg_event_trigger_dropped_objects()
   LOOP
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
