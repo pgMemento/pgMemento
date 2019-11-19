@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.1     2019-11-18   reflect more changes in schema                   FKun
 -- 0.2.0     2019-06-09   change to upgrade from v0.6.1 to v0.7            FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-07-23   initial commit                                   FKun
@@ -30,13 +31,15 @@ COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of t
 -- TABLE_EVENT_LOG
 -- replace table_relid with columns table_name and schema_name
 ALTER TABLE pgmemento.table_event_log
-  ADD COLUMN stmt_time TIMESTAMP WITH TIME ZONE
+  ADD COLUMN txid_time TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN stmt_time TIMESTAMP WITH TIME ZONE,
   ADD COLUMN table_name TEXT,
   ADD COLUMN schema_name TEXT;
 
 -- fill new columns with values
 UPDATE pgmemento.table_event_log e
-   SET stmt_time = t.txid_time
+   SET txid_time = t.txid_time,
+       stmt_time = t.txid_time
   FROM pgmemento.transaction_log t
  WHERE e.transaction_id = t.id;
 
@@ -53,16 +56,18 @@ DROP INDEX IF EXISTS table_event_log_unique_idx;
 
 ALTER TABLE pgmemento.table_event_log
   DROP COLUMN table_relid,
+  ALTER COLUMN txid_time SET NOT NULL,
   ALTER COLUMN stmt_time SET NOT NULL,
   ALTER COLUMN table_name SET NOT NULL,
   ALTER COLUMN schema_name SET NOT NULL;
 
+COMMENT ON COLUMN pgmemento.table_event_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.stmt_time IS 'Stores the result of statement_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.table_name IS 'Name of table that fired the trigger';
 COMMENT ON COLUMN pgmemento.table_event_log.schema_name IS 'Schema of firing table';
 
 CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, stmt_time, table_name, schema_name, op_id);
-CREATE INDEX table_even_log_time_idx ON pgmemento.table_event_log USING BTREE (stmt_time);
+CREATE INDEX table_even_log_time_idx ON pgmemento.table_event_log USING BTREE (txid_time, stmt_time);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.table_event_log;
@@ -82,9 +87,9 @@ ALTER TABLE pgmemento.row_log
 UPDATE pgmemento.row_log r
    SET txid_time = e.stmt_time,
        stmt_time = e.stmt_time,
-       op_id = e.op_id
-       table_name = e.table_name
-       schema_name = e.schema_name
+       op_id = e.op_id,
+       table_name = e.table_name,
+       schema_name = e.schema_name,
   FROM pgmemento.table_event_log e
  WHERE r.event_id = e.id;
 
@@ -103,7 +108,7 @@ ALTER TABLE pgmemento.row_log
 COMMENT ON COLUMN pgmemento.row_log.txid_time IS 'Stores the timestamp of the current transaction';
 COMMENT ON COLUMN pgmemento.row_log.stmt_time IS 'Stores the timestamp of table event';
 
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (stmt_time, op_id, table_name, schema_name);
+CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (txid_time, stmt_time, op_id, table_name, schema_name);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.row_log;

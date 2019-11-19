@@ -846,9 +846,9 @@ BEGIN
   -- try to log corresponding table event
   -- on conflict do nothing
   INSERT INTO pgmemento.table_event_log
-    (transaction_id, stmt_time, op_id, table_operation, table_name, schema_name)
+    (transaction_id, txid_time, stmt_time, op_id, table_operation, table_name, schema_name)
   VALUES
-    (transaction_log_id, statement_timestamp(), pgmemento.get_operation_id($4), $4, $2, $3)
+    (transaction_log_id, transaction_timestamp(), statement_timestamp(), pgmemento.get_operation_id($4), $4, $2, $3)
   ON CONFLICT (transaction_id, stmt_time, table_name, schema_name, op_id)
     DO NOTHING
   RETURNING stmt_time

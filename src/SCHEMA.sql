@@ -91,6 +91,7 @@ CREATE TABLE pgmemento.table_event_log
 (
   id SERIAL,
   transaction_id INTEGER NOT NULL,
+  txid_time TIMESTAMP WITH TIME ZONE NOT NULL,
   stmt_time TIMESTAMP WITH TIME ZONE NOT NULL,
   op_id SMALLINT NOT NULL,
   table_operation VARCHAR(18),
@@ -104,6 +105,7 @@ ALTER TABLE pgmemento.table_event_log
 COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happing during one transaction against one table';
 COMMENT ON COLUMN pgmemento.table_event_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.table_event_log.transaction_id IS 'Foreign Key to transaction_log table';
+COMMENT ON COLUMN pgmemento.table_event_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.stmt_time IS 'Stores the result of statement_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.op_id IS 'ID of event type';
 COMMENT ON COLUMN pgmemento.table_event_log.table_operation IS 'Text for of event type';
@@ -215,8 +217,8 @@ CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (
 CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, txid_time);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
 CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, stmt_time, table_name, schema_name, op_id);
-CREATE INDEX table_even_log_time_idx ON pgmemento.table_event_log USING BTREE (stmt_time);
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (stmt_time, op_id, table_name, schema_name);
+CREATE INDEX table_even_log_time_idx ON pgmemento.table_event_log USING BTREE (txid_time, stmt_time);
+CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (txid_time, stmt_time, op_id, table_name, schema_name);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
 CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);

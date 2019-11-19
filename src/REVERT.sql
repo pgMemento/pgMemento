@@ -475,7 +475,8 @@ BEGIN
       ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.stmt_time = e.stmt_time
+      ON r.txid_time = e.txid_time
+     AND r.stmt_time = e.stmt_time
      AND r.op_id = e.op_id
      AND r.table_name = e.table_name
      AND r.schema_name = e.schema_name
@@ -510,7 +511,7 @@ BEGIN
       e.op_id,
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY r.stmt_time ORDER BY r.id DESC) AS audit_order,
+      rank() OVER (PARTITION BY t.id, r.stmt_time ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -532,7 +533,8 @@ BEGIN
       ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.stmt_time = e.stmt_time
+      ON r.txid_time = e.txid_time
+     AND r.stmt_time = e.stmt_time
      AND r.op_id = e.op_id
      AND r.table_name = e.table_name
      AND r.schema_name = e.schema_name
@@ -605,7 +607,8 @@ BEGIN
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.stmt_time = e.stmt_time
+          ON r.txid_time = e.txid_time
+         AND r.stmt_time = e.stmt_time
          AND r.op_id = e.op_id
          AND r.table_name = e.table_name
          AND r.schema_name = e.schema_name
@@ -701,7 +704,8 @@ BEGIN
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.stmt_time = e.stmt_time
+          ON r.txid_time = e.txid_time
+         AND r.stmt_time = e.stmt_time
          AND r.op_id = e.op_id
          AND r.table_name = e.table_name
          AND r.schema_name = e.schema_name
@@ -739,6 +743,7 @@ BEGIN
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
     ORDER BY
+      q.tid DESC,
       e1.stmt_time,
       dependency_order,
       e1.id DESC,
