@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-09   initial commit                                   FKun
 --
 
@@ -30,7 +30,6 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  event_times TIMESTAMP WITH TIME ZONE[];
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Reverting add column"}'::text, FALSE);

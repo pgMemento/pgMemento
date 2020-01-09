@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-03   initial commit                                   FKun
 --
 
@@ -119,7 +119,7 @@ $$
 DECLARE
   alter_column_op_id SMALLINT := pgmemento.get_operation_id('ALTER COLUMN');
   test_transaction INTEGER;
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   test_tsrange tsrange;
 BEGIN
   -- set session_info to query logged transaction later
@@ -150,7 +150,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -162,7 +162,7 @@ BEGIN
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
   -- save event time for next test
-  PERFORM set_config('pgmemento.revert_alter_column_test_event', test_event::text, FALSE);
+  PERFORM set_config('pgmemento.revert_alter_column_test_event', test_event, FALSE);
 END;
 $$
 LANGUAGE plpgsql;

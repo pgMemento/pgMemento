@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.7.1     2019-10-24   reflect changes on schema and triggers              FKun
+-- 0.7.1     2020-01-09   reflect changes on schema and triggers              FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
 -- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
 -- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
@@ -120,11 +120,7 @@ FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.txid_time = e.txid_time
- AND r.stmt_time = e.stmt_time
- AND r.op_id = e.op_id
- AND r.table_name = e.table_name
- AND r.schema_name = e.schema_name
+  ON r.event_key = e.event_key
 WHERE
   r.audit_id = $2
   AND r.changes ? $3
@@ -149,11 +145,7 @@ FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.txid_time = e.txid_time
- AND r.stmt_time = e.stmt_time
- AND r.op_id = e.op_id
- AND r.table_name = e.table_name
- AND r.schema_name = e.schema_name
+  ON r.event_key = e.event_key
 WHERE
   r.audit_id = $2
   AND e.transaction_id = $1
@@ -229,7 +221,7 @@ BEGIN
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
         || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY f.txid_time, f.stmt_time, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('(PARTITION BY f.event_key, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s',
              quote_ident(c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END)
@@ -295,7 +287,7 @@ BEGIN
     || E'FROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
-    || CASE WHEN $6 THEN 'f.txid_time, f.stmt_time, ' ELSE '' END
+    || CASE WHEN $6 THEN 'f.event_key, ' ELSE '' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E')\n'
@@ -307,15 +299,11 @@ BEGIN
     || E'  FROM (\n'
     || '    SELECT '
     || CASE WHEN $6 THEN E'\n' ELSE E'DISTINCT ON (r.audit_id)\n' END
-    || E'      r.audit_id, r.txid_time, r.stmt_time, e.op_id, e.table_operation, e.transaction_id\n'
+    || E'      r.audit_id, e.event_key, e.stmt_time, e.op_id, e.table_operation, e.transaction_id\n'
     || E'    FROM\n'
     || E'      pgmemento.row_log r\n'
     || E'    JOIN\n'
-    || E'      pgmemento.table_event_log e ON r.txid_time = e.txid_time\n'
-    || E'      AND r.stmt_time = e.stmt_time\n'
-    || E'      AND r.op_id = e.op_id\n'
-    || E'      AND r.table_name = e.table_name\n'
-    || E'      AND r.schema_name = e.schema_name\n'
+    || E'      pgmemento.table_event_log e ON r.event_key = e.event_key\n'
     || format(E'    WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
          format(E'      AND e.table_name = %L AND e.schema_name = %L\n', tab_name, tab_schema)
@@ -327,7 +315,7 @@ BEGIN
     || E'  ) f\n'
     -- left join on row_log table and consider only events younger than the one extracted in subquery f
     || E'  LEFT JOIN\n'
-    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND (a.txid_time > f.txid_time OR a.stmt_time > f.stmt_time)\n'
+    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND (a.event_key > f.event_key)\n'
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
     || CASE WHEN join_recent_state THEN
          E'  LEFT JOIN\n'
@@ -340,7 +328,7 @@ BEGIN
     || CASE WHEN $6 THEN '' ELSE E'WHERE\n    f.op_id < 7\n' END
     -- order by oldest log entry for given audit_id
     || E'  ORDER BY\n'
-    || CASE WHEN $6 THEN '    f.txid_time, f.stmt_time, ' ELSE '    ' END
+    || CASE WHEN $6 THEN '    f.event_key, ' ELSE '    ' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E'\n) e';

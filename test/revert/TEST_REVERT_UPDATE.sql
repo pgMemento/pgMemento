@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-19   initial commit                                   FKun
 --
 
@@ -30,7 +30,7 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
   jsonb_log JSONB;
 BEGIN
@@ -73,7 +73,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -95,8 +95,7 @@ BEGIN
         pgmemento.row_log r
         ON t.audit_id = r.audit_id 
       WHERE
-        r.stmt_time = test_event
-        AND r.op_id = update_op_id
+        r.event_key = test_event
         AND r.changes = jsonb_log
     )
   ),

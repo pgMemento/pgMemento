@@ -147,8 +147,8 @@ BEGIN
   ASSERT pgm_objects[43] = 'log_insert;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[44] = 'log_schema_baseline;SETOF void;schemaname text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[45] = 'log_table_baseline;SETOF void;table_name text, schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[46] = 'log_table_event;timestamp with time zone;event_txid bigint, tablename text, schemaname text, op_type text', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[47] = 'log_table_state;SETOF void;stmt_ts timestamp with time zone, columns text[], tablename text, schemaname text, op_type text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[46] = 'log_table_event;text;event_txid bigint, tablename text, schemaname text, op_type text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[47] = 'log_table_state;SETOF void;columns text[], tablename text, schemaname text, table_event_key text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[48] = 'log_transaction;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[49] = 'log_truncate;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[50] = 'log_update;trigger', 'Error: Expected different function and/or arguments';

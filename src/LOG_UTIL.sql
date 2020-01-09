@@ -16,7 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
--- 0.7.1     2019-10-24   reflect changes on schema and triggers         FKun
+-- 0.7.1     2020-01-09   reflect changes on schema and triggers         FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
 -- 0.6.4     2019-03-23   audit_table_check can handle relid mismatch    FKun
 -- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
@@ -133,8 +133,11 @@ SELECT
 FROM
   pgmemento.transaction_log t
 JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.id
+JOIN
   pgmemento.row_log r
-  ON r.txid_time = t.txid_time
+  ON r.event_key = e.event_key
  AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
@@ -146,8 +149,11 @@ SELECT
 FROM
   pgmemento.transaction_log t
 JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.id
+JOIN
   pgmemento.row_log r
-  ON r.txid_time = t.txid_time
+  ON r.event_key = e.event_key
  AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
@@ -159,8 +165,11 @@ SELECT
 FROM
   pgmemento.transaction_log t
 JOIN
+  pgmemento.table_event_log e
+  ON e.transaction_id = t.id
+JOIN
   pgmemento.row_log r
-  ON r.txid_time = t.txid_time
+  ON r.event_key = e.event_key
  AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;

@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-11-13   initial commit                                   FKun
 --
 

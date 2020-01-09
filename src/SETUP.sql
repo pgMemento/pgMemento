@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.7.2     2019-10-24   reflect changes on schema and triggers              FKun
+-- 0.7.2     2020-01-09   reflect changes on schema and triggers              FKun
 -- 0.7.1     2019-04-21   introduce new event RECREATE TABLE with op_id       FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs and VIEWs            FKun
 -- 0.6.9     2019-03-23   Audit views list tables even on relid mismatch      FKun
@@ -76,8 +76,8 @@
 *   get_txid_bounds_to_table(table_log_id INTEGER, OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
 *   log_schema_baseline(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   log_table_baseline(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
-*   log_table_event(event_txid BIGINT, tablename TEXT, schemaname TEXT, op_type TEXT) RETURNS TIMESTAMP WITH TIME ZONE
-*   log_table_state(stmt_ts TIMESTAMP WITH TIME ZONE, columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   log_table_event(event_txid BIGINT, tablename TEXT, schemaname TEXT, op_type TEXT) RETURNS TEXT
+*   log_table_state(columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text, table_event_key TEXT) RETURNS SETOF VOID
 *   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS INTEGER
 *   trim_outer_quotes(quoted_string TEXT) RETURNS TEXT
 *   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
@@ -755,31 +755,29 @@ $$
 LANGUAGE sql IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
-  stmt_ts TIMESTAMP WITH TIME ZONE,
   columns TEXT[],
   tablename TEXT,
   schemaname TEXT,
-  op_type TEXT
+  table_event_key TEXT
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-  IF $2 IS NOT NULL AND array_length($2, 1) IS NOT NULL THEN
+  IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
     -- log content of given columns
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log(txid_time, stmt_time, audit_id, op_id, table_name, schema_name, changes)
-         SELECT transaction_timestamp(), $1, audit_id, $2, $3, $4,
-                jsonb_build_object('||pgmemento.column_array_to_column_list($2)||') AS content
+      'INSERT INTO pgmemento.row_log(audit_id, event_key, changes)
+         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
            FROM %I.%I ORDER BY audit_id',
-         pgmemento.trim_outer_quotes($4), pgmemento.trim_outer_quotes($3))
-         USING $1, pgmemento.get_operation_id($5), $3, $4;
+         pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($2))
+         USING $4;
   ELSE
     -- log content of entire table
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log (txid_time, stmt_time, audit_id, op_id, table_name, schema_name, changes)
-         SELECT transaction_timestamp(), $1, audit_id, $2, $3, $4, to_jsonb(%I) AS content
+      'INSERT INTO pgmemento.row_log (audit_id, event_key, changes)
+         SELECT audit_id, $1, to_jsonb(%I) AS content
            FROM %I.%I ORDER BY audit_id',
-         pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($4), pgmemento.trim_outer_quotes($3))
-         USING $1, pgmemento.get_operation_id($5), $3, $4;
+         pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($2))
+         USING $4;
   END IF;
 END;
 $$
@@ -797,14 +795,17 @@ CREATE OR REPLACE FUNCTION pgmemento.log_table_event(
   tablename TEXT,
   schemaname TEXT,
   op_type TEXT
-  ) RETURNS TIMESTAMP WITH TIME ZONE AS
+  ) RETURNS TEXT AS
 $$
 DECLARE
   atl_log_id INTEGER;
   session_info_text TEXT;
   session_info_obj JSONB;
+  txid_ts TIMESTAMP WITH TIME ZONE;
+  stmt_ts TIMESTAMP WITH TIME ZONE := statement_timestamp();
+  operation_id SMALLINT := pgmemento.get_operation_id($4);
   transaction_log_id INTEGER;
-  table_event_log_time TIMESTAMP WITH TIME ZONE;
+  table_event_key TEXT;
 BEGIN
   -- retrieve session_info set by client
   BEGIN
@@ -832,29 +833,31 @@ BEGIN
     ($1, transaction_timestamp(), pg_backend_pid(), current_user, inet_client_addr(), inet_client_port(),
      current_setting('application_name'), session_info_obj
     )
-  ON CONFLICT (txid, txid_time)
+  ON CONFLICT (txid_time, txid)
     DO NOTHING
-  RETURNING id
-  INTO transaction_log_id;
+  RETURNING id, txid_time
+  INTO transaction_log_id, txid_ts;
 
   IF transaction_log_id IS NOT NULL THEN
     PERFORM set_config('pgmemento.' || $1, transaction_log_id::text, TRUE);
   ELSE
     transaction_log_id := current_setting('pgmemento.' || $1)::int;
+    txid_ts := transaction_timestamp();
   END IF;
 
   -- try to log corresponding table event
   -- on conflict do nothing
   INSERT INTO pgmemento.table_event_log
-    (transaction_id, txid_time, stmt_time, op_id, table_operation, table_name, schema_name)
+    (transaction_id, stmt_time, op_id, table_operation, table_name, schema_name, event_key)
   VALUES
-    (transaction_log_id, transaction_timestamp(), statement_timestamp(), pgmemento.get_operation_id($4), $4, $2, $3)
+    (transaction_log_id, stmt_ts, operation_id, $4, $2, $3,
+     concat_ws('_', extract(epoch from txid_ts), extract(epoch from stmt_ts), $1, operation_id, $2, $3)) 
   ON CONFLICT (transaction_id, stmt_time, table_name, schema_name, op_id)
     DO NOTHING
-  RETURNING stmt_time
-  INTO table_event_log_time;
+  RETURNING event_key
+  INTO table_event_key;
 
-  RETURN table_event_log_time;
+  RETURN table_event_key;
 END;
 $$
 LANGUAGE plpgsql;
@@ -884,13 +887,10 @@ LANGUAGE plpgsql;
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_truncate() RETURNS trigger AS
 $$
-DECLARE
-  stmt_ts TIMESTAMP WITH TIME ZONE;
 BEGIN
-  -- get corresponding table event as it has already been logged
-  -- by the log_transaction_trigger in advance
-  SELECT
-    stmt_time INTO stmt_ts
+  -- log the whole content of the truncated table in the row_log table
+  PERFORM
+    pgmemento.log_table_state('{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA, event_key)
   FROM
     pgmemento.table_event_log
   WHERE
@@ -898,9 +898,6 @@ BEGIN
     AND table_name = TG_TABLE_NAME
     AND schema_name = TG_TABLE_SCHEMA
     AND op_id = 8;
-
-  -- log the whole content of the truncated table in the row_log table
-  PERFORM pgmemento.log_table_state(stmt_ts, '{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA, 'TRUNCATE');
 
   RETURN NULL;
 END;
@@ -920,9 +917,10 @@ $$
 BEGIN
   -- log inserted row ('changes' column can be left blank)
   INSERT INTO pgmemento.row_log
-    (txid_time, stmt_time, audit_id, op_id, table_name, schema_name)
+    (audit_id, event_key)
   VALUES
-    (transaction_timestamp(), statement_timestamp(), NEW.audit_id, pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA);
+    (NEW.audit_id,
+     concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA));
 
   RETURN NULL;
 END;
@@ -956,9 +954,11 @@ BEGIN
 
   IF jsonb_diff <> '{}'::jsonb THEN
     INSERT INTO pgmemento.row_log
-      (txid_time, stmt_time, audit_id, op_id, table_name, schema_name, changes)
+      (audit_id, event_key, changes)
     VALUES
-      (transaction_timestamp(), statement_timestamp(), NEW.audit_id, pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA, jsonb_diff);
+      (NEW.audit_id,
+       concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+       jsonb_diff);
   END IF;
 
   RETURN NULL;
@@ -979,9 +979,11 @@ $$
 BEGIN
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log
-    (txid_time, stmt_time, audit_id, op_id, table_name, schema_name, changes)
+    (audit_id, event_key, changes)
   VALUES
-    (transaction_timestamp(), statement_timestamp(), OLD.audit_id, pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA, to_jsonb(OLD));
+    (OLD.audit_id,
+     concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+     to_jsonb(OLD));
 
   RETURN NULL;
 END;
@@ -1002,7 +1004,7 @@ CREATE OR REPLACE FUNCTION pgmemento.log_table_baseline(
 $$
 DECLARE
   is_empty INTEGER := 0;
-  stmt_ts TIMESTAMP WITH TIME ZONE;
+  table_event_key TEXT;
   pkey_columns TEXT := '';
 BEGIN
   -- first, check if table is not empty
@@ -1013,10 +1015,10 @@ BEGIN
 
   IF is_empty <> 0 THEN
     RAISE NOTICE 'Log existing data in table %.% as inserted', $1, $2;
-    stmt_ts := pgmemento.log_table_event(txid_current(), $1, $2, 'INSERT');
+    table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'INSERT');
 
     -- fill row_log table
-    IF stmt_ts IS NOT NULL THEN
+    IF table_event_key IS NOT NULL THEN
       -- get the primary key columns
       SELECT
         array_to_string(array_agg('t.' || pga.attname),',') INTO pkey_columns
@@ -1038,13 +1040,13 @@ BEGIN
       END IF;
 
       EXECUTE format(
-        'INSERT INTO pgmemento.row_log (txid_time, stmt_time, audit_id, op_id, table_name, schema_name, changes) '
-         || 'SELECT transaction_timestamp(), $1, t.audit_id, $2, $3, $4, NULL::jsonb AS changes '
+        'INSERT INTO pgmemento.row_log (audit_id, event_key, changes) '
+         || 'SELECT t.audit_id, $1, NULL::jsonb AS changes '
          || 'FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
          || 'WHERE r.audit_id IS NULL' || pkey_columns,
          pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1))
-         USING stmt_ts, pgmemento.get_operation_id('INSERT'), $1, $2;
+         USING table_event_key;
     END IF;
   END IF;
 END;
@@ -1129,7 +1131,7 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  stmt_ts TIMESTAMP WITH TIME ZONE;
+  table_event_key TEXT;
 BEGIN
   -- first drop log trigger
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
@@ -1137,10 +1139,10 @@ BEGIN
   -- then either keep the audit trail for table or delete everything
   IF $3 THEN
     -- log event as event triggers will walk around anything related to the audit_id
-    stmt_ts := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
+    table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
 
     -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_table_state(stmt_ts, '{}'::text[], $1, $2, 'DROP AUDIT_ID');
+    PERFORM pgmemento.log_table_state('{}'::text[], $1, $2, table_event_key);
 
     -- update audit_table_log and audit_column_log
     PERFORM pgmemento.unregister_audit_table($1, $2);

@@ -64,14 +64,23 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="transaction_id">
 		<type name="integer" length="1"/>
 	</column>
+	<column name="stmt_time" not-null="true">
+		<type name="timestamptz" length="1"/>
+	</column>
 	<column name="op_id" not-null="true">
 		<type name="smallint" length="1"/>
 	</column>
 	<column name="table_operation" not-null="true">
 		<type name="varchar" length="12"/>
 	</column>
-	<column name="table_relid" not-null="true">
-		<type name="oid" length="1"/>
+	<column name="table_name" not-null="true">
+		<type name="text" length="1"/>
+	</column>
+	<column name="schema_name" not-null="true">
+		<type name="text" length="1"/>
+	</column>
+	<column name="event_key" not-null="true">
+		<type name="text" length="1"/>
 	</column>
 	<constraint name="table_event_log_pk" type="pk-constr" table="pgmemento.table_event_log">
 		<columns names="id" ref-type="src-columns"/>
@@ -85,59 +94,19 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="id" not-null="true">
 		<type name="bigserial" length="1"/>
 	</column>
-	<column name="event_id" not-null="true">
-		<type name="integer" length="1"/>
-	</column>
 	<column name="audit_id" not-null="true">
 		<type name="bigint" length="1"/>
 	</column>
 	<column name="changes">
 		<type name="jsonb" length="1"/>
 	</column>
+	<column name="event_key" not-null="true">
+		<type name="text" length="1"/>
+	</column>
 	<constraint name="row_log_pk" type="pk-constr" table="pgmemento.row_log">
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
 </table>
-
-<sequence name="audit_id_seq"
-	 start="1" increment="1"
-	 min-value="0" max-value="2147483647"
-	 cache="1" cycle="false">
-	<schema name="pgmemento"/>
-	<role name="postgres"/>
-</sequence>
-
-<index name="transaction_log_txid_idx" table="pgmemento.transaction_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="txid"/>
-		</idxelement>
-</index>
-
-<index name="row_log_event_idx" table="pgmemento.row_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="event_id"/>
-		</idxelement>
-</index>
-
-<index name="row_log_audit_idx" table="pgmemento.row_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="audit_id"/>
-		</idxelement>
-</index>
-
-<index name="row_log_changes_idx" table="pgmemento.row_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="gin" factor="0">
-		<idxelement use-sorting="false">
-			<column name="changes"/>
-		</idxelement>
-</index>
 
 <table name="audit_table_log">
 	<schema name="pgmemento"/>
@@ -196,11 +165,82 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	</constraint>
 </table>
 
-<index name="transaction_log_date_idx" table="pgmemento.transaction_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
+<sequence name="audit_id_seq"
+	 start="1" increment="1"
+	 min-value="0" max-value="2147483647"
+	 cache="1" cycle="false">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+</sequence>
+
+<index name="transaction_log_unique_idx" table="pgmemento.transaction_log"
+	 concurrent="false" unique="true" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
 			<column name="txid_time"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="txid"/>
+		</idxelement>
+</index>
+
+<index name="transaction_log_session_idx" table="pgmemento.transaction_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gin" factor="0">
+		<idxelement use-sorting="false">
+			<column name="session_info"/>
+		</idxelement>
+</index>
+
+<index name="table_event_log_unique_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="true" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="transaction_id"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="stmt_time"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="table_name"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="schema_name"/>
+		</idxelement>
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="op_id"/>
+		</idxelement>
+</index>
+
+<index name="table_event_log_event_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="event_key"/>
+		</idxelement>
+</index>
+
+<index name="row_log_audit_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="audit_id"/>
+		</idxelement>
+</index>
+
+<index name="row_log_event_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
+			<column name="event_key"/>
+		</idxelement>
+</index>
+
+<index name="row_log_changes_idx" table="pgmemento.row_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 index-type="gin" factor="0">
+		<idxelement use-sorting="false">
+			<column name="changes"/>
 		</idxelement>
 </index>
 
@@ -247,28 +287,6 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
-<index name="table_event_log_unique_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="true" fast-update="false" buffering="false"
-	 index-type="btree" factor="0">
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="transaction_id"/>
-		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="table_relid"/>
-		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="op_id"/>
-		</idxelement>
-</index>
-
-<index name="transaction_log_session_idx" table="pgmemento.transaction_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
-	 index-type="gin" factor="0">
-		<idxelement use-sorting="false">
-			<column name="session_info"/>
-		</idxelement>
-</index>
-
 <constraint name="table_event_log_txid_fk" type="fk-constr" comparison-type="MATCH FULL"
 	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.transaction_log" table="pgmemento.table_event_log">
 	<columns names="transaction_id" ref-type="src-columns"/>
@@ -290,15 +308,6 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <relationship name="event_to_transaction" type="relfk"
 	 src-table="pgmemento.table_event_log"
 	 dst-table="pgmemento.transaction_log"
-	 src-required="false" dst-required="false">
-	<label ref-type="name-label">
-		<position x="0" y="0"/>
-	</label>
-</relationship>
-
-<relationship name="changed_rows_to_event" type="relfk"
-	 src-table="pgmemento.row_log"
-	 dst-table="pgmemento.table_event_log"
 	 src-required="false" dst-required="false">
 	<label ref-type="name-label">
 		<position x="0" y="0"/>

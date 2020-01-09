@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
 
@@ -31,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
 BEGIN
   -- add two new columns to tests table
   ALTER TABLE public.tests ADD COLUMN test_json_column JSON, ADD COLUMN test_tsrange_column tsrange;
@@ -54,7 +54,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM

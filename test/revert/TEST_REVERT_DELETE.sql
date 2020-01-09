@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-18   initial commit                                   FKun
 --
 
@@ -30,7 +30,7 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   insert_op_id SMALLINT := pgmemento.get_operation_id('INSERT');
 BEGIN
   -- set session_info to query logged transaction later
@@ -60,7 +60,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -82,8 +82,7 @@ BEGIN
         pgmemento.row_log r
         ON t.audit_id = r.audit_id 
       WHERE
-        r.stmt_time = test_event
-        AND r.op_id = insert_op_id
+        r.event_key = test_event
         AND r.changes IS NULL
     )
   ),

@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
 --
 
@@ -31,7 +31,7 @@ $$
 DECLARE
   update_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
@@ -53,7 +53,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -73,10 +73,7 @@ BEGIN
         pgmemento.row_log
       WHERE
         audit_id = update_audit_id
-        AND stmt_time = test_event
-        AND op_id = update_op_id
-        AND table_name = 'object'
-        AND schema_name = 'public'
+        AND event_key = test_event
     )
   ), 'Error: Found entry in row_log table, even though UPDATE command did not change anything.';
 END;
@@ -91,7 +88,7 @@ $$
 DECLARE
   update_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
   jsonb_log JSONB;
 BEGIN
@@ -114,7 +111,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -134,10 +131,7 @@ BEGIN
     pgmemento.row_log
   WHERE
     audit_id = update_audit_id
-    AND stmt_time = test_event
-    AND op_id = update_op_id
-    AND table_name = 'object'
-    AND schema_name = 'public';
+    AND event_key = test_event;
 
   ASSERT jsonb_log = '{"lineage":"pgm_upsert_test"}'::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
 END;

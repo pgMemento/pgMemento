@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2019-10-24   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-09-24   initial commit                                   FKun
 --
 
@@ -31,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
 BEGIN
   -- drop two columns
   ALTER TABLE public.tests DROP test_tstzrange_column, DROP COLUMN test_column;
@@ -54,7 +54,7 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    stmt_time
+    event_key
   INTO
     test_event
   FROM
@@ -66,7 +66,7 @@ BEGIN
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
   -- save event time for next test
-  PERFORM set_config('pgmemento.drop_column_test_event', test_event::text, FALSE);
+  PERFORM set_config('pgmemento.drop_column_test_event', test_event, FALSE);
 END;
 $$
 LANGUAGE plpgsql;
@@ -114,10 +114,10 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_event TIMESTAMP WITH TIME ZONE;
+  test_event TEXT;
   jsonb_log JSONB;
 BEGIN
-  test_event := current_setting('pgmemento.drop_column_test_event')::timestamp with time zone;
+  test_event := current_setting('pgmemento.drop_column_test_event');
 
   SELECT
     changes
@@ -126,10 +126,7 @@ BEGIN
   FROM
     pgmemento.row_log
   WHERE
-    stmt_time = test_event
-    AND op_id = pgmemento.get_operation_id('DROP COLUMN')
-    AND table_name = 'tests'
-    AND schema_name = 'public';
+    event_key = test_event;
 
   ASSERT jsonb_log->>'test_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
   ASSERT jsonb_log->>'test_tstzrange_column' IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
