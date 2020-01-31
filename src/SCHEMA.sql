@@ -93,7 +93,7 @@ CREATE TABLE pgmemento.table_event_log
   transaction_id INTEGER NOT NULL,
   stmt_time TIMESTAMP WITH TIME ZONE NOT NULL,
   op_id SMALLINT NOT NULL,
-  table_operation VARCHAR(18),
+  table_operation TEXT,
   table_name TEXT NOT NULL,
   schema_name TEXT NOT NULL,
   event_key TEXT NOT NULL
