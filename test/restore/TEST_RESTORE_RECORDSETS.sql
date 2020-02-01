@@ -45,7 +45,7 @@ BEGIN
     txids
   FROM
     pgmemento.restore_recordsets(1, 18, 'object', 'public')
-    AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation varchar, transaction_id integer);
+    AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer);
 
   ASSERT audit_ids[1] = 1, 'Expected audit_id 1, but found %', audit_ids[1];
   ASSERT audit_ids[2] = 3, 'Expected audit_id 3, but found %', audit_ids[2];

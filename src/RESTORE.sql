@@ -489,7 +489,7 @@ SELECT
     || ' ' || data_type
   , ', ' ORDER BY ordinal_position, column_count
   )
-  || ', audit_id bigint, stmt_time timestamp with time zone, table_operation varchar, transaction_id integer)'
+  || ', audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)'
 FROM
   pgmemento.get_column_list_by_txid_range($1, $2, $3);
 $$

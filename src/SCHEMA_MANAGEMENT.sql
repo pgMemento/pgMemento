@@ -365,7 +365,7 @@ CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
   ) RETURNS SETOF void AS
 $$
 DECLARE
-  seq VARCHAR(30);
+  seq TEXT;
   seq_value INTEGER;
 BEGIN
   -- create new schema

@@ -70,8 +70,8 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="op_id" not-null="true">
 		<type name="smallint" length="1"/>
 	</column>
-	<column name="table_operation" not-null="true">
-		<type name="varchar" length="12"/>
+	<column name="table_operation" not-null="false">
+		<type name="text" length="1"/>
 	</column>
 	<column name="table_name" not-null="true">
 		<type name="text" length="1"/>

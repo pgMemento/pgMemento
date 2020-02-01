@@ -41,7 +41,7 @@ BEGIN
     table_name = 'object'
     AND schema_name = 'public';
 
-  ASSERT column_list = 'AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation varchar, transaction_id integer)', 'Incorrect column definition list: %', column_list;
+  ASSERT column_list = 'AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)', 'Incorrect column definition list: %', column_list;
   
   -- save column_list for next tests
   PERFORM set_config('pgmemento.column_list', column_list, FALSE);
