@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                        | Author
+-- 0.7.1     2020-02-02   put unique index of table_event_log on event_key     FKun
 -- 0.7.0     2020-01-09   remove FK to events and use concatenated metakeys    FKun
 --                        store more events with statement_timestamp
 -- 0.6.2     2019-02-27   comments for tables and columns                      FKun
@@ -41,11 +42,11 @@
 *   column_log_table_idx
 *   row_log_audit_idx
 *   row_log_changes_idx
-*   row_log_time_idx
-*   table_event_log_unique_idx
+*   row_log_event_idx
+*   table_event_log_event_idx
+*   table_event_log_fk_idx
 *   table_log_idx
 *   table_log_range_idx
-*   transaction_log_date_idx
 *   transaction_log_session_idx
 *   transaction_log_txid_idx
 *
@@ -102,7 +103,7 @@ CREATE TABLE pgmemento.table_event_log
 ALTER TABLE pgmemento.table_event_log
   ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
 
-COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happing during one transaction against one table';
+COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happening during one transaction against one table';
 COMMENT ON COLUMN pgmemento.table_event_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.table_event_log.transaction_id IS 'Foreign Key to transaction_log table';
 COMMENT ON COLUMN pgmemento.table_event_log.stmt_time IS 'Stores the result of statement_timestamp() function';
@@ -197,7 +198,7 @@ ALTER TABLE pgmemento.audit_column_log
 -- create indexes on all columns that are queried later
 DROP INDEX IF EXISTS transaction_log_unique_idx;
 DROP INDEX IF EXISTS transaction_log_session_idx;
-DROP INDEX IF EXISTS table_event_log_unique_idx;
+DROP INDEX IF EXISTS table_event_log_fk_idx;
 DROP INDEX IF EXISTS table_event_log_event_idx;
 DROP INDEX IF EXISTS row_log_audit_idx;
 DROP INDEX IF EXISTS row_log_event_idx;
@@ -210,8 +211,8 @@ DROP INDEX IF EXISTS column_log_range_idx;
 
 CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid_time, txid);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
-CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, stmt_time, table_name, schema_name, op_id);
-CREATE INDEX table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
+CREATE INDEX table_event_log_fk_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
+CREATE UNIQUE INDEX table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
 CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_key);
 CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);

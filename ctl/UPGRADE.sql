@@ -28,7 +28,7 @@ ALTER TABLE pgmemento.transaction_log
 COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 
 -- reverse unqiue index which makes other time index obsolete
-CREATE UNIQUE INDEX transaction_log_unique_idx2 ON pgmemento.transaction_log USING BTREE (txid_time, txid);
+CREATE UNIQUE INDEX IF NOT EXISTS transaction_log_unique_idx2 ON pgmemento.transaction_log USING BTREE (txid_time, txid);
 DROP INDEX IF EXISTS transaction_log_unique_idx;
 ALTER INDEX IF EXISTS transaction_log_unique_idx2 RENAME TO transaction_log_unique_idx;
 DROP INDEX IF EXISTS transaction_log_date_idx;
@@ -63,7 +63,7 @@ UPDATE pgmemento.table_event_log e
    AND (atl.txid_range @> e.transaction_id::numeric
     OR lower(atl.txid_range) = e.transaction_id::numeric);
 
--- set columns to NOT NULL and update UNIQUE index 
+-- set columns to NOT NULL and update indexes 
 ALTER TABLE pgmemento.table_event_log
   DROP COLUMN table_relid,
   ALTER COLUMN stmt_time SET NOT NULL,
@@ -71,10 +71,9 @@ ALTER TABLE pgmemento.table_event_log
   ALTER COLUMN schema_name SET NOT NULL,
   ALTER COLUMN event_key SET NOT NULL;
 
-CREATE UNIQUE INDEX table_event_log_unique_idx2 ON pgmemento.table_event_log USING BTREE (transaction_id, stmt_time, table_name, schema_name, op_id);
+CREATE INDEX IF NOT EXISTS table_event_log_fk_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
 DROP INDEX IF EXISTS table_event_log_unique_idx;
-ALTER INDEX IF EXISTS table_event_log_unique_idx2 RENAME TO table_event_log_unique_idx;
-CREATE INDEX table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.table_event_log;
@@ -95,7 +94,7 @@ UPDATE pgmemento.row_log r
  WHERE r.event_id = e.id;
 
 -- create new index on event_key and remove former foreign key index
-CREATE INDEX row_log_event_idx2 ON pgmemento.row_log USING BTREE (event_key);
+CREATE INDEX IF NOT EXISTS row_log_event_idx2 ON pgmemento.row_log USING BTREE (event_key);
 DROP INDEX IF EXISTS row_log_event_idx;
 ALTER INDEX IF EXISTS row_log_event_idx2 RENAME TO row_log_event_idx;
 
@@ -142,7 +141,7 @@ ALTER TABLE pgmemento.audit_table_log
   ALTER COLUMN log_id SET NOT NULL;
 
 ALTER INDEX IF EXISTS table_log_idx RENAME TO table_log_name_idx;
-CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
+CREATE INDEX IF NOT EXISTS table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.audit_table_log;

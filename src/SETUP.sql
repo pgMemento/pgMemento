@@ -852,7 +852,7 @@ BEGIN
   VALUES
     (transaction_log_id, stmt_ts, operation_id, $4, $2, $3,
      concat_ws('_', extract(epoch from txid_ts), extract(epoch from stmt_ts), $1, operation_id, $2, $3)) 
-  ON CONFLICT (transaction_id, stmt_time, table_name, schema_name, op_id)
+  ON CONFLICT (event_key)
     DO NOTHING
   RETURNING event_key
   INTO table_event_key;
