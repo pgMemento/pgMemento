@@ -137,8 +137,8 @@ CREATE TABLE pgmemento.audit_table_log (
   id SERIAL,
   log_id INTEGER NOT NULL,
   relid OID,
-  schema_name TEXT NOT NULL,
   table_name TEXT NOT NULL,
+  schema_name TEXT NOT NULL,
   txid_range numrange  
 );
 
@@ -149,8 +149,8 @@ COMMENT ON TABLE pgmemento.audit_table_log IS 'Stores information about audited 
 COMMENT ON COLUMN pgmemento.audit_table_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.audit_table_log.log_id IS 'ID to trace a changing table';
 COMMENT ON COLUMN pgmemento.audit_table_log.relid IS '[DEPRECATED] The table''s OID to trace a table when changed';
-COMMENT ON COLUMN pgmemento.audit_table_log.schema_name IS 'The schema the table belongs to';
 COMMENT ON COLUMN pgmemento.audit_table_log.table_name IS 'The name of the table';
+COMMENT ON COLUMN pgmemento.audit_table_log.schema_name IS 'The schema the table belongs to';
 COMMENT ON COLUMN pgmemento.audit_table_log.txid_range IS 'Stores the transaction IDs when the table has been created and dropped';
 
 -- lifetime of columns of audited tables is logged in the audit_column_log table

@@ -3,22 +3,22 @@
 CAUTION: Do not modify this file unless you know what you are doing.
          Unexpected results may occur if the code is changed deliberately.
 -->
-<dbmodel pgmodeler-ver="0.9.1-alpha1" last-position="305,152" last-zoom="1"
+<dbmodel pgmodeler-ver="0.9.2-beta2" last-position="166,187" last-zoom="1" max-obj-count="6"
 	 default-owner="postgres">
-<database name="pgMemento_DB_schema">
+<database name="pgMemento_DB_schema" is-template="false" allow-conns="true">
 </database>
 
-<schema name="public" protected="true" fill-color="#e1e1e1" sql-disabled="true">
+<schema name="public" layer="0" protected="true" fill-color="#e1e1e1" sql-disabled="true">
 </schema>
 
-<schema name="pgmemento" rect-visible="true" fill-color="#e1e1e1">
+<schema name="pgmemento" layer="0" rect-visible="true" fill-color="#e1e1e1">
 	<role name="postgres"/>
 </schema>
 
-<table name="transaction_log">
+<table name="transaction_log" layer="0" collapse-mode="2" max-obj-count="10">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="680" y="380"/>
+	<position x="240" y="420"/>
 	<column name="id" not-null="true">
 		<type name="integer" length="1"/>
 	</column>
@@ -49,15 +49,12 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<constraint name="transaction_log_pk" type="pk-constr" table="pgmemento.transaction_log">
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
-	<constraint name="transaction_log_unique_txid" type="uq-constr" table="pgmemento.transaction_log">
-		<columns names="txid,txid_time" ref-type="src-columns"/>
-	</constraint>
 </table>
 
-<table name="table_event_log">
+<table name="table_event_log" layer="0" collapse-mode="2" max-obj-count="9">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1180" y="260"/>
+	<position x="740" y="260"/>
 	<column name="id" not-null="true">
 		<type name="serial" length="1"/>
 	</column>
@@ -70,7 +67,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<column name="op_id" not-null="true">
 		<type name="smallint" length="1"/>
 	</column>
-	<column name="table_operation" not-null="false">
+	<column name="table_operation">
 		<type name="text" length="1"/>
 	</column>
 	<column name="table_name" not-null="true">
@@ -87,41 +84,44 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	</constraint>
 </table>
 
-<table name="row_log">
+<table name="row_log" layer="0" collapse-mode="2" max-obj-count="4">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="1200" y="600"/>
+	<position x="740" y="640"/>
 	<column name="id" not-null="true">
 		<type name="bigserial" length="1"/>
 	</column>
 	<column name="audit_id" not-null="true">
 		<type name="bigint" length="1"/>
 	</column>
-	<column name="changes">
-		<type name="jsonb" length="1"/>
-	</column>
 	<column name="event_key" not-null="true">
 		<type name="text" length="1"/>
+	</column>
+	<column name="changes">
+		<type name="jsonb" length="1"/>
 	</column>
 	<constraint name="row_log_pk" type="pk-constr" table="pgmemento.row_log">
 		<columns names="id" ref-type="src-columns"/>
 	</constraint>
 </table>
 
-<table name="audit_table_log">
+<table name="audit_table_log" layer="0" collapse-mode="2" max-obj-count="7">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="300" y="240"/>
+	<position x="1180" y="260"/>
 	<column name="id" not-null="true">
 		<type name="serial" length="1"/>
+	</column>
+	<column name="log_id" not-null="true">
+		<type name="integer" length="0"/>
 	</column>
 	<column name="relid">
 		<type name="oid" length="1"/>
 	</column>
-	<column name="schema_name" not-null="true">
+	<column name="table_name" not-null="true">
 		<type name="text" length="1"/>
 	</column>
-	<column name="table_name" not-null="true">
+	<column name="schema_name" not-null="true">
 		<type name="text" length="1"/>
 	</column>
 	<column name="txid_range">
@@ -132,10 +132,10 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	</constraint>
 </table>
 
-<table name="audit_column_log">
+<table name="audit_column_log" layer="0" collapse-mode="2" max-obj-count="9">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
-	<position x="280" y="540"/>
+	<position x="1180" y="600"/>
 	<column name="id" not-null="true">
 		<type name="serial" length="1"/>
 	</column>
@@ -165,10 +165,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	</constraint>
 </table>
 
-<sequence name="audit_id_seq"
-	 start="1" increment="1"
-	 min-value="0" max-value="2147483647"
-	 cache="1" cycle="false">
+<sequence name="audit_id_seq" cycle="false" start="1" increment="1" min-value="0" max-value="2147483647" cache="1">
 	<schema name="pgmemento"/>
 	<role name="postgres"/>
 </sequence>
@@ -192,28 +189,16 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
-<index name="table_event_log_unique_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="true" fast-update="false" buffering="false"
+<index name="table_event_log_fk_idx" table="pgmemento.table_event_log"
+	 concurrent="false" unique="false" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
 			<column name="transaction_id"/>
 		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="stmt_time"/>
-		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="table_name"/>
-		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="schema_name"/>
-		</idxelement>
-		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
-			<column name="op_id"/>
-		</idxelement>
 </index>
 
 <index name="table_event_log_event_idx" table="pgmemento.table_event_log"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 concurrent="false" unique="true" fast-update="false" buffering="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="true" nulls-first="false" asc-order="true">
 			<column name="event_key"/>
@@ -287,15 +272,14 @@ CAUTION: Do not modify this file unless you know what you are doing.
 		</idxelement>
 </index>
 
+<sequence name="table_log_id_seq" cycle="false" start="1" increment="1" min-value="0" max-value="2147483647" cache="1">
+	<schema name="pgmemento"/>
+	<role name="postgres"/>
+</sequence>
+
 <constraint name="table_event_log_txid_fk" type="fk-constr" comparison-type="MATCH FULL"
 	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.transaction_log" table="pgmemento.table_event_log">
 	<columns names="transaction_id" ref-type="src-columns"/>
-	<columns names="id" ref-type="dst-columns"/>
-</constraint>
-
-<constraint name="row_log_table_fk" type="fk-constr" comparison-type="MATCH FULL"
-	 upd-action="CASCADE" del-action="CASCADE" ref-table="pgmemento.table_event_log" table="pgmemento.row_log">
-	<columns names="event_id" ref-type="src-columns"/>
 	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
@@ -305,21 +289,21 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<columns names="id" ref-type="dst-columns"/>
 </constraint>
 
-<relationship name="event_to_transaction" type="relfk"
+<relationship name="rel_table_event_log_transaction_log" type="relfk" layer="0"
 	 src-table="pgmemento.table_event_log"
-	 dst-table="pgmemento.transaction_log"
+	 dst-table="pgmemento.transaction_log" reference-fk="table_event_log_txid_fk"
 	 src-required="false" dst-required="false">
 	<label ref-type="name-label">
-		<position x="0" y="0"/>
+		<position x="6.38556" y="-104.762"/>
 	</label>
 </relationship>
 
-<relationship name="audit_column_to_audit_table" type="relfk"
+<relationship name="rel_audit_column_log_audit_table_log" type="relfk" layer="0"
 	 src-table="pgmemento.audit_column_log"
-	 dst-table="pgmemento.audit_table_log"
+	 dst-table="pgmemento.audit_table_log" reference-fk="audt_column_log_fk"
 	 src-required="false" dst-required="false">
 	<label ref-type="name-label">
-		<position x="-5.55962" y="-28.0415"/>
+		<position x="-113.066" y="-17.7266"/>
 	</label>
 </relationship>
 
