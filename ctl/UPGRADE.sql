@@ -50,14 +50,14 @@ COMMENT ON COLUMN pgmemento.table_event_log.event_key IS 'Concatenated informati
 -- fill new columns with values
 UPDATE pgmemento.table_event_log e
    SET stmt_time = t.txid_time,
-       event_key = concat_ws('_', extract(epoch from t.txid_time), extract(epoch from t.txid_time), t.txid, e.op_id)
+       event_key = concat_ws(';', extract(epoch from t.txid_time), extract(epoch from t.txid_time), t.txid, e.op_id)
   FROM pgmemento.transaction_log t
  WHERE e.transaction_id = t.id;
 
 UPDATE pgmemento.table_event_log e
    SET table_name = atl.table_name,
        schema_name = atl.schema_name,
-       event_key = concat_ws('_', e.event_key, atl.table_name, atl.schema_name)
+       event_key = concat_ws(';', e.event_key, atl.table_name, atl.schema_name)
   FROM pgmemento.audit_table_log atl
  WHERE atl.relid = e.table_relid
    AND (atl.txid_range @> e.transaction_id::numeric

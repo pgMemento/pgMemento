@@ -851,7 +851,7 @@ BEGIN
     (transaction_id, stmt_time, op_id, table_operation, table_name, schema_name, event_key)
   VALUES
     (transaction_log_id, stmt_ts, operation_id, $4, $2, $3,
-     concat_ws('_', extract(epoch from txid_ts), extract(epoch from stmt_ts), $1, operation_id, $2, $3)) 
+     concat_ws(';', extract(epoch from txid_ts), extract(epoch from stmt_ts), $1, operation_id, $2, $3)) 
   ON CONFLICT (event_key)
     DO NOTHING
   RETURNING event_key
@@ -920,7 +920,7 @@ BEGIN
     (audit_id, event_key)
   VALUES
     (NEW.audit_id,
-     concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA));
+     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA));
 
   RETURN NULL;
 END;
@@ -957,7 +957,7 @@ BEGIN
       (audit_id, event_key, changes)
     VALUES
       (NEW.audit_id,
-       concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+       concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
        jsonb_diff);
   END IF;
 
@@ -982,7 +982,7 @@ BEGIN
     (audit_id, event_key, changes)
   VALUES
     (OLD.audit_id,
-     concat_ws('_', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
      to_jsonb(OLD));
 
   RETURN NULL;
