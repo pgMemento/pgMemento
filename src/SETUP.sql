@@ -1151,7 +1151,7 @@ BEGIN
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
 
   -- log event as event triggers will walk around anything related to the audit_id
-  e_id := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
+  table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
 
   -- update audit_table_log and audit_column_log
   PERFORM pgmemento.unregister_audit_table($1, $2);
@@ -1159,7 +1159,7 @@ BEGIN
   -- then either keep the audit trail for table or delete everything
   IF $3 THEN
     -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], $1, $2);
+    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], $1, $2, table_event_key);
   ELSE
     -- remove all logs related to given table
     PERFORM pgmemento.delete_audit_table_log($1, $2);
