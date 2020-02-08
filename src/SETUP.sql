@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.7.2     2020-01-09   reflect changes on schema and triggers              FKun
+-- 0.7.3     2020-02-09   reflect changes on schema and triggers              FKun
+-- 0.7.2     2020-02-08   new get_table_oid function to replace trimming      FKun
 -- 0.7.1     2019-04-21   introduce new event RECREATE TABLE with op_id       FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs and VIEWs            FKun
 -- 0.6.9     2019-03-23   Audit views list tables even on relid mismatch      FKun
@@ -73,6 +74,7 @@
 *   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   get_table_oid(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS OID
 *   get_txid_bounds_to_table(table_log_id INTEGER, OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
 *   log_schema_baseline(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   log_table_baseline(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
@@ -335,6 +337,31 @@ $$
 LANGUAGE sql IMMUTABLE STRICT;
 
 /**********************************************************
+* GET_TABLE_OID
+*
+* Returns the OID for schema.table / "schema"."table"
+***********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.get_table_oid(
+  table_name TEXT, 
+  schema_name TEXT DEFAULT 'public'::text
+  ) RETURNS OID AS
+$$
+DECLARE
+  table_oid OID;
+BEGIN
+  table_oid := ($2 || '.' || $1)::regclass::oid;
+  RETURN table_oid;
+
+  EXCEPTION
+    WHEN others THEN
+      table_oid := (quote_ident($2) || '.' || quote_ident($1))::regclass::oid;
+      RETURN table_oid;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
 * UN/REGISTER TABLE
 *
 * Function to un/register information of audited table in
@@ -354,8 +381,8 @@ BEGIN
   SET
     txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
   WHERE
-    table_name = pgmemento.trim_outer_quotes($1)
-    AND schema_name = pgmemento.trim_outer_quotes($2)
+    table_name = $1
+    AND schema_name = $2
     AND upper(txid_range) IS NULL
     AND lower(txid_range) IS NOT NULL
   RETURNING
@@ -394,8 +421,8 @@ BEGIN
     FROM
       pgmemento.audit_tables
     WHERE
-      tablename = pgmemento.trim_outer_quotes($1)
-      AND schemaname = pgmemento.trim_outer_quotes($2)
+      tablename = $1
+      AND schemaname = $2
   ) THEN
     RETURN NULL;
   ELSE
@@ -405,15 +432,15 @@ BEGIN
     FROM
       pgmemento.audit_table_log
     WHERE
-      table_name = pgmemento.trim_outer_quotes($1)
-      AND schema_name = pgmemento.trim_outer_quotes($2)
+      table_name = $1
+      AND schema_name = $2
       AND upper(txid_range) IS NULL
       AND lower(txid_range) IS NOT NULL;
 
     IF tab_id IS NULL THEN
       BEGIN
         -- check if table exists in 'audit_table_log' with another name (and open range)
-        table_log_id := current_setting('pgmemento.' || $2 || '.' || $1)::int;
+        table_log_id := current_setting('pgmemento.' || quote_ident($2) || '.' || quote_ident($1))::int;
 
         IF NOT EXISTS (
          SELECT
@@ -455,7 +482,7 @@ BEGIN
       INSERT INTO pgmemento.audit_table_log
         (log_id, relid, schema_name, table_name, txid_range)
       VALUES
-        (table_log_id, ($2 || '.' || $1)::regclass::oid, pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
+        (table_log_id, pgmemento.get_table_oid($1, $2), $2, $1, numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
       RETURNING id INTO tab_id;
 
       -- insert columns of new audited table into 'audit_column_log'
@@ -481,7 +508,7 @@ BEGIN
           pg_attrdef d
           ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         WHERE
-          a.attrelid = ($2 || '.' || $1)::regclass::oid
+          a.attrelid = pgmemento.get_table_oid($1, $2)
           AND a.attname <> 'audit_id'
           AND a.attnum > 0
           AND NOT a.attisdropped
@@ -491,7 +518,7 @@ BEGIN
       -- rename unique constraint for audit_id column
       IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I TO %I',
-          pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), old_table_name || '_audit_id_key', pgmemento.trim_outer_quotes($1) || '_audit_id_key');
+          $2, $1, old_table_name || '_audit_id_key', $1 || '_audit_id_key');
       END IF;
     END IF;
   END IF;
@@ -516,9 +543,6 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger(
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
-DECLARE
-  tablename TEXT := pgmemento.trim_outer_quotes($1);
-  schemaname TEXT := pgmemento.trim_outer_quotes($2);
 BEGIN
   IF EXISTS (
     SELECT
@@ -526,7 +550,7 @@ BEGIN
     FROM
       pg_trigger
     WHERE
-      tgrelid = ($2 || '.' || $1)::regclass::oid
+      tgrelid = pgmemento.get_table_oid($1, $2)
       AND tgname = 'log_transaction_trigger'
   ) THEN
     RETURN;
@@ -539,14 +563,14 @@ BEGIN
       'CREATE TRIGGER log_transaction_trigger
          BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_transaction()',
-         schemaname, tablename);
+         $2, $1);
 
     -- second trigger to be fired before truncate events
     EXECUTE format(
       'CREATE TRIGGER log_truncate_trigger
          BEFORE TRUNCATE ON %I.%I
          FOR EACH STATEMENT EXECUTE PROCEDURE pgmemento.log_truncate()',
-         schemaname, tablename);
+         $2, $1);
 
     /*
       row level triggers
@@ -556,21 +580,21 @@ BEGIN
       'CREATE TRIGGER log_insert_trigger
          AFTER INSERT ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert()',
-         schemaname, tablename);
+         $2, $1);
 
     -- trigger to be fired after update events
     EXECUTE format(
       'CREATE TRIGGER log_update_trigger
          AFTER UPDATE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update()',
-         schemaname, tablename);
+         $2, $1);
 
     -- trigger to be fired after insert events
     EXECUTE format(
       'CREATE TRIGGER log_delete_trigger
          AFTER DELETE ON %I.%I
          FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_delete()',
-         schemaname, tablename);
+         $2, $1);
   END IF;
 END;
 $$
@@ -583,13 +607,13 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_log_trigger(quote_ident(c.relname), $1)
+  pgmemento.create_table_log_trigger(c.relname, $1)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -601,14 +625,12 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
-DECLARE
-  schemaname TEXT := pgmemento.trim_outer_quotes($2);
 BEGIN
-  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', schemaname, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', schemaname, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', schemaname, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', schemaname, $1);
-  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', schemaname, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', $2, $1);
+  EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', $2, $1);
 END;
 $$
 LANGUAGE plpgsql STRICT;
@@ -626,7 +648,7 @@ FROM
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -656,13 +678,13 @@ BEGIN
     FROM
       pg_attribute
     WHERE
-      attrelid = ($2 || '.' || $1)::regclass::oid
+      attrelid = pgmemento.get_table_oid($1, $2)
       AND attname = 'audit_id'
       AND NOT attisdropped
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I ADD COLUMN audit_id BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
-      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
+      $2, $1);
   END IF;
 END;
 $$
@@ -675,13 +697,13 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit_id(quote_ident(c.relname), $1)
+  pgmemento.create_table_audit_id(c.relname, $1)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -701,14 +723,14 @@ BEGIN
     FROM
       pg_attribute
     WHERE
-      attrelid = ($2 || '.' || $1)::regclass::oid
+      attrelid = pgmemento.get_table_oid($1, $2)
       AND attname = 'audit_id'
       AND attislocal = 't'
       AND NOT attisdropped
   ) THEN
     EXECUTE format(
       'ALTER TABLE %I.%I DROP CONSTRAINT %I, DROP COLUMN audit_id',
-      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($1) || '_audit_id_key');
+      $2, $1, $1 || '_audit_id_key');
   ELSE
     RETURN;
   END IF;
@@ -723,13 +745,13 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit_id(quote_ident(c.relname), $1)
+  pgmemento.drop_table_audit_id(c.relname, $1)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
@@ -745,7 +767,7 @@ LANGUAGE sql;
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
 SELECT
-  array_to_string(array_agg(format('%L, %I', pgmemento.trim_outer_quotes(k), pgmemento.trim_outer_quotes(v))), ', ')
+  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
 FROM
   unnest($1) k,
   unnest($1) v
@@ -766,18 +788,14 @@ BEGIN
     -- log content of given columns
     EXECUTE format(
       'INSERT INTO pgmemento.row_log(audit_id, event_key, changes)
-         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
-           FROM %I.%I ORDER BY audit_id',
-         pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($2))
-         USING $4;
+         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content FROM %I.%I ORDER BY audit_id',
+         $3, $2) USING $4;
   ELSE
     -- log content of entire table
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (audit_id, event_key, changes)
-         SELECT audit_id, $1, to_jsonb(%I) AS content
-           FROM %I.%I ORDER BY audit_id',
-         pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($2))
-         USING $4;
+         SELECT audit_id, $1, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
+         $2, $3, $2) USING $4;
   END IF;
 END;
 $$
@@ -1008,10 +1026,7 @@ DECLARE
   pkey_columns TEXT := '';
 BEGIN
   -- first, check if table is not empty
-  EXECUTE format(
-    'SELECT 1 FROM %I.%I LIMIT 1',
-    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1))
-    INTO is_empty;
+  EXECUTE format('SELECT 1 FROM %I.%I LIMIT 1', $2, $1) INTO is_empty;
 
   IF is_empty <> 0 THEN
     RAISE NOTICE 'Log existing data in table %.% as inserted', $1, $2;
@@ -1027,7 +1042,7 @@ BEGIN
         pg_class pgc,
         pg_attribute pga
       WHERE
-        pgc.oid = ($2 || '.' || $1)::regclass::oid
+        pgc.oid = pgmemento.get_table_oid($1, $2)
         AND pgi.indrelid = pgc.oid
         AND pga.attrelid = pgc.oid
         AND pga.attnum = ANY(pgi.indkey)
@@ -1045,8 +1060,7 @@ BEGIN
          || 'FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
          || 'WHERE r.audit_id IS NULL' || pkey_columns,
-         pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1))
-         USING table_event_key;
+         $2, $1) USING table_event_key;
     END IF;
   END IF;
 END;
@@ -1066,8 +1080,8 @@ FROM
 WHERE
   a.schema_name = d.schemaname
   AND a.table_name = d.tablename
-  AND a.schema_name = pgmemento.trim_outer_quotes($1)
-  AND d.schemaname = pgmemento.trim_outer_quotes($1)
+  AND a.schema_name = $1
+  AND d.schemaname = $1
   AND upper(a.txid_range) IS NULL
   AND lower(a.txid_range) IS NOT NULL
 ORDER BY
@@ -1111,13 +1125,13 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit(quote_ident(c.relname), $1, $2)
+  pgmemento.create_table_audit(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
@@ -1136,16 +1150,16 @@ BEGIN
   -- first drop log trigger
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
 
+  -- log event as event triggers will walk around anything related to the audit_id
+  e_id := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
+
+  -- update audit_table_log and audit_column_log
+  PERFORM pgmemento.unregister_audit_table($1, $2);
+
   -- then either keep the audit trail for table or delete everything
   IF $3 THEN
-    -- log event as event triggers will walk around anything related to the audit_id
-    table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
-
     -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_table_state('{}'::text[], $1, $2, table_event_key);
-
-    -- update audit_table_log and audit_column_log
-    PERFORM pgmemento.unregister_audit_table($1, $2);
+    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], $1, $2);
   ELSE
     -- remove all logs related to given table
     PERFORM pgmemento.delete_audit_table_log($1, $2);
@@ -1165,13 +1179,13 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_audit(quote_ident(c.relname), $1, $2)
+  pgmemento.drop_table_audit(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$

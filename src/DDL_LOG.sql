@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.7.1     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.7.2     2020-02-09   reflect changes on schema and triggers           FKun
+-- 0.7.1     2019-02-08   refactoring with new split_table_from_query      FKun
 -- 0.7.0     2019-04-14   reflect schema changes in UDFs and VIEWs         FKun
 -- 0.6.9     2019-02-24   new function flatten_ddl to remove comments      FKun
 -- 0.6.8     2019-02-14   permit drop audit_id in pre alter trigger        FKun
@@ -50,6 +51,8 @@
 *   flatten_ddl(ddl_command TEXT) RETURNS TEXT
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
 *   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
+*   split_table_from_query(INOUT query TEXT, OUT audit_table_name TEXT, OUT audit_schema_name TEXT,
+*     OUT audit_table_log_id INTEGER) RETURNS RECORD AS
 *
 * TRIGGER FUNCTIONS:
 *   schema_drop_pre_trigger() RETURNS event_trigger
@@ -201,6 +204,116 @@ LANGUAGE plpgsql STRICT;
 
 
 /**********************************************************
+* GET_TABLE_FROM_QUERY
+*
+* Helper function to retrieve single schema and table name
+* as well as matching log_id from audit_table_log
+**********************************************************/
+CREATE OR REPLACE FUNCTION pgmemento.split_table_from_query(
+  INOUT query TEXT,
+  OUT audit_table_name TEXT,
+  OUT audit_schema_name TEXT,
+  OUT audit_table_log_id INTEGER
+  ) RETURNS RECORD AS
+$$
+DECLARE
+  fetch_next BOOLEAN := TRUE;
+  table_ident TEXT := '';
+  ntables INTEGER := 0;
+  rec RECORD;
+BEGIN
+  -- remove comments and line breaks from the DDL string
+  query := pgmemento.flatten_ddl(query);
+
+  WHILE fetch_next LOOP
+    -- extracting the table identifier from the DDL command
+    table_ident := pgmemento.fetch_ident(query);
+
+    -- exit loop when nothing has been fetched
+    IF table_ident IS NULL OR length(table_ident) = 0 THEN
+      EXIT;
+    END IF;
+
+    -- shrink ddl_text by table_ident
+    query := substr(query, position(table_ident in query) + length(table_ident), length(query));
+
+    IF position('"' IN table_ident) > 0 OR (
+         position('"' IN table_ident) = 0 AND (
+           lower(table_ident) NOT IN ('drop', 'table', 'if', 'exists')
+         )
+       )
+    THEN
+      BEGIN
+        -- if table exists, this should work
+        PERFORM table_ident::regclass;
+        fetch_next := FALSE;
+
+        EXCEPTION
+          WHEN undefined_table THEN
+            fetch_next := TRUE;
+          WHEN invalid_name THEN
+            fetch_next := FALSE;
+      END;
+    END IF;
+  END LOOP;
+
+  -- get table and schema name
+  IF table_ident LIKE '%.%' THEN
+    -- check if table is audited
+    SELECT
+      table_name,
+      schema_name,
+      log_id
+    INTO
+      audit_table_name,
+      audit_schema_name,
+      audit_table_log_id
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      table_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 2))
+      AND schema_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 1))
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
+
+    IF audit_schema_name IS NOT NULL AND audit_table_name IS NOT NULL THEN
+      ntables := 1;
+    END IF;
+  ELSE
+    audit_table_name := pgmemento.trim_outer_quotes(table_ident);
+
+    -- check if table is audited and not ambiguous
+    FOR rec IN
+      SELECT
+        schema_name AS schema_name,
+        log_id
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = audit_table_name
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL
+    LOOP
+      ntables := ntables + 1;
+      IF ntables > 1 THEN
+        -- table name is found more than once in audit_table_log
+        RAISE EXCEPTION 'Please specify the schema name in the DDL command.';
+      END IF;
+      audit_schema_name := rec.schema_name;
+      audit_table_log_id := rec.log_id;
+    END LOOP;
+  END IF;
+
+  -- table not found in audit_table_log, so it can be changed without logging
+  IF ntables IS NULL OR ntables = 0 THEN
+    query := NULL;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql STRICT;
+
+
+/**********************************************************
 * MODIFY DDL LOGS
 *
 * Helper function to update tables audit_table_log and
@@ -258,7 +371,7 @@ BEGIN
         ) acl
       ON acl.ordinal_position = a.attnum
       WHERE
-        a.attrelid = ($2 || '.' || $1)::regclass::oid
+        a.attrelid = pgmemento.get_table_oid($1, $2)
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
@@ -281,12 +394,12 @@ BEGIN
       LEFT JOIN (
         SELECT
           attname AS column_name,
-          pgmemento.trim_outer_quotes($1) AS table_name,
-          pgmemento.trim_outer_quotes($2) AS schema_name
+          $1 AS table_name,
+          $2 AS schema_name
         FROM
           pg_attribute
         WHERE
-          attrelid = ($2 || '.' || $1)::regclass::oid
+          attrelid = pgmemento.get_table_oid($1, $2)
         ) col
         ON col.column_name = c.column_name
         AND col.table_name = a.table_name
@@ -330,15 +443,15 @@ BEGIN
           ) AS data_type,
           pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
           a.attnotnull AS not_null,
-          pgmemento.trim_outer_quotes($1) AS table_name,
-          pgmemento.trim_outer_quotes($2) AS schema_name
+          $1 AS table_name,
+          $2 AS schema_name
         FROM
           pg_attribute a
         LEFT JOIN
           pg_attrdef d
           ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
         WHERE
-          a.attrelid = ($2 || '.' || $1)::regclass::oid
+          a.attrelid = pgmemento.get_table_oid($1, $2)
           AND a.attnum > 0
           AND NOT a.attisdropped
       ) col
@@ -462,8 +575,8 @@ BEGIN
   -- truncate tables to log the data
   FOR rec IN
     SELECT
-      quote_ident(n.nspname) AS schemaname,
-      quote_ident(c.relname) AS tablename
+      n.nspname AS schemaname,
+      c.relname AS tablename
     FROM
       pg_class c
     JOIN
@@ -538,8 +651,9 @@ BEGIN
     END;
 
     IF tablename IS NULL THEN
-      tablename := split_part(obj.object_identity, '.' ,2);
-      schemaname := split_part(obj.object_identity, '.' ,1);
+      -- get table from trigger variable - remove quotes if exists
+      tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+      schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
     END IF;
 
     -- check for existing table events
@@ -555,8 +669,8 @@ BEGIN
         AND op_id IN (12, 2, 21, 22, 5, 6)
     ) THEN
       PERFORM pgmemento.modify_ddl_log_tables(
-        split_part(obj.object_identity, '.' ,2),
-        split_part(obj.object_identity, '.' ,1)
+        pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2)),
+        pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1))
       );
     END IF;
   END LOOP;
@@ -583,11 +697,12 @@ DECLARE
   fetch_next BOOLEAN := TRUE;
   table_ident TEXT := '';
   rec RECORD;
-  schemaname TEXT;
   tablename TEXT;
+  schemaname TEXT;
   table_log_id INTEGER;
   ntables INTEGER := 0;
   column_candidate TEXT;
+  columnname TEXT;
   event_type TEXT;
   column_type TEXT;
   added_columns BOOLEAN := FALSE;
@@ -620,97 +735,36 @@ BEGIN
      lower(ddl_text) LIKE '%drop %' OR
      lower(ddl_text) LIKE '%rename %'
   THEN
-    -- remove comments and line breaks from the DDL string
-    ddl_text := pgmemento.flatten_ddl(ddl_text);
+    -- remove table name from ddl_text
+    SELECT
+      query,
+      audit_table_name,
+      audit_schema_name,
+      audit_table_log_id
+    INTO
+      ddl_text,
+      tablename,
+      schemaname,
+      table_log_id
+    FROM
+      pgmemento.split_table_from_query(ddl_text);
 
-    WHILE fetch_next LOOP
-      -- extracting the table identifier from the DDL command
-      table_ident := pgmemento.fetch_ident(ddl_text);
-
-      -- exit loop when nothing has been fetched
-      IF table_ident IS NULL OR length(table_ident) = 0 THEN
-        EXIT;
-      END IF;
-
-      -- shrink ddl_text by table_ident
-      ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
-
-      IF position('"' IN table_ident) > 0 OR (
-           position('"' IN table_ident) = 0 AND (
-             lower(table_ident) NOT IN ('drop', 'table', 'if', 'exists')
-           )
-         )
-      THEN
-        BEGIN
-          -- if table exists, this should work
-          PERFORM table_ident::regclass;
-          fetch_next := FALSE;
-
-          EXCEPTION
-            WHEN undefined_table THEN
-              fetch_next := TRUE;
-            WHEN invalid_name THEN
-              fetch_next := FALSE;
-        END;
-      END IF;
-    END LOOP;
-
-    -- get table and schema name
-    IF table_ident LIKE '%.%' THEN
-      -- check if table is audited
-      SELECT
-        quote_ident(table_name),
-        quote_ident(schema_name),
-        log_id
-      INTO
-        tablename,
-        schemaname,
-        table_log_id
-      FROM
-        pgmemento.audit_table_log
-      WHERE
-        table_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 2))
-        AND schema_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 1))
-        AND upper(txid_range) IS NULL
-        AND lower(txid_range) IS NOT NULL;
-
-      IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
-        ntables := 1;
-      END IF;
-    ELSE
-      tablename := table_ident;
-
-      -- check if table is audited and not ambiguous
-      FOR rec IN
-        SELECT
-          quote_ident(schema_name) AS schema_name,
-          log_id
-        FROM
-          pgmemento.audit_table_log
-        WHERE
-          table_name = pgmemento.trim_outer_quotes(tablename)
-          AND upper(txid_range) IS NULL
-          AND lower(txid_range) IS NOT NULL
-      LOOP
-        ntables := ntables + 1;
-        IF ntables > 1 THEN
-          -- table name is found more than once in audit_table_log
-          RAISE EXCEPTION 'Please specify the schema name in the ALTER TABLE command.';
-        END IF;
-        schemaname := rec.schema_name;
-        table_log_id := rec.log_id;
-      END LOOP;
-    END IF;
-
-    -- table not found in audit_table_log, so it can be altered without logging
-    IF ntables IS NULL OR ntables = 0 THEN
+    -- if table is not audited ddl_text will be NULL
+    IF ddl_text IS NULL THEN
       RETURN;
     END IF;
 
     -- check if table got renamed and log event if yes
     IF lower(ddl_text) LIKE ' rename to%' THEN
       PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME TABLE');
-      PERFORM set_config('pgmemento.' || schemaname || '.' || pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))), table_log_id::text, TRUE);
+      -- make sure to quote ident as variable will later be read
+      -- from obj trigger variable which can come with quotes
+      PERFORM set_config(
+        'pgmemento.' || quote_ident(schemaname) || '.' ||
+        pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))),
+        table_log_id::text,
+        TRUE
+      );
       RETURN;
     END IF;
 
@@ -757,20 +811,26 @@ BEGIN
               END;
             END LOOP;
           ELSE
-            IF column_candidate = 'audit_id' OR EXISTS (
+            IF column_candidate = 'audit_id' THEN
+              columnname := column_candidate;
+            ELSE
               SELECT
-                1
+                c.column_name
+              INTO
+                columnname
               FROM
                 pgmemento.audit_column_log c,
                 pgmemento.audit_table_log a
               WHERE
                 c.audit_table_id = a.id
                 AND c.column_name = pgmemento.trim_outer_quotes(column_candidate)
-                AND a.table_name = pgmemento.trim_outer_quotes(tablename)
-                AND a.schema_name = pgmemento.trim_outer_quotes(schemaname)
+                AND a.table_name = tablename
+                AND a.schema_name = schemaname
                 AND upper(c.txid_range) IS NULL
-                AND lower(c.txid_range) IS NOT NULL
-            ) THEN
+                AND lower(c.txid_range) IS NOT NULL;
+            END IF;
+
+            IF columnname IS NOT NULL THEN
               CASE event_type
                 WHEN 'RENAME' THEN
                   IF column_candidate = 'audit_id' THEN
@@ -779,14 +839,14 @@ BEGIN
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
                   PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME COLUMN');
                 WHEN 'DROP' THEN
-                  dropped_columns := array_append(dropped_columns, column_candidate);
+                  dropped_columns := array_append(dropped_columns, columnname);
                 WHEN 'ALTER' THEN
-                  altered_columns := array_append(altered_columns, column_candidate);
+                  altered_columns := array_append(altered_columns, columnname);
 
                   -- check if logging column content is really required
                   column_type := pgmemento.fetch_ident(ddl_text, 5);
                   IF lower(column_type) LIKE '% collate %' OR lower(column_type) LIKE '% using %' THEN
-                    altered_columns_log := array_append(altered_columns_log, column_candidate);
+                    altered_columns_log := array_append(altered_columns_log, columnname);
                   END IF;
                 ELSE
                   RAISE NOTICE 'Event type % unknown', event_type;
@@ -852,30 +912,36 @@ CREATE OR REPLACE FUNCTION pgmemento.table_create_post_trigger() RETURNS event_t
 $$
 DECLARE
   obj record;
+  tablename TEXT;
+  schemaname TEXT;
 BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
+      -- remove quotes if exists 
+      tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+      schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+
       -- log as 'create table' event
       PERFORM pgmemento.log_table_event(
         txid_current(),
-        split_part(obj.object_identity, '.' ,2),
-        split_part(obj.object_identity, '.' ,1),
+        tablename,
+        schemaname,
         'CREATE TABLE'
       );
 
       -- start auditing for new table
       PERFORM pgmemento.create_table_audit(
-        split_part(obj.object_identity, '.' ,2),
-        split_part(obj.object_identity, '.' ,1),
+        tablename,
+        schemaname,
         FALSE
       );
     END IF;
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+  LANGUAGE plpgsql;
 
 
 /**********************************************************
@@ -888,6 +954,8 @@ $$
 DECLARE
   obj RECORD;
   tid INTEGER;
+  tablename TEXT;
+  schemaname TEXT;
 BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_dropped_objects()
@@ -895,6 +963,10 @@ BEGIN
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
       BEGIN
         tid := current_setting('pgmemento.' || txid_current())::int;
+
+        -- remove quotes if exists 
+        tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+        schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
         -- if DROP AUDIT_ID event exists for table in the current transaction
         -- only create a DROP TABLE event, because auditing has already stopped
@@ -905,22 +977,22 @@ BEGIN
             pgmemento.table_event_log
           WHERE
             transaction_id = current_setting('pgmemento.' || txid_current())::int
-            AND table_name = split_part(obj.object_identity, '.' ,2)
-            AND schema_name = split_part(obj.object_identity, '.' ,1)
+            AND table_name = tablename
+            AND schema_name = schemaname
             AND op_id = 8
             AND table_operation = 'DROP AUDIT_ID'
         ) THEN
           PERFORM pgmemento.log_table_event(
             txid_current(),
-            split_part(obj.object_identity, '.' ,2),
-            split_part(obj.object_identity, '.' ,1),
+            tablename,
+            schemaname,
             'DROP TABLE'
           );
         ELSE
           -- update txid_range for removed table in audit_table_log table
           PERFORM pgmemento.unregister_audit_table(
-            split_part(obj.object_identity, '.' ,2),
-            split_part(obj.object_identity, '.' ,1)
+            tablename,
+            schemaname
           );
         END IF;
 
@@ -965,95 +1037,29 @@ BEGIN
     ddl_text := stack;
   END IF;
 
-  -- remove comments and line breaks from the DDL string
-  ddl_text := pgmemento.flatten_ddl(ddl_text);
+  -- remove table name from ddl_text
+  SELECT
+    query,
+    audit_table_name,
+    audit_schema_name
+  INTO
+    ddl_text,
+    tablename,
+    schemaname
+  FROM
+    pgmemento.split_table_from_query(ddl_text);
 
-  WHILE fetch_next LOOP
-    -- extracting the table identifier from the DDL command
-    table_ident := pgmemento.fetch_ident(ddl_text);
-
-    -- exit loop when nothing has been fetched
-    IF table_ident IS NULL OR length(table_ident) = 0 THEN
-      EXIT;
-    END IF;
-
-    -- shrink ddl_text by table_ident
-    ddl_text := substr(ddl_text, position(table_ident in ddl_text) + length(table_ident), length(ddl_text));
-
-    IF position('"' IN table_ident) > 0 OR (
-         position('"' IN table_ident) = 0 AND (
-           lower(table_ident) NOT IN ('drop', 'table', 'if', 'exists')
-         )
-       )
-    THEN
-      BEGIN
-        -- if table exists, this should work
-        PERFORM table_ident::regclass;
-        fetch_next := FALSE;
-
-        EXCEPTION
-          WHEN undefined_table THEN
-            fetch_next := TRUE;
-          WHEN invalid_name THEN
-            fetch_next := FALSE;
-      END;
-    END IF;
-  END LOOP;
-
-  -- get table and schema name
-  IF table_ident LIKE '%.%' THEN
-    -- check if table is audited
-    SELECT
-      quote_ident(table_name),
-      quote_ident(schema_name)
-    INTO
-      tablename,
-      schemaname
-    FROM
-      pgmemento.audit_table_log
-    WHERE
-      table_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 2))
-      AND schema_name = pgmemento.trim_outer_quotes(split_part(table_ident, '.', 1))
-      AND upper(txid_range) IS NULL
-      AND lower(txid_range) IS NOT NULL;
-
-    IF schemaname IS NOT NULL AND tablename IS NOT NULL THEN
-      ntables := 1;
-    END IF;
-  ELSE
-    tablename := table_ident;
-
-    -- check if table is audited and not ambiguous
-    FOR schemaname IN
-      SELECT
-        quote_ident(schema_name)
-      FROM
-        pgmemento.audit_table_log
-      WHERE
-        table_name = pgmemento.trim_outer_quotes(tablename)
-        AND upper(txid_range) IS NULL
-        AND lower(txid_range) IS NOT NULL
-    LOOP
-      ntables := ntables + 1;
-    END LOOP;
-  END IF;
-
-  -- table not found in audit_table_log, so it can be dropped
-  IF ntables IS NULL OR ntables = 0 THEN
+  -- if table is not audited ddl_text will be NULL
+  IF ddl_text IS NULL THEN
     RETURN;
   END IF;
 
-  IF ntables > 1 THEN
-    -- table name is found more than once in audit_table_log
-    RAISE EXCEPTION 'Please specify the schema name in the DROP TABLE command.';
-  ELSE
-    -- log the whole content of the dropped table as truncated
-    table_event_key :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
-    PERFORM pgmemento.log_table_state('{}'::text[], tablename, schemaname, table_event_key);
+  -- log the whole content of the dropped table as truncated
+  table_event_key :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
+  PERFORM pgmemento.log_table_state('{}'::text[], tablename, schemaname, table_event_key);
 
-    -- now log drop table event
-    PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
-  END IF;
+  -- now log drop table event
+  PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
 END;
 $$
 LANGUAGE plpgsql;

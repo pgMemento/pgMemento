@@ -16,7 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
--- 0.7.1     2020-01-09   reflect changes on schema and triggers         FKun
+-- 0.7.2     2020-02-09   reflect changes on schema and triggers         FKun
+-- 0.7.1     2020-02-08   stop using trim_outer_quotes                   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
 -- 0.6.4     2019-03-23   audit_table_check can handle relid mismatch    FKun
 -- 0.6.3     2018-11-20   new helper function to revert updates with     FKun
@@ -357,8 +358,8 @@ BEGIN
     ON a_old.log_id = a_new.log_id
    AND a_old.txid_range @> $1::numeric
   WHERE
-    a_new.table_name = pgmemento.trim_outer_quotes($2)
-    AND a_new.schema_name = pgmemento.trim_outer_quotes($3)
+    a_new.table_name = $2
+    AND a_new.schema_name = $3
     AND upper(a_new.txid_range) IS NULL
     AND lower(a_new.txid_range) IS NOT NULL;
 
@@ -377,8 +378,8 @@ BEGIN
     FROM
       pgmemento.audit_table_log
     WHERE
-      table_name = pgmemento.trim_outer_quotes($2)
-      AND schema_name = pgmemento.trim_outer_quotes($3)
+      table_name = $2
+      AND schema_name = $3
       AND txid_range @> $1::numeric;
   END IF;
 END;
@@ -414,8 +415,8 @@ JOIN
   pgmemento.audit_table_log t
   ON t.id = c.audit_table_id
 WHERE
-  t.table_name = pgmemento.trim_outer_quotes($2)
-  AND t.schema_name = pgmemento.trim_outer_quotes($3)
+  t.table_name = $2
+  AND t.schema_name = $3
   AND t.txid_range @> $1::numeric
   AND c.txid_range @> $1::numeric;
 $$
