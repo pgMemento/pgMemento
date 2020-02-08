@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.1     2020-02-08   stop using trim_outer_quotes for tables             FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
 -- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
 -- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
@@ -530,8 +531,8 @@ BEGIN
     pgmemento.audit_table_log t
     ON t.id = c.audit_table_id
   WHERE
-    t.table_name = pgmemento.trim_outer_quotes($3)
-    AND t.schema_name = pgmemento.trim_outer_quotes($4)
+    t.table_name = $3
+    AND t.schema_name = $4
     AND t.txid_range @> $1::numeric
     AND c.txid_range @> $1::numeric;
 
@@ -542,8 +543,7 @@ BEGIN
          || stmt
          || ', audit_id bigint DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
          || ') '
-         || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END,
-       pgmemento.trim_outer_quotes($2));
+         || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END, $2);
   END IF;
 END;
 $$
@@ -580,9 +580,9 @@ BEGIN
     FROM
       pg_namespace
     WHERE
-      nspname = pgmemento.trim_outer_quotes($5)
+      nspname = $5
   ) THEN
-    EXECUTE format('CREATE SCHEMA %I', pgmemento.trim_outer_quotes($5));
+    EXECUTE format('CREATE SCHEMA %I', $5);
   END IF;
 
   -- test if table, view or materialized view already exist in target schema
@@ -595,8 +595,8 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND c.relname = pgmemento.trim_outer_quotes($3)
-    AND n.nspname = pgmemento.trim_outer_quotes($5)
+    AND c.relname = $3
+    AND n.nspname = $5
     AND (
       c.relkind = 'r'
       OR c.relkind = 'v'
@@ -609,10 +609,10 @@ BEGIN
       IF existing_table_type = 'r' THEN
         PERFORM pgmemento.drop_table_state($3, $5);
       ELSIF existing_table_type = 'm' THEN
-        EXECUTE format('DROP MATERIALIZED VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
+        EXECUTE format('DROP MATERIALIZED VIEW %I.%I CASCADE', $5, $3);
       ELSE
         IF $6 = 'MATERIALIZED VIEW' OR $6 = 'TABLE' THEN
-          EXECUTE format('DROP VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
+          EXECUTE format('DROP VIEW %I.%I CASCADE', $5, $3);
         ELSE
           replace_view := ' OR REPLACE ';
         END IF;
@@ -628,7 +628,7 @@ BEGIN
   IF upper($6) = 'VIEW' OR upper($6) = 'MATERIALIZED VIEW' OR upper($6) = 'TABLE' THEN
     restore_query := 'CREATE' 
       || replace_view || $6 
-      || format(E' %I.%I AS\n', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3))
+      || format(E' %I.%I AS\n', $5, $3)
       || pgmemento.restore_query($1, $2, $3, $4);
 
     -- finally execute query string
@@ -655,7 +655,7 @@ SELECT
 FROM
   pgmemento.audit_table_log 
 WHERE
-  schema_name = pgmemento.trim_outer_quotes($3)
+  schema_name = $3
   AND txid_range @> $2::numeric;
 $$
 LANGUAGE sql STRICT;

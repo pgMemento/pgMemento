@@ -30,8 +30,8 @@ SELECT pgmemento.drop_schema_event_trigger();
 \echo 'Removing audit_id columns from audited tables ...'
 SELECT
   pgmemento.drop_table_audit(
-    quote_ident(table_name),
-    quote_ident(schema_name),
+    table_name,
+    schema_name,
     FALSE
   )
 FROM

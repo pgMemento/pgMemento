@@ -119,7 +119,7 @@ BEGIN
       FROM
         pg_attribute
       WHERE
-        attrelid = ('public.' || tab)::regclass::oid
+        attrelid = pgmemento.get_table_oid(tab, 'public')
         AND attnum > 0
         AND NOT attisdropped
         AND attname = 'audit_id'
