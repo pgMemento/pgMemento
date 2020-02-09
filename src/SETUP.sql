@@ -1159,7 +1159,7 @@ BEGIN
   -- then either keep the audit trail for table or delete everything
   IF $3 THEN
     -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_table_state(e_id, '{}'::text[], $1, $2, table_event_key);
+    PERFORM pgmemento.log_table_state('{}'::text[], $1, $2, table_event_key);
   ELSE
     -- remove all logs related to given table
     PERFORM pgmemento.delete_audit_table_log($1, $2);
