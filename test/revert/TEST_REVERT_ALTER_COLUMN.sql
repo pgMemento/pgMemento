@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-03   initial commit                                   FKun
 --
 
@@ -29,6 +30,7 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
+  rename_column_op_id SMALLINT := pgmemento.get_operation_id('RENAME COLUMN');
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Reverting rename column"}'::text, FALSE);
@@ -39,7 +41,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 22;
+    op_id = rename_column_op_id;
 
   -- query for logged transaction
   SELECT
@@ -65,7 +67,7 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = test_transaction
-        AND op_id = 22
+        AND op_id = rename_column_op_id
     )
   ), 'Error: Did not find test entry in table_event_log table!';
 END;
@@ -115,9 +117,9 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_txid BIGINT := txid_current();
+  alter_column_op_id SMALLINT := pgmemento.get_operation_id('ALTER COLUMN');
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
   test_tsrange tsrange;
 BEGIN
   -- set session_info to query logged transaction later
@@ -129,7 +131,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 5;
+    op_id = alter_column_op_id;
 
   -- query for logged transaction
   SELECT
@@ -148,19 +150,19 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 5;
+    AND op_id = alter_column_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
-  -- save event_id for next test
-  PERFORM set_config('pgmemento.revert_alter_column_test_event', test_event::text, FALSE);
+  -- save event time for next test
+  PERFORM set_config('pgmemento.revert_alter_column_test_event', test_event, FALSE);
 END;
 $$
 LANGUAGE plpgsql;

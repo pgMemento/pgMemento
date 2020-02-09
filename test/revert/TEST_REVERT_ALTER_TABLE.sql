@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-10   initial commit                                   FKun
 --
 
@@ -28,6 +29,7 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 DO
 $$
 DECLARE
+  rename_table_op_id SMALLINT := pgmemento.get_operation_id('RENAME TABLE');
   test_transaction INTEGER;
 BEGIN
   -- set session_info to query logged transaction later
@@ -39,7 +41,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 12;
+    op_id = rename_table_op_id;
 
   -- query for logged transaction
   SELECT
@@ -65,7 +67,7 @@ BEGIN
         pgmemento.table_event_log
       WHERE
         transaction_id = test_transaction
-        AND op_id = 12
+        AND op_id = rename_table_op_id
     )
   ), 'Error: Did not find test entry in table_event_log table!';
 END;

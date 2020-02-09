@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.2     2020-02-09   reflect changes on schema and triggers         FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes                   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
 -- 0.6.4     2019-03-23   audit_table_check can handle relid mismatch    FKun
@@ -137,9 +138,8 @@ JOIN
   ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
-  ON r.event_id = e.id
-WHERE
-  r.audit_id = $1;
+  ON r.event_key = e.event_key
+ AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
@@ -154,9 +154,8 @@ JOIN
   ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
-  ON r.event_id = e.id
-WHERE
-  r.audit_id = $1;
+  ON r.event_key = e.event_key
+ AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 
@@ -171,9 +170,8 @@ JOIN
   ON e.transaction_id = t.id
 JOIN
   pgmemento.row_log r
-  ON r.event_id = e.id
-WHERE
-  r.audit_id = $1;
+  ON r.event_key = e.event_key
+ AND r.audit_id = $1;
 $$
 LANGUAGE sql STABLE STRICT;
 

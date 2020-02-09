@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-20   initial commit                                   FKun
 --
 
@@ -29,7 +30,8 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
+  delete_op_id SMALLINT := pgmemento.get_operation_id('DELETE');
   jsonb_log JSONB;
 BEGIN
   -- set session_info to query logged transaction later
@@ -67,14 +69,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 7;
+    AND op_id = delete_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -86,7 +88,7 @@ BEGIN
       FROM
         pgmemento.row_log 
       WHERE
-        event_id = test_event
+        event_key = test_event
         AND changes = jsonb_log
     )
   ),

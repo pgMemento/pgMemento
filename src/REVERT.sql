@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.2     2020-01-09   reflect changes on schema and triggers          FKun
 -- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                  FKun
 -- 0.6.4     2019-02-14   Changed revert ADD AUDIT_ID events              FKun
@@ -452,7 +453,7 @@ BEGIN
       e.op_id, 
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
+      rank() OVER (PARTITION BY r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -474,7 +475,8 @@ BEGIN
       ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id AND e.op_id <> 5
+      ON r.event_key = e.event_key
+     AND e.op_id <> 5
     WHERE
       t.id = $1
     ORDER BY
@@ -504,7 +506,7 @@ BEGIN
       e.op_id,
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
+      rank() OVER (PARTITION BY t.id, r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -526,7 +528,8 @@ BEGIN
       ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id AND e.op_id <> 5
+      ON r.event_key = e.event_key
+     AND e.op_id <> 5
     WHERE
       t.id BETWEEN $1 AND $2
     ORDER BY
@@ -594,7 +597,8 @@ BEGIN
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.event_id = e.id AND e.op_id <> 5
+          ON r.event_key = e.event_key
+         AND e.op_id <> 5
         WHERE
           e.transaction_id = $1
       ) s
@@ -685,7 +689,8 @@ BEGIN
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.event_id = e.id AND e.op_id <> 5
+          ON r.event_key = e.event_key
+         AND e.op_id <> 5
         WHERE
           e.transaction_id BETWEEN $1 AND $2
       ) s
@@ -719,6 +724,7 @@ BEGIN
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
     ORDER BY
+      q.tid DESC,
       dependency_order,
       e1.id DESC,
       audit_order

@@ -42,6 +42,8 @@ DROP FUNCTION IF EXISTS pgmemento.delete_audit_table_log(table_oid OID);
 
 DROP FUNCTION IF EXISTS pgmemento.delete_table_event_log(tid INTEGER, table_oid OID);
 
+DROP FUNCTION IF EXISTS pgmemento.delete_table_event_log(table_name TEXT, schema_name TEXT);
+
 DROP FUNCTION IF EXISTS pgmemento.get_column_list_by_txid_range(
   start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID,
   OUT column_name TEXT, OUT column_count INTEGER, OUT data_type TEXT, OUT ordinal_position INTEGER, OUT txid_range numrange);
@@ -49,6 +51,8 @@ DROP FUNCTION IF EXISTS pgmemento.get_column_list_by_txid_range(
 DROP FUNCTION IF EXISTS pgmemento.get_txid_bounds_to_table(table_oid OID, OUT txid_min INTEGER, OUT txid_max INTEGER);
 
 DROP FUNCTION IF EXISTS pgmemento.log_table_event(event_txid BIGINT, table_oid OID, op_type TEXT);
+
+DROP FUNCTION IF EXISTS pgememento.log_table_state(e_id INTEGER, columns TEXT[], table_name TEXT, schema_name TEXT);
 
 DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID);
 
