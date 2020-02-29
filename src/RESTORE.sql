@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.3     2020-02-29   reflect new schema of row_log table                 FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers              FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes for tables             FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
@@ -116,7 +117,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_value(
   ) RETURNS anyelement AS
 $$
 SELECT
-  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.old_data, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
@@ -124,7 +125,7 @@ JOIN
   ON r.event_key = e.event_key
 WHERE
   r.audit_id = $2
-  AND r.changes ? $3
+  AND r.old_data ? $3
   AND e.transaction_id <= $1
 ORDER BY
   e.id DESC
@@ -141,7 +142,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_change(
   ) RETURNS anyelement AS
 $$
 SELECT
-  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.old_data, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
@@ -221,8 +222,8 @@ BEGIN
     SELECT
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
-        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY f.event_key, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('first_value(a.old_data -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY f.event_key, a.audit_id ORDER BY a.old_data -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s',
              quote_ident(c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END)
@@ -257,8 +258,8 @@ BEGIN
     SELECT
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
-        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('first_value(a.old_data -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY a.audit_id ORDER BY a.old_data -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s', quote_ident(c_old.column_name))
         , E',\n' ORDER BY c_old.ordinal_position

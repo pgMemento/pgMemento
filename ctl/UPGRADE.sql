@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.2     2020-02-29   reflect new schema of row_log table              FKun
 -- 0.2.1     2020-02-01   reflect more changes in schema                   FKun
 -- 0.2.0     2019-06-09   change to upgrade from v0.6.1 to v0.7            FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
@@ -79,13 +80,20 @@ DROP INDEX IF EXISTS table_event_log_unique_idx;
 VACUUM ANALYZE pgmemento.table_event_log;
 
 -- ROW_LOG
+-- rename changes column to old_data because we can now have a new_data, too
 -- remove foreign key but add event_key to link to table_event_log
+ALTER TABLE pgmemento.row_log
+  RENAME changes TO old_data;
+
 ALTER TABLE pgmemento.row_log
   DROP CONSTRAINT row_log_table_fk,
   ALTER COLUMN event_id DROP NOT NULL,
-  ADD COLUMN event_key TEXT;
+  ADD COLUMN event_key TEXT,
+  ADD COLUMN new_data JSONB;
 
 COMMENT ON COLUMN pgmemento.row_log.event_key IS 'Concatenated information of table event';
+COMMENT ON COLUMN pgmemento.row_log.old_data IS 'The old values of changed columns in a JSONB object';
+COMMENT ON COLUMN pgmemento.row_log.new_data IS 'The new values of changed columns in a JSONB object';
 
 -- fill new columns with values
 UPDATE pgmemento.row_log r
@@ -94,13 +102,16 @@ UPDATE pgmemento.row_log r
  WHERE r.event_id = e.id;
 
 -- create new index on event_key and remove former foreign key index
-CREATE INDEX IF NOT EXISTS row_log_event_idx2 ON pgmemento.row_log USING BTREE (event_key);
+CREATE UNIQUE INDEX IF NOT EXISTS row_log_event_audit_idx ON pgmemento.row_log USING BTREE (event_key, audit_id);
 DROP INDEX IF EXISTS row_log_event_idx;
-ALTER INDEX IF EXISTS row_log_event_idx2 RENAME TO row_log_event_idx;
 
 ALTER TABLE pgmemento.row_log
   DROP COLUMN event_id,
   ALTER COLUMN event_key SET NOT NULL;
+
+-- rename index on previous changes column and create GIN index on new_data
+ALTER INDEX IF EXISTS row_log_changes_idx RENAME TO row_log_old_data_idx;
+CREATE INDEX IF NOT EXISTS row_log_new_data_idx ON pgmemento.row_log USING GIN (new_data);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.row_log;

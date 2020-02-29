@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                        | Author
+-- 0.7.2     2020-02-29   new column in row_log to also audit new data         FKun
+--                        new unique index on event_key and audit_id
 -- 0.7.1     2020-02-02   put unique index of table_event_log on event_key     FKun
 -- 0.7.0     2020-01-09   remove FK to events and use concatenated metakeys    FKun
 --                        store more events with statement_timestamp
@@ -41,8 +43,9 @@
 *   column_log_range_idx
 *   column_log_table_idx
 *   row_log_audit_idx
-*   row_log_changes_idx
 *   row_log_event_idx
+*   row_log_new_data_idx
+*   row_log_old_data_idx
 *   table_event_log_event_idx
 *   table_event_log_fk_idx
 *   table_log_idx
@@ -120,7 +123,8 @@ CREATE TABLE pgmemento.row_log
   id BIGSERIAL,
   audit_id BIGINT NOT NULL,
   event_key TEXT NOT NULL,
-  changes JSONB
+  old_data JSONB,
+  new_data JSONB
 );
 
 ALTER TABLE pgmemento.row_log
@@ -130,7 +134,8 @@ COMMENT ON TABLE pgmemento.row_log IS 'Stores the historic data a.k.a the audit 
 COMMENT ON COLUMN pgmemento.row_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.row_log.audit_id IS ' The implicit link to a table''s row';
 COMMENT ON COLUMN pgmemento.row_log.event_key IS 'Concatenated information of table event';
-COMMENT ON COLUMN pgmemento.row_log.changes IS 'The old values of changed columns in a JSONB object';
+COMMENT ON COLUMN pgmemento.row_log.old_data IS 'The old values of changed columns in a JSONB object';
+COMMENT ON COLUMN pgmemento.row_log.new_data IS 'The new values of changed columns in a JSONB object';
 
 -- liftime of audited tables is logged in the audit_table_log table
 CREATE TABLE pgmemento.audit_table_log (
@@ -201,8 +206,9 @@ DROP INDEX IF EXISTS transaction_log_session_idx;
 DROP INDEX IF EXISTS table_event_log_fk_idx;
 DROP INDEX IF EXISTS table_event_log_event_idx;
 DROP INDEX IF EXISTS row_log_audit_idx;
-DROP INDEX IF EXISTS row_log_event_idx;
-DROP INDEX IF EXISTS row_log_changes_idx;
+DROP INDEX IF EXISTS row_log_event_audit_idx;
+DROP INDEX IF EXISTS row_log_old_data_idx;
+DROP INDEX IF EXISTS row_log_new_data_idx;
 DROP INDEX IF EXISTS table_log_idx;
 DROP INDEX IF EXISTS table_log_range_idx;
 DROP INDEX IF EXISTS column_log_table_idx;
@@ -214,8 +220,9 @@ CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN 
 CREATE INDEX table_event_log_fk_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
 CREATE UNIQUE INDEX table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_key);
-CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
+CREATE UNIQUE INDEX row_log_event_audit_idx ON pgmemento.row_log USING BTREE (event_key, audit_id);
+CREATE INDEX row_log_old_data_idx ON pgmemento.row_log USING GIN (old_data);
+CREATE INDEX row_log_new_data_idx ON pgmemento.row_log USING GIN (new_data);
 CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
 CREATE INDEX table_log_name_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
 CREATE INDEX table_log_range_idx ON pgmemento.audit_table_log USING GIST (txid_range);

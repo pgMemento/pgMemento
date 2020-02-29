@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-20   initial commit                                   FKun
 --
 
@@ -89,7 +89,7 @@ BEGIN
         pgmemento.row_log 
       WHERE
         event_key = test_event
-        AND changes = jsonb_log
+        AND old_data = jsonb_log
     )
   ),
   'Error: Entries of test table were not entirely logged in row_log table!';

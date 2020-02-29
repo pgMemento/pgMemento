@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.2     2018-11-10   reflect changes in SETUP                         FKun
 -- 0.1.1     2017-11-20   added upsert case                                FKun
 -- 0.1.0     2017-11-18   initial commit                                   FKun
@@ -134,7 +134,7 @@ BEGIN
 
   -- query for logged row
   SELECT
-    changes
+    old_data
   INTO
     jsonb_log
   FROM
@@ -209,7 +209,7 @@ BEGIN
 
   -- query for logged row
   SELECT
-    array_agg(r.changes ORDER BY r.id NULLS FIRST)
+    array_agg(r.old_data ORDER BY r.id NULLS FIRST)
   INTO
     jsonb_log
   FROM

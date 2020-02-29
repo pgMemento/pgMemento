@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-19   initial commit                                   FKun
 --
 
@@ -96,7 +96,7 @@ BEGIN
         ON t.audit_id = r.audit_id 
       WHERE
         r.event_key = test_event
-        AND r.changes = jsonb_log
+        AND r.old_data = jsonb_log
     )
   ),
   'Error: Entries of test table were not logged correctly in row_log table!';

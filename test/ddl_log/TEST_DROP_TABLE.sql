@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-09-25   initial commit                                   FKun
 --
 
@@ -158,7 +158,7 @@ BEGIN
 
   SELECT
     audit_id,
-    changes
+    old_data
   INTO
     log_audit_id,
     jsonb_log

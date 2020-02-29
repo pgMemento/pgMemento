@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.3     2020-02-29   reflect new schema of row_log table            FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers         FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes                   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                 FKun
@@ -285,10 +286,10 @@ $$
 UPDATE
   pgmemento.row_log
 SET
-  changes = changes - $2
+  old_data = old_data - $2
 WHERE
   audit_id = $1
-  AND changes @> jsonb_build_object($2, $3)
+  AND old_data @> jsonb_build_object($2, $3)
 RETURNING
   id;
 $$
@@ -304,10 +305,10 @@ $$
 UPDATE
   pgmemento.row_log
 SET
-  changes = jsonb_set(changes, $2, to_jsonb($4), FALSE)
+  old_data = jsonb_set(old_data, $2, to_jsonb($4), FALSE)
 WHERE
   audit_id = $1
-  AND changes @> jsonb_build_object($2[1], $3)
+  AND old_data @> jsonb_build_object($2[1], $3)
 RETURNING
   id;
 $$

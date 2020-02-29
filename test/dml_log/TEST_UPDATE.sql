@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
 --
 
@@ -124,7 +124,7 @@ BEGIN
 
   -- query for logged row
   SELECT
-    changes
+    old_data
   INTO
     jsonb_log
   FROM

@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
@@ -224,7 +224,7 @@ BEGIN
   test_value := current_setting('pgmemento.alter_column_test_value');
 
   SELECT
-    changes->>'test_tsrange_column'
+    old_data->>'test_tsrange_column'
   INTO
     log_value
   FROM
