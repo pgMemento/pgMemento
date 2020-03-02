@@ -8,7 +8,7 @@ PG_VERSION=$1
 TESTCMD=$2
 
 docker build -t pgmemento-test--$PG_VERSION - < ./Dockerfile-$PG_VERSION;
-CONTAINER=$(docker run -d -v $(pwd)/../..:/home/pgmemento pgmemento-test--$PG_VERSION);
+CONTAINER=$(docker run -d -e POSTGRES_PASSWORD=password -v $(pwd)/../..:/home/pgmemento pgmemento-test--$PG_VERSION);
 
 echo "Waiting for 10 seconds to let the database init before we roll";
 sleep 10;
