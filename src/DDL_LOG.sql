@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are used   FKun
 -- 0.7.3     2020-02-29   add triggers to log new data in row_log          FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers           FKun
 -- 0.7.1     2019-02-08   refactoring with new split_table_from_query      FKun
@@ -508,7 +509,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -562,7 +564,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -659,7 +662,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -735,7 +739,8 @@ BEGIN
       RETURN; -- no event has been logged, yet
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -782,7 +787,8 @@ BEGIN
       RETURN; -- no event has been logged, yet
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1002,7 +1008,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1044,7 +1051,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1087,7 +1095,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1150,7 +1159,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1208,7 +1218,8 @@ BEGIN
   PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1317,7 +1328,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_event_trigger() RETURNS SETOF VOID AS
 $$
@@ -1328,4 +1340,5 @@ $$
   DROP EVENT TRIGGER IF EXISTS table_drop_post_trigger;
   DROP EVENT TRIGGER IF EXISTS table_drop_pre_trigger;
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;

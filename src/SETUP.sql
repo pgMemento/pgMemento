@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.5     2020-03-07   set SECURITY DEFINER where log tables are touched   FKun
 -- 0.7.4     2020-02-29   added option to also log new data in row_log        FKun
 -- 0.7.3     2020-02-09   reflect changes on schema and triggers              FKun
 -- 0.7.2     2020-02-08   new get_table_oid function to replace trimming      FKun
@@ -405,7 +406,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.register_audit_table(
   audit_table_name TEXT,
@@ -530,7 +532,8 @@ BEGIN
   RETURN tab_id;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -603,7 +606,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform create_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
@@ -623,7 +627,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 -- drop logging triggers for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_log_trigger(
@@ -639,7 +644,8 @@ BEGIN
   EXECUTE format('DROP TRIGGER IF EXISTS log_transaction_trigger ON %I.%I', $2, $1);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform drop_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
@@ -658,7 +664,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -694,7 +701,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform create_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit_id(
@@ -713,7 +721,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 -- drop column 'audit_id' from a table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit_id(
@@ -742,7 +751,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform drop_table_audit_id on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit_id(
@@ -761,7 +771,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -811,7 +822,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.log_new_table_state(
   columns TEXT[],
@@ -842,7 +854,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -921,7 +934,8 @@ BEGIN
   RETURN table_event_key;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -937,7 +951,8 @@ BEGIN
   RETURN NULL;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -963,7 +978,8 @@ BEGIN
   RETURN NULL;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -996,7 +1012,8 @@ BEGIN
   RETURN NULL;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1051,7 +1068,8 @@ BEGIN
   RETURN NULL;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1075,7 +1093,8 @@ BEGIN
   RETURN NULL;
 END;
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1139,7 +1158,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform log_table_baseline on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.log_schema_baseline(
@@ -1162,7 +1182,8 @@ WHERE
 ORDER BY
   d.depth;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -1191,7 +1212,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform create_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
@@ -1212,7 +1234,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($4,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 -- drop pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
@@ -1246,7 +1269,8 @@ BEGIN
   PERFORM pgmemento.drop_table_audit_id($1, $2);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform drop_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
@@ -1266,4 +1290,5 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;

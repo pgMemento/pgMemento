@@ -16,6 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are      FKun
+--                        touched
 -- 0.7.3     2020-02-29   reflect new schema of row_log table            FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers         FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes                   FKun
@@ -192,7 +194,8 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STRICT
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tid INTEGER,
@@ -209,7 +212,8 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STRICT
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   tablename TEXT,
@@ -224,7 +228,8 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql STRICT;
+LANGUAGE sql STRICT
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.delete_audit_table_log(
   tablename TEXT,
@@ -268,7 +273,8 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -293,7 +299,8 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION pgmemento.update_key(
   aid BIGINT,
@@ -312,7 +319,8 @@ WHERE
 RETURNING
   id;
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
