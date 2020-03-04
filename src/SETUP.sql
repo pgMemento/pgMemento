@@ -795,14 +795,19 @@ BEGIN
     EXECUTE format(
       'INSERT INTO pgmemento.row_log(audit_id, event_key, old_data)
          SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
-           FROM %I.%I ORDER BY audit_id',
-         $3, $2) USING $4;
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO NOTHING',
+       $3, $2) USING $4;
   ELSE
     -- log content of entire table
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (audit_id, event_key, old_data)
-         SELECT audit_id, $1, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         $2, $3, $2) USING $4;
+         SELECT audit_id, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO NOTHING',
+       $2, $3, $2) USING $4;
   END IF;
 END;
 $$
@@ -829,8 +834,11 @@ BEGIN
     -- log content of entire table
     EXECUTE format(
       'INSERT INTO pgmemento.row_log (audit_id, event_key, new_data)
-         SELECT audit_id, $1, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         $2, $3, $2) USING $4;
+         SELECT audit_id, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET new_data = excluded.new_data',
+       $2, $3, $2) USING $4;
   END IF;
 END;
 $$
@@ -1035,7 +1043,9 @@ BEGIN
     VALUES
       (NEW.audit_id,
        concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
-       jsonb_diff_old, jsonb_diff_new);
+       jsonb_diff_old, jsonb_diff_new)
+    ON CONFLICT (audit_id, event_key)
+    DO UPDATE SET new_data = excluded.new_data;
   END IF;
 
   RETURN NULL;
@@ -1122,7 +1132,8 @@ BEGIN
          || CASE WHEN $3 THEN ', to_json(t.*) ' ELSE ' ' END
          || 'FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
-         || 'WHERE r.audit_id IS NULL' || pkey_columns,
+         || 'WHERE r.audit_id IS NULL' || pkey_columns
+         || ' ON CONFLICT (audit_id, event_key) DO NOTHING',
          $2, $1) USING table_event_key;
     END IF;
   END IF;
