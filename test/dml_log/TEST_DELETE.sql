@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
 --
@@ -34,7 +35,8 @@ DECLARE
   test_txid BIGINT := txid_current();
   test_event TEXT;
   delete_op_id SMALLINT := pgmemento.get_operation_id('DELETE');
-  jsonb_log JSONB;
+  old_jsonb_log JSONB;
+  new_jsonb_log JSONB;
 BEGIN
   -- DELETE entry that has been inserted for other tests
   DELETE FROM public.object
@@ -69,16 +71,19 @@ BEGIN
 
   -- query for logged row
   SELECT
-    old_data
+    old_data,
+    new_data
   INTO
-    jsonb_log
+    old_jsonb_log,
+    new_jsonb_log
   FROM
     pgmemento.row_log
   WHERE
     audit_id = delete_audit_id
     AND event_key = test_event;
 
-  ASSERT jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT old_jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong old content in row_log table: %' old_jsonb_log;
+  ASSERT new_jsonb_log IS NULL, 'Error: Wrong new content in row_log table: %' new_jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;

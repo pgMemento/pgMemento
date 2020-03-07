@@ -41,7 +41,9 @@ BEGIN
     pgmemento.table_event_log
   WHERE
     op_id = pgmemento.get_operation_id('ADD COLUMN')
-    AND transaction_id = 5;
+  ORDER BY
+    id
+  LIMIT 1;
 
   -- query for logged transaction
   SELECT

@@ -128,7 +128,7 @@ BEGIN
   WHERE
     event_key = test_event;
 
-  ASSERT jsonb_log->>'test_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
+  ASSERT jsonb_log->>'test_column' = 'test', 'Error: Wrong content in row_log table: %', jsonb_log;
   ASSERT jsonb_log->>'test_tstzrange_column' IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
 $$

@@ -44,7 +44,7 @@ BEGIN
     operations,
     txids
   FROM
-    pgmemento.restore_recordsets(1, 18, 'object', 'public')
+    pgmemento.restore_recordsets(1, 19, 'object', 'public')
     AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer);
 
   ASSERT audit_ids[1] = 1, 'Expected audit_id 1, but found %', audit_ids[1];
@@ -54,10 +54,10 @@ BEGIN
   ASSERT operations[2] = 'INSERT', 'Expected ''INSERT'', but founds %', operations[2];
   ASSERT operations[3] = 'UPDATE', 'Expected ''UPDATE'', but founds %', operations[3];
   ASSERT operations[4] = 'UPDATE', 'Expected ''UPDATE'', but founds %', operations[4];
-  ASSERT txids[1] = 12, 'Expected transaction id 12, but found %', txids[1];
-  ASSERT txids[2] = 13, 'Expected transaction id 13, but found %', txids[2];
-  ASSERT txids[3] = 14, 'Expected transaction id 14, but found %', txids[3];
-  ASSERT txids[4] = 17, 'Expected transaction id 17, but found %', txids[4];
+  ASSERT txids[1] = 13, 'Expected transaction id 13, but found %', txids[1];
+  ASSERT txids[2] = 14, 'Expected transaction id 14, but found %', txids[2];
+  ASSERT txids[3] = 15, 'Expected transaction id 15, but found %', txids[3];
+  ASSERT txids[4] = 18, 'Expected transaction id 18, but found %', txids[4];
 
   -- restore row as JSONB
   SELECT
@@ -65,25 +65,25 @@ BEGIN
   INTO
     jsonb_log
   FROM
-    pgmemento.restore_recordsets(1, 18, 'object', 'public', TRUE)
+    pgmemento.restore_recordsets(1, 19, 'object', 'public', TRUE)
     AS (log JSONB);
 
   ASSERT jsonb_log->0->>'id' = '1', 'Incorrect historic value for ''id'' column. Expected 1, but found %', jsonb_log->0->>'id';
   ASSERT jsonb_log->0->>'lineage' = 'init', 'Incorrect historic value for ''lineage'' column. Expected ''init'', but found %', jsonb_log->0->>'lineage';
   ASSERT jsonb_log->0->>'audit_id' = '1', 'Incorrect historic value for ''audit_id'' column. Expected 1, but found %', jsonb_log->0->>'id';
   ASSERT jsonb_log->0->>'table_operation' = 'INSERT' , 'Incorrect historic value for ''table_operation''. Expected ''INSERT'', but found %', jsonb_log->0->>'table_operation';
-  ASSERT jsonb_log->0->>'transaction_id' = '12', 'Incorrect historic value for ''transaction_id'' column. Expected 12, but found %', jsonb_log->0->>'transaction_id'; 
+  ASSERT jsonb_log->0->>'transaction_id' = '13', 'Incorrect historic value for ''transaction_id'' column. Expected 13, but found %', jsonb_log->0->>'transaction_id'; 
   ASSERT jsonb_log->1->>'id' = '2', 'Incorrect historic value for ''id'' column. Expected 2, but found %', jsonb_log->1->>'id';
   ASSERT jsonb_log->1->>'lineage' = 'pgm_insert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_insert_test'', but found %', jsonb_log->1->>'lineage';
   ASSERT jsonb_log->1->>'audit_id' = '3', 'Incorrect historic value for ''audit_id'' column. Expected 3, but found %', jsonb_log->1->>'id';
   ASSERT jsonb_log->1->>'table_operation' = 'INSERT' , 'Incorrect historic value for ''table_operation''. Expected ''INSERT'', but found %', jsonb_log->1->>'table_operation';
-  ASSERT jsonb_log->1->>'transaction_id' = '13', 'Incorrect historic value for ''transaction_id'' column. Expected 13, but found %', jsonb_log->1->>'transaction_id';
+  ASSERT jsonb_log->1->>'transaction_id' = '14', 'Incorrect historic value for ''transaction_id'' column. Expected 14, but found %', jsonb_log->1->>'transaction_id';
   ASSERT jsonb_log->2->>'lineage' = 'pgm_upsert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_upsert_test'', but found %', jsonb_log->2->>'lineage';
   ASSERT jsonb_log->2->>'table_operation' = 'UPDATE' , 'Incorrect historic value for ''table_operation''. Expected ''UPDATE'', but found %', jsonb_log->2->>'table_operation';
-  ASSERT jsonb_log->2->>'transaction_id' = '14', 'Incorrect historic value for ''transaction_id'' column. Expected 14, but found %', jsonb_log->2->>'transaction_id';
+  ASSERT jsonb_log->2->>'transaction_id' = '15', 'Incorrect historic value for ''transaction_id'' column. Expected 15, but found %', jsonb_log->2->>'transaction_id';
   ASSERT jsonb_log->3->>'lineage' = 'pgm_update_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_update_test'', but found %', jsonb_log->3->>'lineage';
   ASSERT jsonb_log->3->>'table_operation' = 'UPDATE' , 'Incorrect historic value for ''table_operation''. Expected ''UPDATE'', but found %', jsonb_log->3->>'table_operation';
-  ASSERT jsonb_log->3->>'transaction_id' = '17', 'Incorrect historic value for ''transaction_id'' column. Expected 17, but found %', jsonb_log->3->>'transaction_id';
+  ASSERT jsonb_log->3->>'transaction_id' = '18', 'Incorrect historic value for ''transaction_id'' column. Expected 18, but found %', jsonb_log->3->>'transaction_id';
 END;
 $$
 LANGUAGE plpgsql;

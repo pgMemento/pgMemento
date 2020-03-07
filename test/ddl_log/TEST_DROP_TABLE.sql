@@ -169,7 +169,7 @@ BEGIN
 
   ASSERT (jsonb_log->>'id')::bigint = 1, 'Error: Wrong content in row_log table: %', jsonb_log->>'id';
   ASSERT jsonb_log->>'test_geom_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log->>'test_geom_column';
-  ASSERT jsonb_log->>'test_json_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log->>'test_json_column';
+  ASSERT jsonb_log->>'test_json_column' = '{"test": "value"}', 'Error: Wrong content in row_log table: %', jsonb_log->>'test_json_column';
   ASSERT (jsonb_log->>'audit_id')::bigint = log_audit_id, 'Error: Audit_ids do not match: Expected %, found %', log_audit_id, jsonb_log->>'audit_id';
 END;
 $$
