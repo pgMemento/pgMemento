@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.3     2020-02-29   reflect new schema of row_log table             FKun
 -- 0.7.2     2020-01-09   reflect changes on schema and triggers          FKun
 -- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
 -- 0.7.0     2019-03-23   reflect schema changes in UDFs                  FKun
@@ -449,7 +450,7 @@ BEGIN
     SELECT
       t.id,
       r.audit_id, 
-      r.changes,
+      r.old_data,
       e.op_id, 
       a.table_name,
       a.schema_name,
@@ -484,7 +485,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
@@ -502,7 +503,7 @@ BEGIN
     SELECT
       t.id,
       r.audit_id, 
-      r.changes,
+      r.old_data,
       e.op_id,
       a.table_name,
       a.schema_name,
@@ -538,7 +539,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
@@ -564,7 +565,7 @@ BEGIN
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.changes, 
+      q.old_data, 
       a.table_name,
       a.schema_name,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
@@ -582,12 +583,12 @@ BEGIN
         min(event_id) AS first_event,
         max(event_id) AS last_event,
         min(id) AS row_log_id,
-        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+        pgmemento.jsonb_merge(old_data ORDER BY id DESC) AS old_data
       FROM (
         SELECT
           r.id,
           r.audit_id,
-          r.changes,
+          r.old_data,
           e.id AS event_id,
           e.table_name,
           e.schema_name,
@@ -637,7 +638,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$
@@ -656,7 +657,7 @@ BEGIN
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.changes, 
+      q.old_data, 
       a.table_name,
       a.schema_name,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
@@ -674,12 +675,12 @@ BEGIN
         min(event_id) AS first_event,
         max(event_id) AS last_event,
         min(id) AS row_log_id,
-        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+        pgmemento.jsonb_merge(old_data ORDER BY id DESC) AS old_data
       FROM (
         SELECT
           r.id,
           r.audit_id,
-          r.changes,
+          r.old_data,
           e.id AS event_id,
           e.table_name,
           e.schema_name,
@@ -729,7 +730,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 

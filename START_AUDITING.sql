@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.0     2020-02-29   add new option to log new data in row_log      FKun
 -- 0.1.0     2016-03-09   initial commit                                 FKun
 --
 
@@ -24,5 +25,6 @@ SET client_min_messages TO WARNING;
 \echo
 \prompt 'Please enter the name of the schema to be used along with pgMemento: ' schema_name
 \prompt 'Specify tables to be excluded from logging processes (seperated by comma): ' except_tables
+\prompt 'Store new data in audit logs, too? (y|N): ' log_new_data
 
 \i ctl/START.sql

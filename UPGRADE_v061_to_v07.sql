@@ -56,6 +56,20 @@ DROP FUNCTION IF EXISTS pgememento.log_table_state(e_id INTEGER, columns TEXT[],
 
 DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID);
 
+DROP FUNCTION IF EXISTS pgmemento.log_schema_baseline(schema_name TEXT);
+
+DROP FUNCTION IF EXISTS pgmemento.log_table_baseline(table_name TEXT, schema_name TEXT);
+
+DROP FUNCTION IF EXISTS pgmemento.create_schema_log_trigger(schema_name TEXT, except_tables);
+
+DROP FUNCTION IF EXISTS pgmemento.create_table_log_trigger(table_name TEXT, schema_name TEXT);
+
+DROP FUNCTION IF EXISTS pgmemento.create_schema_audit(schema_name TEXT, log_state BOOLEAN, except_tables TEXT[]);
+
+DROP FUNCTION IF EXISTS pgmemento.create_table_audit(table_name TEXT, schema_name TEXT, log_state BOOLEAN);
+
+DROP FUNCTION IF EXISTS pgmemento.create_schema_event_trigger(trigger_create_table BOOLEAN);
+
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 
 \echo

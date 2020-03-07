@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-09-24   initial commit                                   FKun
 --
 
@@ -120,7 +120,7 @@ BEGIN
   test_event := current_setting('pgmemento.drop_column_test_event');
 
   SELECT
-    changes
+    old_data
   INTO
     jsonb_log
   FROM
@@ -128,7 +128,7 @@ BEGIN
   WHERE
     event_key = test_event;
 
-  ASSERT jsonb_log->>'test_column' IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
+  ASSERT jsonb_log->>'test_column' = 'test', 'Error: Wrong content in row_log table: %', jsonb_log;
   ASSERT jsonb_log->>'test_tstzrange_column' IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
 END;
 $$

@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.4     2020-02-29   added option to also log new data in row_log        FKun
 -- 0.7.3     2020-02-09   reflect changes on schema and triggers              FKun
 -- 0.7.2     2020-02-08   new get_table_oid function to replace trimming      FKun
 -- 0.7.1     2019-04-21   introduce new event RECREATE TABLE with op_id       FKun
@@ -62,12 +63,13 @@
 * FUNCTIONS:
 *   column_array_to_column_list(columns TEXT[]) RETURNS TEXT
 *   create_schema_audit(schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE,
-*     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*     include_new BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE) RETURNS SETOF VOID
+*   create_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, include_new BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
+*     log_state BOOLEAN DEFAULT TRUE, include_new BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
-*   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, include_new BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_schema_audit(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
@@ -77,10 +79,11 @@
 *   get_operation_id(operation TEXT) RETURNS SMALLINT
 *   get_table_oid(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS OID
 *   get_txid_bounds_to_table(table_log_id INTEGER, OUT txid_min INTEGER, OUT txid_max INTEGER) RETURNS RECORD
-*   log_schema_baseline(schemaname TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
-*   log_table_baseline(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*   log_new_table_state(columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text, table_event_key TEXT) RETURNS SETOF VOID
+*   log_old_table_state(columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text, table_event_key TEXT) RETURNS SETOF VOID
+*   log_schema_baseline(schemaname TEXT DEFAULT 'public'::text, include_new BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
+*   log_table_baseline(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, include_new BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   log_table_event(event_txid BIGINT, tablename TEXT, schemaname TEXT, op_type TEXT) RETURNS TEXT
-*   log_table_state(columns TEXT[], table_name TEXT, schema_name TEXT DEFAULT 'public'::text, table_event_key TEXT) RETURNS SETOF VOID
 *   register_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS INTEGER
 *   trim_outer_quotes(quoted_string TEXT) RETURNS TEXT
 *   unregister_audit_table(audit_table_name TEXT, audit_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
@@ -541,7 +544,8 @@ LANGUAGE plpgsql STRICT;
 -- create logging triggers for one table
 CREATE OR REPLACE FUNCTION pgmemento.create_table_log_trigger(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  schema_name TEXT DEFAULT 'public'::text,
+  include_new BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -580,15 +584,15 @@ BEGIN
     EXECUTE format(
       'CREATE TRIGGER log_insert_trigger
          AFTER INSERT ON %I.%I
-         FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert()',
-         $2, $1);
+         FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_insert(%s)',
+         $2, $1, CASE WHEN $3 THEN 'log' ELSE '' END);
 
     -- trigger to be fired after update events
     EXECUTE format(
       'CREATE TRIGGER log_update_trigger
          AFTER UPDATE ON %I.%I
-         FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update()',
-         $2, $1);
+         FOR EACH ROW EXECUTE PROCEDURE pgmemento.log_update(%s)',
+         $2, $1, CASE WHEN $3 THEN 'log' ELSE '' END);
 
     -- trigger to be fired after insert events
     EXECUTE format(
@@ -604,11 +608,12 @@ LANGUAGE plpgsql STRICT;
 -- perform create_table_log_trigger on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_log_trigger(
   schema_name TEXT DEFAULT 'public'::text,
+  include_new BOOLEAN DEFAULT FALSE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_log_trigger(c.relname, $1)
+  pgmemento.create_table_log_trigger(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
@@ -616,7 +621,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($2,'{}'));
+  AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql;
 
@@ -777,7 +782,7 @@ WHERE
 $$
 LANGUAGE sql IMMUTABLE STRICT;
 
-CREATE OR REPLACE FUNCTION pgmemento.log_table_state(
+CREATE OR REPLACE FUNCTION pgmemento.log_old_table_state(
   columns TEXT[],
   tablename TEXT,
   schemaname TEXT,
@@ -788,15 +793,52 @@ BEGIN
   IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
     -- log content of given columns
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log(audit_id, event_key, changes)
-         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content FROM %I.%I ORDER BY audit_id',
-         $3, $2) USING $4;
+      'INSERT INTO pgmemento.row_log(audit_id, event_key, old_data)
+         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO NOTHING',
+       $3, $2) USING $4;
   ELSE
     -- log content of entire table
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log (audit_id, event_key, changes)
-         SELECT audit_id, $1, to_jsonb(%I) AS content FROM %I.%I ORDER BY audit_id',
-         $2, $3, $2) USING $4;
+      'INSERT INTO pgmemento.row_log (audit_id, event_key, old_data)
+         SELECT audit_id, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO NOTHING',
+       $2, $3, $2) USING $4;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pgmemento.log_new_table_state(
+  columns TEXT[],
+  tablename TEXT,
+  schemaname TEXT,
+  table_event_key TEXT
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
+    -- log content of given columns
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log(audit_id, event_key, new_data)
+         SELECT audit_id, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET new_data = excluded.new_data',
+       $3, $2) USING $4;
+  ELSE
+    -- log content of entire table
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log (audit_id, event_key, new_data)
+         SELECT audit_id, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY audit_id
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET new_data = excluded.new_data',
+       $2, $3, $2) USING $4;
   END IF;
 END;
 $$
@@ -909,7 +951,7 @@ $$
 BEGIN
   -- log the whole content of the truncated table in the row_log table
   PERFORM
-    pgmemento.log_table_state('{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA, event_key)
+    pgmemento.log_old_table_state('{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA, event_key)
   FROM
     pgmemento.table_event_log
   WHERE
@@ -934,12 +976,22 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION pgmemento.log_insert() RETURNS trigger AS
 $$
 BEGIN
-  -- log inserted row ('changes' column can be left blank)
-  INSERT INTO pgmemento.row_log
-    (audit_id, event_key)
-  VALUES
-    (NEW.audit_id,
-     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA));
+  -- log inserted row ('old_data' column can be left blank)
+  IF TG_ARGV[0] IS NULL THEN
+    INSERT INTO pgmemento.row_log
+      (audit_id, event_key)
+    VALUES
+      (NEW.audit_id,
+       concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA));
+  ELSE
+    -- log complete new row as JSONB
+    INSERT INTO pgmemento.row_log
+      (audit_id, event_key, new_data)
+    VALUES
+      (NEW.audit_id,
+       concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+       to_json(NEW));
+  END IF;
 
   RETURN NULL;
 END;
@@ -957,7 +1009,8 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
 $$
 DECLARE
-  jsonb_diff JSONB;
+  jsonb_diff_old JSONB;
+  jsonb_diff_new JSONB;
 BEGIN
   -- log values of updated columns for the processed row
   -- therefore, a diff between OLD and NEW is necessary
@@ -967,17 +1020,32 @@ BEGIN
      FROM
        jsonb_each(to_jsonb(OLD))
      WHERE
-      to_jsonb(NEW) ->> key IS DISTINCT FROM to_jsonb(OLD) ->> key
+       to_jsonb(NEW) ->> key IS DISTINCT FROM to_jsonb(OLD) ->> key
     ),
-    '{}')::jsonb INTO jsonb_diff;
+    '{}')::jsonb INTO jsonb_diff_old;
 
-  IF jsonb_diff <> '{}'::jsonb THEN
+  IF TG_ARGV[0] IS NOT NULL THEN
+    -- switch the diff to only get the new values
+    SELECT COALESCE(
+      (SELECT
+         ('{' || string_agg(to_json(key) || ':' || value, ',') || '}')
+       FROM
+         jsonb_each(to_jsonb(NEW))
+       WHERE
+         to_jsonb(OLD) ->> key IS DISTINCT FROM to_jsonb(NEW) ->> key
+      ),
+      '{}')::jsonb INTO jsonb_diff_new;    
+  END IF;
+
+  IF jsonb_diff_old <> '{}'::jsonb OR jsonb_diff_new <> '{}'::jsonb THEN
     INSERT INTO pgmemento.row_log
-      (audit_id, event_key, changes)
+      (audit_id, event_key, old_data, new_data)
     VALUES
       (NEW.audit_id,
        concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
-       jsonb_diff);
+       jsonb_diff_old, jsonb_diff_new)
+    ON CONFLICT (audit_id, event_key)
+    DO UPDATE SET new_data = excluded.new_data;
   END IF;
 
   RETURN NULL;
@@ -998,7 +1066,7 @@ $$
 BEGIN
   -- log content of the entire row in the row_log table
   INSERT INTO pgmemento.row_log
-    (audit_id, event_key, changes)
+    (audit_id, event_key, old_data)
   VALUES
     (OLD.audit_id,
      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
@@ -1018,7 +1086,8 @@ LANGUAGE plpgsql;
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_table_baseline(
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  schema_name TEXT DEFAULT 'public'::text,
+  include_new BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -1056,11 +1125,15 @@ BEGIN
       END IF;
 
       EXECUTE format(
-        'INSERT INTO pgmemento.row_log (audit_id, event_key, changes) '
-         || 'SELECT t.audit_id, $1, NULL::jsonb AS changes '
+        'INSERT INTO pgmemento.row_log (audit_id, event_key'
+         || CASE WHEN $3 THEN ', new_data' ELSE '' END
+         || ') '
+         || 'SELECT t.audit_id, $1'
+         || CASE WHEN $3 THEN ', to_json(t.*) ' ELSE ' ' END
          || 'FROM %I.%I t '
          || 'LEFT JOIN pgmemento.row_log r ON r.audit_id = t.audit_id '
-         || 'WHERE r.audit_id IS NULL' || pkey_columns,
+         || 'WHERE r.audit_id IS NULL' || pkey_columns
+         || ' ON CONFLICT (audit_id, event_key) DO NOTHING',
          $2, $1) USING table_event_key;
     END IF;
   END IF;
@@ -1068,13 +1141,14 @@ END;
 $$
 LANGUAGE plpgsql STRICT;
 
--- perform log_table_state on multiple tables in one schema
+-- perform log_table_baseline on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.log_schema_baseline(
-  schemaname TEXT DEFAULT 'public'::text
+  schemaname TEXT DEFAULT 'public'::text,
+  include_new BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.log_table_baseline(a.table_name, a.schema_name)
+  pgmemento.log_table_baseline(a.table_name, a.schema_name, $2)
 FROM
   pgmemento.audit_table_log a,
   pgmemento.audit_tables_dependency d
@@ -1100,19 +1174,20 @@ LANGUAGE sql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
   table_name TEXT,
   schema_name TEXT DEFAULT 'public'::text,
-  log_state BOOLEAN DEFAULT TRUE
+  log_state BOOLEAN DEFAULT TRUE,
+  include_new BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
   -- create log trigger
-  PERFORM pgmemento.create_table_log_trigger($1, $2);
+  PERFORM pgmemento.create_table_log_trigger($1, $2, $4);
 
   -- add audit_id column
   PERFORM pgmemento.create_table_audit_id($1, $2);
 
   -- log existing table content as inserted
   IF $3 THEN
-    PERFORM pgmemento.log_table_baseline($1, $2);
+    PERFORM pgmemento.log_table_baseline($1, $2, $4);
   END IF;
 END;
 $$
@@ -1122,11 +1197,12 @@ LANGUAGE plpgsql STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   schema_name TEXT DEFAULT 'public'::text,
   log_state BOOLEAN DEFAULT TRUE,
+  include_new BOOLEAN DEFAULT FALSE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.create_table_audit(c.relname, $1, $2)
+  pgmemento.create_table_audit(c.relname, $1, $2, $3)
 FROM
   pg_class c,
   pg_namespace n
@@ -1134,7 +1210,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}'));
+  AND c.relname <> ALL (COALESCE($4,'{}'));
 $$
 LANGUAGE sql;
 
@@ -1160,7 +1236,7 @@ BEGIN
   -- then either keep the audit trail for table or delete everything
   IF $3 THEN
     -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_table_state('{}'::text[], $1, $2, table_event_key);
+    PERFORM pgmemento.log_old_table_state('{}'::text[], $1, $2, table_event_key);
   ELSE
     -- remove all logs related to given table
     PERFORM pgmemento.delete_audit_table_log($1, $2);

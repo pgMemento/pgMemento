@@ -14,7 +14,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
@@ -25,8 +26,15 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento audit ALTER TABLE ALTER COLUMN events'
 
--- make dummy insert to check if it's logged when column is altered
-INSERT INTO tests (test_tsrange_column) VALUES (tsrange(now()::timestamp, NULL, '(]')) RETURNING test_tsrange_column AS test_tsrange
+-- set value for range column to check if data is logged when column is altered
+UPDATE
+  tests
+SET
+  test_tsrange_column = tsrange(now()::timestamp, NULL, '(]')
+WHERE
+  audit_id = current_setting('pgmemento.ddl_test_audit_id')::bigint
+RETURNING
+  test_tsrange_column AS test_tsrange
 \gset
 
 -- save inserted value for next test
@@ -218,21 +226,27 @@ $$
 DECLARE
   test_event TEXT;
   test_value TEXT;
-  log_value TEXT;
+  test_value_converted TEXT;
+  old_log_value TEXT;
+  new_log_value TEXT;
 BEGIN
   test_event := current_setting('pgmemento.alter_column_test_event');
   test_value := current_setting('pgmemento.alter_column_test_value');
+  test_value_converted := (tstzrange(lower(test_value::tsrange), upper(test_value::tsrange), '(]'))::text;
 
   SELECT
-    changes->>'test_tsrange_column'
+    old_data->>'test_tsrange_column',
+    new_data->>'test_tsrange_column'
   INTO
-    log_value
+    old_log_value,
+    new_log_value
   FROM
     pgmemento.row_log
   WHERE
     event_key = test_event;
 
-  ASSERT log_value = test_value, 'Error: Wrong content in row_log table: %', jsonb_log;
+  ASSERT old_log_value = test_value, 'Error: Wrong old content in row_log table: %', old_log_value;
+  ASSERT new_log_value = test_value_converted, 'Error: Wrong new content in row_log table: %', new_log_value;
 END;
 $$
 LANGUAGE plpgsql;

@@ -32,7 +32,7 @@ DECLARE
   column_list TEXT;
 BEGIN
   SELECT
-    pgmemento.restore_record_definition(16, 'object', 'public')
+    pgmemento.restore_record_definition(17, 'object', 'public')
   INTO
     column_list;
 
@@ -49,7 +49,7 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  query_sring TEXT := 'SELECT * FROM pgmemento.restore_record(1, 16, ''object'', ''public'', 3)';
+  query_sring TEXT := 'SELECT * FROM pgmemento.restore_record(1, 17, ''object'', ''public'', 3)';
   rec RECORD;
 BEGIN
   -- append saved column list to query string

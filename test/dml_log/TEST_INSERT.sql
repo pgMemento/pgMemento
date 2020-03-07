@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.2     2018-11-10   reflect changes in SETUP                         FKun
 -- 0.1.1     2017-11-20   added upsert case                                FKun
 -- 0.1.0     2017-11-18   initial commit                                   FKun
@@ -36,7 +37,7 @@ DECLARE
   test_event TEXT;
 BEGIN
   -- create baseline for test table
-  PERFORM pgmemento.log_table_baseline('object', 'public');
+  PERFORM pgmemento.log_table_baseline('object', 'public', TRUE);
 
   -- query for logged transaction
   ASSERT (
@@ -88,11 +89,13 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
+  insert_id INTEGER;
   insert_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
   test_event TEXT;
   insert_op_id SMALLINT := pgmemento.get_operation_id('INSERT');
-  jsonb_log JSONB;
+  old_jsonb_log JSONB;
+  new_jsonb_log JSONB;
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Live insert test"}'::text, TRUE);
@@ -103,9 +106,9 @@ BEGIN
   VALUES
     (2, 'pgm_insert_test')
   RETURNING
-    audit_id
+    id, audit_id
   INTO
-    insert_audit_id;
+    insert_id, insert_audit_id;
 
   -- query for logged transaction
   ASSERT (
@@ -134,16 +137,19 @@ BEGIN
 
   -- query for logged row
   SELECT
-    changes
+    old_data,
+    new_data
   INTO
-    jsonb_log
+    old_jsonb_log,
+    new_jsonb_log
   FROM
     pgmemento.row_log
   WHERE
     audit_id = insert_audit_id
     AND event_key = test_event;
 
-  ASSERT jsonb_log IS NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
+  ASSERT old_jsonb_log IS NULL, 'Error: Wrong old content in row_log table: %', old_jsonb_log;
+  ASSERT new_jsonb_log = ('{"id": '||insert_id||', "lineage": "pgm_insert_test", "audit_id": '||insert_audit_id||'}')::jsonb, 'Error: Wrong new content in row_log table: %', new_jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;
@@ -158,7 +164,8 @@ DECLARE
   upsert_audit_id INTEGER;
   test_txid BIGINT := txid_current();
   event_keys TEXT[];
-  jsonb_log JSONB[];
+  old_jsonb_log JSONB[];
+  new_jsonb_log JSONB[];
 BEGIN
   -- get audit_id of inserted row
   SELECT
@@ -209,17 +216,21 @@ BEGIN
 
   -- query for logged row
   SELECT
-    array_agg(r.changes ORDER BY r.id NULLS FIRST)
+    array_agg(r.old_data ORDER BY r.id NULLS FIRST),
+    array_agg(r.new_data ORDER BY r.id NULLS FIRST)
   INTO
-    jsonb_log
+    old_jsonb_log,
+    new_jsonb_log
   FROM
     unnest(event_keys) AS e(key)
   LEFT JOIN
     pgmemento.row_log r
     ON e.key = r.event_key;
 
-  ASSERT jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %', jsonb_log[1];
-  ASSERT jsonb_log[2] = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong content in row_log table: %', jsonb_log[2];
+  ASSERT old_jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %', old_jsonb_log[1];
+  ASSERT old_jsonb_log[2] = '{"lineage":"pgm_insert_test"}'::jsonb, 'Error: Wrong old content in row_log table: %', old_jsonb_log[2];
+  ASSERT new_jsonb_log[1] IS NULL, 'Error: INSERT event should not be logged: %', new_jsonb_log[1];
+  ASSERT new_jsonb_log[2] = '{"lineage":"pgm_upsert_test"}'::jsonb, 'Error: Wrong new content in row_log table: %', new_jsonb_log[2];
 END;
 $$
 LANGUAGE plpgsql;

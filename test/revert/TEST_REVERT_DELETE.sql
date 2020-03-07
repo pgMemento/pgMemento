@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-18   initial commit                                   FKun
 --
 
@@ -83,7 +83,7 @@ BEGIN
         ON t.audit_id = r.audit_id 
       WHERE
         r.event_key = test_event
-        AND r.changes IS NULL
+        AND r.old_data IS NULL
     )
   ),
   'Error: Entries of test table were not entirely logged in row_log table!';
