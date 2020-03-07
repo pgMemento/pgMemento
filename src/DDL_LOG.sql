@@ -946,7 +946,7 @@ BEGIN
                   altered_columns := array_append(altered_columns, columnname);
 
                   -- check if logging column content is really required
-                  column_type := pgmemento.fetch_ident(ddl_text, 5);
+                  column_type := pgmemento.fetch_ident(ddl_text, 6);
                   IF lower(column_type) LIKE '% collate %' OR lower(column_type) LIKE '% using %' THEN
                     altered_columns_log := array_append(altered_columns_log, columnname);
                   END IF;

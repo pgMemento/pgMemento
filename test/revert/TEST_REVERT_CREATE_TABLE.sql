@@ -41,8 +41,10 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = pgmemento.get_operation_id('CREATE TABLE')
-    AND transaction_id = 2;
+    table_operation = 'CREATE TABLE'
+  ORDER BY
+    id
+  LIMIT 1;
 
   -- query for logged transaction
   SELECT
