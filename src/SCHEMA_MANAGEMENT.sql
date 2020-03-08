@@ -20,6 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.5.0     2020-03-07   set SECURITY DEFINER in all functions           FKun
 -- 0.4.1     2020-02-08   use get_table_oid instead of trimming quotes    FKun
 -- 0.4.0     2019-02-14   support for quoted tables and schemas           FKun
 -- 0.4.0     2018-10-25   copy_data argument changed to boolean           FKun
@@ -96,7 +97,8 @@ BEGIN
   EXECUTE format('ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')', $2, $1);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform pkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
@@ -116,7 +118,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -198,7 +201,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform fkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
@@ -218,7 +222,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -261,7 +266,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform index_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
@@ -281,7 +287,8 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -320,7 +327,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -409,7 +417,8 @@ BEGIN
   END IF;
 END
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -447,7 +456,8 @@ BEGIN
   EXECUTE format('DROP TABLE %I.%I CASCADE', $2, $1);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform drop_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
@@ -466,4 +476,5 @@ WHERE
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
