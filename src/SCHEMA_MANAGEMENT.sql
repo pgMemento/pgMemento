@@ -20,6 +20,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.5.0     2020-03-07   set SECURITY DEFINER in all functions           FKun
+-- 0.4.1     2020-02-08   use get_table_oid instead of trimming quotes    FKun
 -- 0.4.0     2019-02-14   support for quoted tables and schemas           FKun
 -- 0.4.0     2018-10-25   copy_data argument changed to boolean           FKun
 -- 0.3.0     2017-07-27   avoid querying the information_schema           FKun
@@ -81,7 +83,7 @@ BEGIN
     pg_class pgc,
     pg_attribute pga 
   WHERE
-    pgc.oid = ($3 || '.' || $1)::regclass::oid
+    pgc.oid = pgmemento.get_table_oid($1, $3)
     AND pgi.indrelid = pgc.oid 
     AND pga.attrelid = pgc.oid 
     AND pga.attnum = ANY(pgi.indkey)
@@ -92,12 +94,11 @@ BEGIN
     pkey_columns := 'audit_id';
   END IF;
 
-  EXECUTE format(
-    'ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')',
-    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
+  EXECUTE format('ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')', $2, $1);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform pkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
@@ -107,17 +108,18 @@ CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.pkey_table_state(quote_ident(c.relname), $1, $2)
+  pgmemento.pkey_table_state(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($2)
+  AND n.nspname = $2
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -177,19 +179,19 @@ BEGIN
       pg_class t
       ON t.oid = a_ref.attrelid
     WHERE
-      c.conrelid = ($3 || '.' || $1)::regclass::oid
+      c.conrelid = pgmemento.get_table_oid($1, $3)
       AND c.contype = 'f'
   LOOP
     BEGIN
       -- test query
       EXECUTE format(
         'SELECT 1 FROM %I.%I a, %I.%I b WHERE a.%I = b.%I LIMIT 1',
-        pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($2), fkey.ref_table, fkey.fkey_column, fkey.ref_column);
+        $2, $1, $2, fkey.ref_table, fkey.fkey_column, fkey.ref_column);
 
       -- recreate foreign key of original table
       EXECUTE format(
         'ALTER TABLE %I.%I ADD CONSTRAINT %I FOREIGN KEY (%I) REFERENCES %I.%I ON UPDATE %I ON DELETE %I MATCH %I',
-        pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), fkey.fkey_name, fkey.fkey_column, pgmemento.trim_outer_quotes($2), fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
+        $2, $1, fkey.fkey_name, fkey.fkey_column, $2, fkey.ref_table, fkey.ref_column, fkey.on_up, fkey.on_del, fkey.mat);
 
       EXCEPTION
         WHEN OTHERS THEN
@@ -199,7 +201,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform fkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
@@ -209,17 +212,18 @@ CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.fkey_table_state(quote_ident(c.relname), $1, $2)
+  pgmemento.fkey_table_state(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($2)
+  AND n.nspname = $2
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -242,14 +246,14 @@ BEGIN
   -- rebuild user defined indexes
   FOR stmt IN 
     SELECT
-      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', pgmemento.trim_outer_quotes($2)))
+      replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', $2))
     FROM
       pg_index i
     JOIN
       pg_class c
       ON c.oid = i.indexrelid
     WHERE
-      i.indrelid = ($3 || '.' || $1)::regclass::oid
+      i.indrelid = pgmemento.get_table_oid($1, $3)
       AND i.indisprimary = 'f'
   LOOP
     BEGIN
@@ -262,7 +266,8 @@ BEGIN
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform index_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
@@ -272,17 +277,18 @@ CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.index_table_state(quote_ident(c.relname), $1, $2)
+  pgmemento.index_table_state(c.relname, $1, $2)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($2)
+  AND n.nspname = $2
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($3,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -304,26 +310,25 @@ BEGIN
   -- copy or move sequences
   FOR seq IN
     SELECT
-      quote_ident(c.relname)
+      c.relname
     FROM
       pg_class c,
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = pgmemento.trim_outer_quotes($2)
+      AND n.nspname = $2
       AND relkind = 'S'
   LOOP
-    SELECT nextval($2 || '.' || seq) INTO seq_value;
+    SELECT nextval(quote_ident($2) || '.' || quote_ident(seq)) INTO seq_value;
     IF seq_value > 1 THEN
       seq_value = seq_value - 1;
     END IF;
-    EXECUTE format(
-      'CREATE SEQUENCE %I.%I START ' || seq_value,
-      pgmemento.trim_outer_quotes($1), seq);
+    EXECUTE format('CREATE SEQUENCE %I.%I START ' || seq_value, $1, seq);
   END LOOP;
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -345,13 +350,9 @@ CREATE OR REPLACE FUNCTION pgmemento.move_table_state(
 $$
 BEGIN
   IF $4 THEN
-    EXECUTE format(
-      'CREATE TABLE %I.%I AS SELECT * FROM %I.%I',
-      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($1));
+    EXECUTE format('CREATE TABLE %I.%I AS SELECT * FROM %I.%I', $2, $1, $3, $1);
   ELSE
-    EXECUTE format(
-      'ALTER TABLE %I.%I SET SCHEMA %I',
-      pgmemento.trim_outer_quotes($3), pgmemento.trim_outer_quotes($1), pgmemento.trim_outer_quotes($2));
+    EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', $3, $1, $2);
   END IF;
 END;
 $$
@@ -365,11 +366,11 @@ CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
   ) RETURNS SETOF void AS
 $$
 DECLARE
-  seq VARCHAR(30);
+  seq TEXT;
   seq_value INTEGER;
 BEGIN
   -- create new schema
-  EXECUTE format('CREATE SCHEMA %I', pgmemento.trim_outer_quotes($1));
+  EXECUTE format('CREATE SCHEMA %I', $1);
 
   -- copy or move sequences
   FOR seq IN 
@@ -380,21 +381,21 @@ BEGIN
       pg_namespace n
     WHERE
       c.relnamespace = n.oid
-      AND n.nspname = pgmemento.trim_outer_quotes($2)
+      AND n.nspname = $2
       AND relkind = 'S'
   LOOP
     IF $4 THEN
-      SELECT nextval($2 || '.' || seq) INTO seq_value;
+      SELECT nextval(quote_ident($2) || '.' || quote_ident(seq)) INTO seq_value;
       IF seq_value > 1 THEN
         seq_value = seq_value - 1;
       END IF;
       EXECUTE format(
         'CREATE SEQUENCE %I.%I START ' || seq_value,
-        pgmemento.trim_outer_quotes($1), seq);
+        $1, seq);
     ELSE
       EXECUTE format(
         'ALTER SEQUENCE %I.%I SET SCHEMA %I',
-        pgmemento.trim_outer_quotes($2), seq, pgmemento.trim_outer_quotes($1));
+        $2, seq, $1);
     END IF;
   END LOOP;
 
@@ -406,19 +407,18 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND n.nspname = pgmemento.trim_outer_quotes($2)
+    AND n.nspname = $2
     AND c.relkind = 'r'
     AND c.relname <> ALL (COALESCE($3,'{}')); 
  
   -- remove old schema if data were not copied but moved
   IF NOT $4 THEN
-    EXECUTE format(
-      'DROP SCHEMA %I CASCADE',
-      pgmemento.trim_outer_quotes($2));
+    EXECUTE format('DROP SCHEMA %I CASCADE', $2);
   END IF;
 END
 $$
-LANGUAGE plpgsql;
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 /**********************************************************
@@ -443,26 +443,21 @@ BEGIN
     FROM
       pg_constraint
     WHERE
-      conrelid = ($2 || '.' || $1)::regclass::oid
+      conrelid = pgmemento.get_table_oid($1, $2)
       AND contype = 'f'
   LOOP
-    EXECUTE format(
-      'ALTER TABLE %I.%I DROP CONSTRAINT %I',
-      pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1), fkey);
+    EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', $2, $1, fkey);
   END LOOP;
 
   -- hit the log_truncate_trigger
-  EXECUTE format(
-    'TRUNCATE TABLE %I.%I CASCADE',
-    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
+  EXECUTE format('TRUNCATE TABLE %I.%I CASCADE', $2, $1);
 
   -- dropping the table
-  EXECUTE format(
-    'DROP TABLE %I.%I CASCADE',
-    pgmemento.trim_outer_quotes($2), pgmemento.trim_outer_quotes($1));
+  EXECUTE format('DROP TABLE %I.%I CASCADE', $2, $1);
 END;
 $$
-LANGUAGE plpgsql STRICT;
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
 
 -- perform drop_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
@@ -471,14 +466,15 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_state(
   ) RETURNS SETOF VOID AS
 $$
 SELECT
-  pgmemento.drop_table_state(quote_ident(c.relname), $1)
+  pgmemento.drop_table_state(c.relname, $1)
 FROM
   pg_class c,
   pg_namespace n
 WHERE
   c.relnamespace = n.oid
-  AND n.nspname = pgmemento.trim_outer_quotes($1)
+  AND n.nspname = $1
   AND c.relkind = 'r'
   AND c.relname <> ALL (COALESCE($2,'{}')); 
 $$
-LANGUAGE sql;
+LANGUAGE sql
+SECURITY DEFINER;

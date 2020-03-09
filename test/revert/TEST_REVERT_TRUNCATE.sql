@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-18   initial commit                                   FKun
 --
 
@@ -29,7 +30,8 @@ DO
 $$
 DECLARE
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
+  insert_op_id SMALLINT := pgmemento.get_operation_id('INSERT');
 BEGIN
   -- set session_info to query logged transaction later
   PERFORM set_config('pgmemento.session_info', '{"message":"Reverting truncate"}'::text, FALSE);
@@ -40,8 +42,9 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    op_id = 8
-    AND table_relid = 'public.object'::regclass::oid;
+    op_id = pgmemento.get_operation_id('TRUNCATE')
+    AND table_name = 'object'
+    AND schema_name = 'public';
 
   -- query for logged transaction
   SELECT
@@ -57,14 +60,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 3;
+    AND op_id = insert_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -79,8 +82,8 @@ BEGIN
         pgmemento.row_log r
         ON t.audit_id = r.audit_id 
       WHERE
-        r.event_id = test_event
-        AND r.changes IS NULL
+        r.event_key = test_event
+        AND r.old_data IS NULL
     )
   ),
   'Error: Entries of test table were not entirely logged in row_log table!';

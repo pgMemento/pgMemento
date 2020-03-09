@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2017-09-08   moved drop parts to TEST_UNINSTALL.sql           FKun
 -- 0.1.0     2017-07-20   initial commit                                   FKun
 --
@@ -30,7 +31,7 @@ DO
 $$
 BEGIN
   -- create the event triggers
-  PERFORM pgmemento.create_schema_event_trigger(TRUE);
+  PERFORM pgmemento.create_schema_event_trigger(TRUE, TRUE);
 
   -- query for event triggers
   ASSERT (
@@ -41,8 +42,9 @@ BEGIN
         VALUES
           ('schema_drop_pre_trigger'),
           ('table_alter_post_trigger'),
+          ('table_alter_post_trigger_full'),
           ('table_alter_pre_trigger'),
-          ('table_create_post_trigger'),
+          ('table_create_post_trigger_full'),
           ('table_drop_post_trigger'),
           ('table_drop_pre_trigger')
         ) AS p (pgm_event_trigger)
@@ -69,7 +71,7 @@ DECLARE
   tab TEXT := 'object';
 BEGIN
   -- create log trigger
-  PERFORM pgmemento.create_table_log_trigger(tab, 'public');
+  PERFORM pgmemento.create_table_log_trigger(tab, 'public', TRUE);
 
   -- query for log trigger
   ASSERT (
@@ -146,7 +148,7 @@ BEGIN
         pgmemento.audit_column_log c
         ON c.column_name = a.attname
       WHERE
-        a.attrelid = ('public.' || tab)::regclass::oid
+        a.attrelid = pgmemento.get_table_oid(tab, 'public')
         AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped

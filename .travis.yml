@@ -1,5 +1,5 @@
 language: SQL
-dist: trusty
+dist: bionic
 sudo: true
 
 matrix:
@@ -14,32 +14,34 @@ matrix:
       env: TEST=pgxn PG=95
 
     - name: extension-9.5
-      env: TEST=extension PG=95 NO_BACKUP=1
+      env: TEST=extension PG=95
 
     - name: extension-9.6
-      env: TEST=extension PG=96 NO_BACKUP=1
+      env: TEST=extension PG=96
 
     - name: extension-10
-      env: TEST=extension PG=10 NO_BACKUP=1
+      env: TEST=extension PG=10
 
     - name: extension-11
-      env: TEST=extension PG=11 NO_BACKUP=1
+      env: TEST=extension PG=11
+
+    - name: extension-12
+      env: TEST=extension PG=12
 
     - name: pgxn-9.5
-      env: TEST=pgxn PG=95 NO_BACKUP=1
+      env: TEST=pgxn PG=95
 
     - name: pgxn-9.6
-      env: TEST=pgxn PG=96 NO_BACKUP=1
+      env: TEST=pgxn PG=96
 
     - name: pgxn-10
-      env: TEST=pgxn PG=10 NO_BACKUP=1
+      env: TEST=pgxn PG=10
 
     - name: pgxn-11
-      env: TEST=pgxn PG=11 NO_BACKUP=1
+      env: TEST=pgxn PG=11
 
-  allow_failures:
-    - name: extension
-    - name: pgxn
+    - name: pgxn-12
+      env: TEST=pgxn PG=12
 
 services:
   - docker
@@ -48,7 +50,7 @@ addons:
   postgresql: "9.5"
   apt:
     packages:
-      - postgresql-9.5-postgis-2.3
+      - postgresql-9.5-postgis-2.4
 
 before_install:
     - psql -c 'create database pgmemento_testdb;' -U postgres
@@ -56,5 +58,5 @@ before_install:
 
 script:
     - if [[ $TEST == "sql" ]] ; then psql -U postgres -d pgmemento_testdb -a -f TEST.sql ; fi
-    - if [[ $TEST == "extension" ]] ; then ./extension/tests/run.sh $PG $NO_BACKUP ; fi
-    - if [[ $TEST == "pgxn" ]] ; then ./extension/pgxn/tests/run.sh $PG $NO_BACKUP ; fi
+    - if [[ $TEST == "extension" ]] ; then ./extension/tests/run.sh $PG ; fi
+    - if [[ $TEST == "pgxn" ]] ; then ./extension/pgxn/tests/run.sh $PG ; fi

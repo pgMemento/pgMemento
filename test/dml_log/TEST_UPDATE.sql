@@ -14,6 +14,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
 --
 
@@ -30,7 +32,8 @@ $$
 DECLARE
   update_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
+  test_event TEXT;
+  update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
   UPDATE public.object SET lineage = 'pgm_upsert_test'
@@ -51,14 +54,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND op_id = 4;
+    AND op_id = update_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
@@ -71,7 +74,7 @@ BEGIN
         pgmemento.row_log
       WHERE
         audit_id = update_audit_id
-        AND event_id = test_event
+        AND event_key = test_event
     )
   ), 'Error: Found entry in row_log table, even though UPDATE command did not change anything.';
 END;
@@ -86,8 +89,10 @@ $$
 DECLARE
   update_audit_id INTEGER; 
   test_txid BIGINT := txid_current();
-  test_event INTEGER;
-  jsonb_log JSONB;
+  test_event TEXT;
+  update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
+  old_jsonb_log JSONB;
+  new_jsonb_log JSONB;
 BEGIN
   -- UPDATE entry that has been inserted during INSERT test
   UPDATE public.object SET lineage = 'pgm_update_test'
@@ -108,29 +113,32 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = current_setting('pgmemento.' || test_txid)::int
-    AND op_id = 4;
+    AND op_id = update_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
   -- query for logged row
   SELECT
-    changes
+    old_data,
+    new_data
   INTO
-    jsonb_log
+    old_jsonb_log,
+    new_jsonb_log
   FROM
     pgmemento.row_log
   WHERE
     audit_id = update_audit_id
-    AND event_id = test_event;
+    AND event_key = test_event;
 
-  ASSERT jsonb_log = '{"lineage":"pgm_upsert_test"}'::jsonb, 'Error: Wrong content in row_log table: %' jsonb_log;
+  ASSERT old_jsonb_log = '{"lineage":"pgm_upsert_test"}'::jsonb, 'Error: Wrong old content in row_log table: %' old_jsonb_log;
+  ASSERT new_jsonb_log = '{"lineage":"pgm_update_test"}'::jsonb, 'Error: Wrong new content in row_log table: %' new_jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;

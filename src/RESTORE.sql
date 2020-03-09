@@ -15,6 +15,10 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.3     2020-02-29   reflect new schema of row_log table                 FKun
+-- 0.7.2     2020-02-09   reflect changes on schema and triggers              FKun
+-- 0.7.1     2020-02-08   stop using trim_outer_quotes for tables             FKun
+-- 0.7.0     2019-03-23   reflect schema changes in UDFs                      FKun
 -- 0.6.9     2019-03-09   enable restoring as MATERIALIZED VIEWs              FKun
 -- 0.6.8     2019-02-25   restore_record with setof return for emtpy result   FKun
 -- 0.6.7     2018-11-04   have two restore_record_definition functions        FKun
@@ -62,7 +66,7 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID) RETURNS TEXT
+*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_log_id INTEGER) RETURNS TEXT
 *   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
@@ -113,15 +117,15 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_value(
   ) RETURNS anyelement AS
 $$
 SELECT
-  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.old_data, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.event_id = e.id
+  ON r.event_key = e.event_key
 WHERE
   r.audit_id = $2
-  AND r.changes ? $3
+  AND r.old_data ? $3
   AND e.transaction_id <= $1
 ORDER BY
   e.id DESC
@@ -138,12 +142,12 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_change(
   ) RETURNS anyelement AS
 $$
 SELECT
-  pgmemento.jsonb_populate_value(r.changes, $3, $4) AS restored_value
+  pgmemento.jsonb_populate_value(r.old_data, $3, $4) AS restored_value
 FROM
   pgmemento.row_log r
 JOIN
   pgmemento.table_event_log e
-  ON r.event_id = e.id
+  ON r.event_key = e.event_key
 WHERE
   r.audit_id = $2
   AND e.transaction_id = $1
@@ -170,7 +174,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_query(
   ) RETURNS TEXT AS
 $$
 DECLARE
-  tab_oid OID;
+  log_id INTEGER;
   tab_name TEXT;
   tab_schema TEXT;
   tab_id INTEGER;
@@ -184,7 +188,7 @@ DECLARE
 BEGIN
   -- first check if table can be restored
   SELECT
-    log_tab_oid,
+    table_log_id,
     log_tab_name,
     log_tab_schema,
     log_tab_id,
@@ -192,7 +196,7 @@ BEGIN
     recent_tab_schema,
     recent_tab_id
   INTO
-    tab_oid,
+    log_id,
     tab_name,
     tab_schema,
     tab_id,
@@ -218,8 +222,8 @@ BEGIN
     SELECT
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
-        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY f.event_id, a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('first_value(a.old_data -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY f.event_key, a.audit_id ORDER BY a.old_data -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s',
              quote_ident(c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END)
@@ -243,7 +247,7 @@ BEGIN
       find_logs,
       extract_logs
     FROM
-      pgmemento.get_column_list_by_txid_range($1, $2, tab_oid) c_old
+      pgmemento.get_column_list_by_txid_range($1, $2, log_id) c_old
     LEFT JOIN
       pgmemento.audit_column_log c_new
       ON c_old.ordinal_position = c_new.ordinal_position
@@ -254,8 +258,8 @@ BEGIN
     SELECT
       string_agg(
            CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN '    COALESCE(' ELSE '    ' END
-        || format('first_value(a.changes -> %L) OVER ', c_old.column_name)
-        || format('(PARTITION BY a.audit_id ORDER BY a.changes -> %L IS NULL, a.id)', c_old.column_name)
+        || format('first_value(a.old_data -> %L) OVER ', c_old.column_name)
+        || format('(PARTITION BY a.audit_id ORDER BY a.old_data -> %L IS NULL, a.id)', c_old.column_name)
         || CASE WHEN join_recent_state AND c_new.column_name IS NOT NULL THEN format(', to_jsonb(x.%I))', c_new.column_name) ELSE '' END
         || format(' AS %s', quote_ident(c_old.column_name))
         , E',\n' ORDER BY c_old.ordinal_position
@@ -281,30 +285,30 @@ BEGIN
   query_text := query_text
     || extract_logs
     || E',\n  audit_id'
-    || CASE WHEN $6 THEN E',\n  event_id,\n  transaction_id\n' ELSE E'\n' END
+    || CASE WHEN $6 THEN E',\n  stmt_time,\n  table_operation,\n  transaction_id\n' ELSE E'\n' END
     || E'FROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
-    || CASE WHEN $6 THEN 'f.event_id, ' ELSE '' END
+    || CASE WHEN $6 THEN 'f.event_key, ' ELSE '' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E')\n'
     -- add column selection that has been set up above 
     || find_logs
     || E',\n    f.audit_id'
-    || CASE WHEN $6 THEN E',\n    f.event_id,\n    f.transaction_id\n' ELSE E'\n' END
+    || CASE WHEN $6 THEN E',\n    f.stmt_time,\n    f.table_operation,\n    f.transaction_id\n' ELSE E'\n' END
     -- add subquery f to get last event for given audit_id before given transaction
     || E'  FROM (\n'
     || '    SELECT '
     || CASE WHEN $6 THEN E'\n' ELSE E'DISTINCT ON (r.audit_id)\n' END
-    || E'      r.audit_id, r.event_id, e.op_id, e.transaction_id\n'
+    || E'      r.audit_id, e.event_key, e.stmt_time, e.op_id, e.table_operation, e.transaction_id\n'
     || E'    FROM\n'
     || E'      pgmemento.row_log r\n'
     || E'    JOIN\n'
-    || E'      pgmemento.table_event_log e ON e.id = r.event_id\n'
+    || E'      pgmemento.table_event_log e ON r.event_key = e.event_key\n'
     || format(E'    WHERE e.transaction_id >= %L AND e.transaction_id < %L\n', $1, $2)
     || CASE WHEN $5 IS NULL THEN
-         format(E'      AND e.table_relid = %L\n', tab_oid)
+         format(E'      AND e.table_name = %L AND e.schema_name = %L\n', tab_name, tab_schema)
        ELSE
          format(E'      AND r.audit_id = %L\n', $5)
        END
@@ -313,7 +317,7 @@ BEGIN
     || E'  ) f\n'
     -- left join on row_log table and consider only events younger than the one extracted in subquery f
     || E'  LEFT JOIN\n'
-    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND a.event_id > f.event_id\n'
+    || E'    pgmemento.row_log a ON a.audit_id = f.audit_id AND (a.event_key > f.event_key)\n'
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
     || CASE WHEN join_recent_state THEN
          E'  LEFT JOIN\n'
@@ -326,7 +330,7 @@ BEGIN
     || CASE WHEN $6 THEN '' ELSE E'WHERE\n    f.op_id < 7\n' END
     -- order by oldest log entry for given audit_id
     || E'  ORDER BY\n'
-    || CASE WHEN $6 THEN '    f.event_id, ' ELSE '    ' END
+    || CASE WHEN $6 THEN '    f.event_key, ' ELSE '    ' END
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
     || E'\n) e';
@@ -477,7 +481,7 @@ LANGUAGE sql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
-  table_oid OID
+  table_log_id INTEGER
   ) RETURNS TEXT AS
 $$
 SELECT
@@ -487,7 +491,7 @@ SELECT
     || ' ' || data_type
   , ', ' ORDER BY ordinal_position, column_count
   )
-  || ', audit_id bigint, event_id integer, transaction_id integer)'
+  || ', audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)'
 FROM
   pgmemento.get_column_list_by_txid_range($1, $2, $3);
 $$
@@ -529,8 +533,8 @@ BEGIN
     pgmemento.audit_table_log t
     ON t.id = c.audit_table_id
   WHERE
-    t.table_name = pgmemento.trim_outer_quotes($3)
-    AND t.schema_name = pgmemento.trim_outer_quotes($4)
+    t.table_name = $3
+    AND t.schema_name = $4
     AND t.txid_range @> $1::numeric
     AND c.txid_range @> $1::numeric;
 
@@ -541,8 +545,7 @@ BEGIN
          || stmt
          || ', audit_id bigint DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
          || ') '
-         || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END,
-       pgmemento.trim_outer_quotes($2));
+         || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END, $2);
   END IF;
 END;
 $$
@@ -579,9 +582,9 @@ BEGIN
     FROM
       pg_namespace
     WHERE
-      nspname = pgmemento.trim_outer_quotes($5)
+      nspname = $5
   ) THEN
-    EXECUTE format('CREATE SCHEMA %I', pgmemento.trim_outer_quotes($5));
+    EXECUTE format('CREATE SCHEMA %I', $5);
   END IF;
 
   -- test if table, view or materialized view already exist in target schema
@@ -594,8 +597,8 @@ BEGIN
     pg_namespace n
   WHERE
     c.relnamespace = n.oid
-    AND c.relname = pgmemento.trim_outer_quotes($3)
-    AND n.nspname = pgmemento.trim_outer_quotes($5)
+    AND c.relname = $3
+    AND n.nspname = $5
     AND (
       c.relkind = 'r'
       OR c.relkind = 'v'
@@ -608,10 +611,10 @@ BEGIN
       IF existing_table_type = 'r' THEN
         PERFORM pgmemento.drop_table_state($3, $5);
       ELSIF existing_table_type = 'm' THEN
-        EXECUTE format('DROP MATERIALIZED VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
+        EXECUTE format('DROP MATERIALIZED VIEW %I.%I CASCADE', $5, $3);
       ELSE
         IF $6 = 'MATERIALIZED VIEW' OR $6 = 'TABLE' THEN
-          EXECUTE format('DROP VIEW %I.%I CASCADE', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3));
+          EXECUTE format('DROP VIEW %I.%I CASCADE', $5, $3);
         ELSE
           replace_view := ' OR REPLACE ';
         END IF;
@@ -627,7 +630,7 @@ BEGIN
   IF upper($6) = 'VIEW' OR upper($6) = 'MATERIALIZED VIEW' OR upper($6) = 'TABLE' THEN
     restore_query := 'CREATE' 
       || replace_view || $6 
-      || format(E' %I.%I AS\n', pgmemento.trim_outer_quotes($5), pgmemento.trim_outer_quotes($3))
+      || format(E' %I.%I AS\n', $5, $3)
       || pgmemento.restore_query($1, $2, $3, $4);
 
     -- finally execute query string
@@ -654,7 +657,7 @@ SELECT
 FROM
   pgmemento.audit_table_log 
 WHERE
-  schema_name = pgmemento.trim_outer_quotes($3)
+  schema_name = $3
   AND txid_range @> $2::numeric;
 $$
 LANGUAGE sql STRICT;

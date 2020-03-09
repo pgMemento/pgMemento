@@ -16,6 +16,10 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.3     2020-02-29   reflect new schema of row_log table             FKun
+-- 0.7.2     2020-01-09   reflect changes on schema and triggers          FKun
+-- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
+-- 0.7.0     2019-03-23   reflect schema changes in UDFs                  FKun
 -- 0.6.4     2019-02-14   Changed revert ADD AUDIT_ID events              FKun
 -- 0.6.3     2018-11-20   revert updates with composite data types        FKun
 -- 0.6.2     2018-09-24   improved reverts when column type is altered    FKun
@@ -63,6 +67,7 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
 $$
 DECLARE
   stmt TEXT;
+  table_log_id INTEGER;
 BEGIN
   CASE
   -- CREATE TABLE case
@@ -81,27 +86,30 @@ BEGIN
     BEGIN
       -- collect information of renamed table
       SELECT
-        t_new.table_name
+        format('%I.%I',
+          t_old.schema_name,
+          t_old.table_name
+        )
       INTO
         stmt
       FROM
         pgmemento.audit_table_log t_old,
         pgmemento.audit_table_log t_new
       WHERE
-        t_old.relid = t_new.relid
-        AND t_old.table_name = $5
-        AND t_old.schema_name = $6
+        t_old.log_id = t_new.log_id
+        AND t_new.table_name = $5
+        AND t_new.schema_name = $6
         AND upper(t_new.txid_range) = $1
         AND lower(t_old.txid_range) = $1;
 
       -- try to re-rename table
       IF stmt IS NOT NULL THEN
-        EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', $6, $5, stmt);
+        EXECUTE 'ALTER TABLE ' || stmt || format(' RENAME TO %I', $5);
       END IF;
 
       EXCEPTION
         WHEN undefined_table THEN
-          RAISE NOTICE 'Could not revert RENAME TABLE event for table %.%: %', $6, $5, SQLERRM;
+          RAISE NOTICE 'Could not revert RENAME TABLE event for table %: %', stmt, SQLERRM;
     END;
 
   -- ADD COLUMN case
@@ -360,6 +368,7 @@ BEGIN
   WHEN $4 = 9 THEN
     -- collect information of columns of dropped table
     SELECT
+      t.log_id,
       string_agg(
         quote_ident(c_old.column_name)
         || ' '
@@ -376,7 +385,10 @@ BEGIN
            END
         || CASE WHEN c_old.not_null THEN ' NOT NULL' ELSE '' END,
         ', ' ORDER BY c_old.ordinal_position
-      ) INTO stmt
+      )
+    INTO
+      table_log_id,
+      stmt
     FROM
       pgmemento.audit_table_log t
     JOIN
@@ -399,10 +411,14 @@ BEGIN
       AND c_old.column_name <> 'audit_id'
       AND t_new.table_name IS NULL
       AND t.table_name = $5
-      AND t.schema_name = $6;
+      AND t.schema_name = $6
+    GROUP BY
+      t.log_id;
 
     -- try to create table
     IF stmt IS NOT NULL THEN
+      PERFORM pgmemento.log_table_event(txid_current(), $5, $6, 'RECREATE TABLE');
+      PERFORM set_config('pgmemento.' || $6 || '.' || $5, table_log_id::text, TRUE);
       EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I (' || stmt || ')', $6, $5);
     END IF;
 
@@ -434,11 +450,11 @@ BEGIN
     SELECT
       t.id,
       r.audit_id, 
-      r.changes,
+      r.old_data,
       e.op_id, 
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
+      rank() OVER (PARTITION BY r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -451,15 +467,17 @@ BEGIN
       ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
-      ON a.relid = e.table_relid
-     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name 
+     AND (a.txid_range @> t.id::numeric
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.relid = e.table_relid
+      ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id AND e.op_id <> 5
+      ON r.event_key = e.event_key
+     AND e.op_id <> 5
     WHERE
       t.id = $1
     ORDER BY
@@ -467,7 +485,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
@@ -485,11 +503,11 @@ BEGIN
     SELECT
       t.id,
       r.audit_id, 
-      r.changes,
+      r.old_data,
       e.op_id,
       a.table_name,
       a.schema_name,
-      rank() OVER (PARTITION BY r.event_id ORDER BY r.id DESC) AS audit_order,
+      rank() OVER (PARTITION BY t.id, r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
       ELSE
@@ -502,15 +520,17 @@ BEGIN
       ON e.transaction_id = t.id
     JOIN
       pgmemento.audit_table_log a 
-      ON a.relid = e.table_relid
-     AND ((a.txid_range @> t.id::numeric AND e.op_id <> 12)
+      ON a.table_name = e.table_name
+     AND a.schema_name = e.schema_name
+     AND (a.txid_range @> t.id::numeric
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
       pgmemento.audit_tables_dependency d
-      ON d.relid = e.table_relid
+      ON d.table_log_id = a.log_id
     LEFT JOIN
       pgmemento.row_log r
-      ON r.event_id = e.id AND e.op_id <> 5
+      ON r.event_key = e.event_key
+     AND e.op_id <> 5
     WHERE
       t.id BETWEEN $1 AND $2
     ORDER BY
@@ -519,7 +539,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 
@@ -545,7 +565,7 @@ BEGIN
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.changes, 
+      q.old_data, 
       a.table_name,
       a.schema_name,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
@@ -557,32 +577,36 @@ BEGIN
     FROM (
       SELECT
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         transaction_id AS tid,
         min(event_id) AS first_event,
         max(event_id) AS last_event,
         min(id) AS row_log_id,
-        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+        pgmemento.jsonb_merge(old_data ORDER BY id DESC) AS old_data
       FROM (
         SELECT
           r.id,
           r.audit_id,
-          r.changes,
+          r.old_data,
           e.id AS event_id,
-          e.table_relid,
+          e.table_name,
+          e.schema_name,
           e.transaction_id,
           CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
         FROM
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.event_id = e.id AND e.op_id <> 5
+          ON r.event_key = e.event_key
+         AND e.op_id <> 5
         WHERE
           e.transaction_id = $1
       ) s
       GROUP BY
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         ddl_event,
         transaction_id
     ) q
@@ -594,11 +618,12 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.relid = q.table_relid
-     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      ON a.table_name = q.table_name
+     AND a.schema_name = q.schema_name 
+     AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.relid = q.table_relid
+      ON d.table_log_id = a.log_id
     WHERE
       NOT (
         e1.op_id = 1
@@ -613,7 +638,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$
@@ -632,7 +657,7 @@ BEGIN
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.changes, 
+      q.old_data, 
       a.table_name,
       a.schema_name,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
@@ -644,32 +669,36 @@ BEGIN
     FROM (
       SELECT
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         min(transaction_id) AS tid,
         min(event_id) AS first_event,
         max(event_id) AS last_event,
         min(id) AS row_log_id,
-        pgmemento.jsonb_merge(changes ORDER BY id DESC) AS changes
+        pgmemento.jsonb_merge(old_data ORDER BY id DESC) AS old_data
       FROM (
         SELECT
           r.id,
           r.audit_id,
-          r.changes,
+          r.old_data,
           e.id AS event_id,
-          e.table_relid,
+          e.table_name,
+          e.schema_name,
           e.transaction_id,
           CASE WHEN r.audit_id IS NULL THEN e.id ELSE NULL END AS ddl_event
         FROM
           pgmemento.table_event_log e
         LEFT JOIN
           pgmemento.row_log r
-          ON r.event_id = e.id AND e.op_id <> 5
+          ON r.event_key = e.event_key
+         AND e.op_id <> 5
         WHERE
           e.transaction_id BETWEEN $1 AND $2
       ) s
       GROUP BY
         audit_id,
-        table_relid,
+        table_name,
+        schema_name,
         ddl_event
     ) q
     JOIN
@@ -680,11 +709,12 @@ BEGIN
       ON e2.id = q.last_event
     JOIN
       pgmemento.audit_table_log a
-      ON a.relid = q.table_relid
-     AND ((a.txid_range @> q.tid::numeric AND e1.op_id <> 12)
+      ON a.table_name = q.table_name
+     AND a.schema_name = q.schema_name 
+     AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
-      ON d.relid = q.table_relid
+      ON d.table_log_id = a.log_id
     WHERE
       NOT (
         e1.op_id = 1
@@ -695,11 +725,12 @@ BEGIN
         AND (e2.op_id > 6 AND e2.op_id < 10)
       )
     ORDER BY
+      q.tid DESC,
       dependency_order,
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.changes, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
   END LOOP;
 END;
 $$ 

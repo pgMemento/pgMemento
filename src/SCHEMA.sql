@@ -14,9 +14,14 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                       | Author
--- 0.6.2     2019-02-27   comments for tables and columns                     FKun
--- 0.6.1     2018-07-23   schema part cut from SETUP.sql                      FKun
+-- Version | Date       | Description                                        | Author
+-- 0.7.2     2020-02-29   new column in row_log to also audit new data         FKun
+--                        new unique index on event_key and audit_id
+-- 0.7.1     2020-02-02   put unique index of table_event_log on event_key     FKun
+-- 0.7.0     2020-01-09   remove FK to events and use concatenated metakeys    FKun
+--                        store more events with statement_timestamp
+-- 0.6.2     2019-02-27   comments for tables and columns                      FKun
+-- 0.6.1     2018-07-23   schema part cut from SETUP.sql                       FKun
 --
 
 /**********************************************************
@@ -38,12 +43,13 @@
 *   column_log_range_idx
 *   column_log_table_idx
 *   row_log_audit_idx
-*   row_log_changes_idx
 *   row_log_event_idx
-*   table_event_log_unique_idx
+*   row_log_new_data_idx
+*   row_log_old_data_idx
+*   table_event_log_event_idx
+*   table_event_log_fk_idx
 *   table_log_idx
 *   table_log_range_idx
-*   transaction_log_date_idx
 *   transaction_log_session_idx
 *   transaction_log_txid_idx
 *
@@ -60,7 +66,7 @@ CREATE TABLE pgmemento.transaction_log
 (
   id SERIAL,
   txid BIGINT NOT NULL,
-  stmt_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  txid_time TIMESTAMP WITH TIME ZONE NOT NULL,
   process_id INTEGER,
   user_name TEXT,
   client_name TEXT,
@@ -75,7 +81,7 @@ ALTER TABLE pgmemento.transaction_log
 COMMENT ON TABLE pgmemento.transaction_log IS 'Stores metadata about each transaction';
 COMMENT ON COLUMN pgmemento.transaction_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.transaction_log.txid IS 'The internal transaction ID by PostgreSQL (can cycle)';
-COMMENT ON COLUMN pgmemento.transaction_log.stmt_date IS 'Stores the result of transaction_timestamp() function';
+COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 COMMENT ON COLUMN pgmemento.transaction_log.process_id IS 'Stores the result of pg_backend_pid() function';
 COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of current_user function';
 COMMENT ON COLUMN pgmemento.transaction_log.client_name IS 'Stores the result of inet_client_addr() function';
@@ -89,29 +95,36 @@ CREATE TABLE pgmemento.table_event_log
 (
   id SERIAL,
   transaction_id INTEGER NOT NULL,
+  stmt_time TIMESTAMP WITH TIME ZONE NOT NULL,
   op_id SMALLINT NOT NULL,
-  table_operation VARCHAR(18),
-  table_relid OID NOT NULL
+  table_operation TEXT,
+  table_name TEXT NOT NULL,
+  schema_name TEXT NOT NULL,
+  event_key TEXT NOT NULL
 );
 
 ALTER TABLE pgmemento.table_event_log
   ADD CONSTRAINT table_event_log_pk PRIMARY KEY (id);
 
-COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happing during one transaction against one table';
+COMMENT ON TABLE pgmemento.table_event_log IS 'Stores metadata about different kind of events happening during one transaction against one table';
 COMMENT ON COLUMN pgmemento.table_event_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.table_event_log.transaction_id IS 'Foreign Key to transaction_log table';
+COMMENT ON COLUMN pgmemento.table_event_log.stmt_time IS 'Stores the result of statement_timestamp() function';
 COMMENT ON COLUMN pgmemento.table_event_log.op_id IS 'ID of event type';
 COMMENT ON COLUMN pgmemento.table_event_log.table_operation IS 'Text for of event type';
-COMMENT ON COLUMN pgmemento.table_event_log.table_relid IS 'The table''s OID';
+COMMENT ON COLUMN pgmemento.table_event_log.table_name IS 'Name of table that fired the trigger';
+COMMENT ON COLUMN pgmemento.table_event_log.schema_name IS 'Schema of firing table';
+COMMENT ON COLUMN pgmemento.table_event_log.event_key IS 'Concatenated information of most columns';
 
 -- all row changes are logged into the row_log table
 DROP TABLE IF EXISTS pgmemento.row_log CASCADE;
 CREATE TABLE pgmemento.row_log
 (
   id BIGSERIAL,
-  event_id INTEGER NOT NULL,
   audit_id BIGINT NOT NULL,
-  changes JSONB
+  event_key TEXT NOT NULL,
+  old_data JSONB,
+  new_data JSONB
 );
 
 ALTER TABLE pgmemento.row_log
@@ -119,16 +132,18 @@ ALTER TABLE pgmemento.row_log
 
 COMMENT ON TABLE pgmemento.row_log IS 'Stores the historic data a.k.a the audit trail';
 COMMENT ON COLUMN pgmemento.row_log.id IS 'The Primary Key';
-COMMENT ON COLUMN pgmemento.row_log.event_id IS 'Foreign Key to table_event_log table';
 COMMENT ON COLUMN pgmemento.row_log.audit_id IS ' The implicit link to a table''s row';
-COMMENT ON COLUMN pgmemento.row_log.changes IS 'The old values of changed columns in a JSONB object';
+COMMENT ON COLUMN pgmemento.row_log.event_key IS 'Concatenated information of table event';
+COMMENT ON COLUMN pgmemento.row_log.old_data IS 'The old values of changed columns in a JSONB object';
+COMMENT ON COLUMN pgmemento.row_log.new_data IS 'The new values of changed columns in a JSONB object';
 
 -- liftime of audited tables is logged in the audit_table_log table
 CREATE TABLE pgmemento.audit_table_log (
   id SERIAL,
+  log_id INTEGER NOT NULL,
   relid OID,
-  schema_name TEXT NOT NULL,
   table_name TEXT NOT NULL,
+  schema_name TEXT NOT NULL,
   txid_range numrange  
 );
 
@@ -137,9 +152,10 @@ ALTER TABLE pgmemento.audit_table_log
 
 COMMENT ON TABLE pgmemento.audit_table_log IS 'Stores information about audited tables, which is important when restoring a whole schema or database';
 COMMENT ON COLUMN pgmemento.audit_table_log.id IS 'The Primary Key';
-COMMENT ON COLUMN pgmemento.audit_table_log.relid IS 'The table''s OID to trace a table when changed';
-COMMENT ON COLUMN pgmemento.audit_table_log.schema_name IS 'The schema the table belongs to';
+COMMENT ON COLUMN pgmemento.audit_table_log.log_id IS 'ID to trace a changing table';
+COMMENT ON COLUMN pgmemento.audit_table_log.relid IS '[DEPRECATED] The table''s OID to trace a table when changed';
 COMMENT ON COLUMN pgmemento.audit_table_log.table_name IS 'The name of the table';
+COMMENT ON COLUMN pgmemento.audit_table_log.schema_name IS 'The schema the table belongs to';
 COMMENT ON COLUMN pgmemento.audit_table_log.txid_range IS 'Stores the transaction IDs when the table has been created and dropped';
 
 -- lifetime of columns of audited tables is logged in the audit_column_log table
@@ -176,14 +192,6 @@ ALTER TABLE pgmemento.table_event_log
     ON DELETE CASCADE
     ON UPDATE CASCADE;
 
-ALTER TABLE pgmemento.row_log
-  ADD CONSTRAINT row_log_table_fk 
-    FOREIGN KEY (event_id)
-    REFERENCES pgmemento.table_event_log (id)
-    MATCH FULL
-    ON DELETE CASCADE
-    ON UPDATE CASCADE;
-
 ALTER TABLE pgmemento.audit_column_log
   ADD CONSTRAINT audit_column_log_fk
     FOREIGN KEY (audit_table_id)
@@ -193,27 +201,30 @@ ALTER TABLE pgmemento.audit_column_log
     ON UPDATE CASCADE;
 
 -- create indexes on all columns that are queried later
-DROP INDEX IF EXISTS transaction_log_date_idx;
 DROP INDEX IF EXISTS transaction_log_unique_idx;
 DROP INDEX IF EXISTS transaction_log_session_idx;
-DROP INDEX IF EXISTS table_event_log_unique_idx;
-DROP INDEX IF EXISTS row_log_event_idx;
+DROP INDEX IF EXISTS table_event_log_fk_idx;
+DROP INDEX IF EXISTS table_event_log_event_idx;
 DROP INDEX IF EXISTS row_log_audit_idx;
-DROP INDEX IF EXISTS row_log_changes_idx;
+DROP INDEX IF EXISTS row_log_event_audit_idx;
+DROP INDEX IF EXISTS row_log_old_data_idx;
+DROP INDEX IF EXISTS row_log_new_data_idx;
 DROP INDEX IF EXISTS table_log_idx;
 DROP INDEX IF EXISTS table_log_range_idx;
 DROP INDEX IF EXISTS column_log_table_idx;
 DROP INDEX IF EXISTS column_log_column_idx;
 DROP INDEX IF EXISTS column_log_range_idx;
 
-CREATE INDEX transaction_log_date_idx ON pgmemento.transaction_log USING BTREE (stmt_date);
-CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid, stmt_date);
+CREATE UNIQUE INDEX transaction_log_unique_idx ON pgmemento.transaction_log USING BTREE (txid_time, txid);
 CREATE INDEX transaction_log_session_idx ON pgmemento.transaction_log USING GIN (session_info);
-CREATE UNIQUE INDEX table_event_log_unique_idx ON pgmemento.table_event_log USING BTREE (transaction_id, table_relid, op_id);
-CREATE INDEX row_log_event_idx ON pgmemento.row_log USING BTREE (event_id);
+CREATE INDEX table_event_log_fk_idx ON pgmemento.table_event_log USING BTREE (transaction_id);
+CREATE UNIQUE INDEX table_event_log_event_idx ON pgmemento.table_event_log USING BTREE (event_key);
 CREATE INDEX row_log_audit_idx ON pgmemento.row_log USING BTREE (audit_id);
-CREATE INDEX row_log_changes_idx ON pgmemento.row_log USING GIN (changes);
-CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
+CREATE UNIQUE INDEX row_log_event_audit_idx ON pgmemento.row_log USING BTREE (event_key, audit_id);
+CREATE INDEX row_log_old_data_idx ON pgmemento.row_log USING GIN (old_data);
+CREATE INDEX row_log_new_data_idx ON pgmemento.row_log USING GIN (new_data);
+CREATE INDEX table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
+CREATE INDEX table_log_name_idx ON pgmemento.audit_table_log USING BTREE (table_name, schema_name);
 CREATE INDEX table_log_range_idx ON pgmemento.audit_table_log USING GIST (txid_range);
 CREATE INDEX column_log_table_idx ON pgmemento.audit_column_log USING BTREE (audit_table_id);
 CREATE INDEX column_log_column_idx ON pgmemento.audit_column_log USING BTREE (column_name);
@@ -226,6 +237,16 @@ CREATE SEQUENCE
 ***********************************************************/
 DROP SEQUENCE IF EXISTS pgmemento.audit_id_seq;
 CREATE SEQUENCE pgmemento.audit_id_seq
+  INCREMENT BY 1
+  MINVALUE 0
+  MAXVALUE 2147483647
+  START WITH 1
+  CACHE 1
+  NO CYCLE
+  OWNED BY NONE;
+
+DROP SEQUENCE IF EXISTS pgmemento.table_log_id_seq;
+CREATE SEQUENCE pgmemento.table_log_id_seq
   INCREMENT BY 1
   MINVALUE 0
   MAXVALUE 2147483647

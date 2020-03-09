@@ -14,6 +14,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
+-- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
 -- 0.1.0     2018-09-20   initial commit                                   FKun
 --
@@ -24,10 +26,17 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento audit ALTER TABLE ALTER COLUMN events'
 
--- make dummy insert to check if it's logged when column is altered
-INSERT INTO tests (test_tsrange_column) VALUES (tsrange(now()::timestamp, NULL, '(]')) RETURNING test_tsrange_column AS test_tsrange
+-- set value for range column to check if data is logged when column is altered
+UPDATE
+  tests
+SET
+  test_tsrange_column = tsrange(now()::timestamp, NULL, '(]')
+WHERE
+  audit_id = current_setting('pgmemento.ddl_test_audit_id')::bigint
+RETURNING
+  test_tsrange_column AS test_tsrange
 \gset
-  
+
 -- save inserted value for next test
 SELECT set_config('pgmemento.alter_column_test_value', :'test_tsrange'::text, FALSE);
 
@@ -38,7 +47,8 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
+  alter_column_op_id SMALLINT := pgmemento.get_operation_id('ALTER COLUMN');
   test_tsrange tsrange;
 BEGIN
   -- alter data type of one column
@@ -49,13 +59,14 @@ BEGIN
   PERFORM set_config('pgmemento.alter_column_test', test_transaction::text, FALSE);
 
   SELECT
-    id INTO test_event
+    event_key INTO test_event
   FROM
     pgmemento.table_event_log 
   WHERE
     transaction_id = test_transaction
-    AND table_relid = 'public.tests'::regclass::oid
-    AND op_id = 5;
+    AND table_name = 'tests'
+    AND schema_name = 'public'
+    AND op_id = alter_column_op_id;
 
   -- query for logged transaction
   ASSERT (
@@ -71,19 +82,19 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 5;
+    AND op_id = alter_column_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 
-  -- save event_id for next test
-  PERFORM set_config('pgmemento.alter_column_test_event', test_event::text, FALSE);
+  -- save event time for next test
+  PERFORM set_config('pgmemento.alter_column_test_event', test_event, FALSE);
 END;
 $$
 LANGUAGE plpgsql;
@@ -133,7 +144,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
 BEGIN
   -- rename a column
   ALTER TABLE public.tests RENAME COLUMN test_tsrange_column TO test_tstzrange_column;
@@ -156,14 +167,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 22;
+    AND op_id = pgmemento.get_operation_id('RENAME COLUMN');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 END;
@@ -213,23 +224,29 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  test_event INTEGER;
+  test_event TEXT;
   test_value TEXT;
-  jsonb_log JSONB;
+  test_value_converted TEXT;
+  old_log_value TEXT;
+  new_log_value TEXT;
 BEGIN
-  test_event := current_setting('pgmemento.alter_column_test_event')::int;
+  test_event := current_setting('pgmemento.alter_column_test_event');
   test_value := current_setting('pgmemento.alter_column_test_value');
+  test_value_converted := (tstzrange(lower(test_value::tsrange), upper(test_value::tsrange), '(]'))::text;
 
   SELECT
-    changes
+    old_data->>'test_tsrange_column',
+    new_data->>'test_tsrange_column'
   INTO
-    jsonb_log
+    old_log_value,
+    new_log_value
   FROM
     pgmemento.row_log
   WHERE
-    event_id = test_event;
+    event_key = test_event;
 
-  ASSERT jsonb_log IS NOT NULL, 'Error: Wrong content in row_log table: %', jsonb_log;
+  ASSERT old_log_value = test_value, 'Error: Wrong old content in row_log table: %', old_log_value;
+  ASSERT new_log_value = test_value_converted, 'Error: Wrong new content in row_log table: %', new_log_value;
 END;
 $$
 LANGUAGE plpgsql;

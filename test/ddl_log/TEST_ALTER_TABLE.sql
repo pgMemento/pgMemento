@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-08-14   initial commit                                   FKun
 --
 
@@ -30,7 +31,7 @@ $$
 DECLARE
   test_txid BIGINT := txid_current();
   test_transaction INTEGER;
-  test_event INTEGER;
+  test_event TEXT;
 BEGIN
   -- rename test table to tests
   ALTER TABLE public.test RENAME TO tests;
@@ -53,14 +54,14 @@ BEGIN
 
   -- query for logged table event
   SELECT
-    id
+    event_key
   INTO
     test_event
   FROM
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND op_id = 12;
+    AND op_id = pgmemento.get_operation_id('RENAME TABLE');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
 END;
@@ -76,6 +77,8 @@ DECLARE
   test_transaction INTEGER;
   tabid INTEGER;
   tabname TEXT;
+  old_tab_log_id INTEGER;
+  new_tab_log_id INTEGER;
   tid_range numrange;
 BEGIN
   test_transaction := current_setting('pgmemento.rename_table_test')::int;
@@ -83,14 +86,17 @@ BEGIN
   -- get old parameters of renamed table
   SELECT
     id,
-    table_name
+    table_name,
+    log_id
   INTO
     tabid,
-    tabname
+    tabname,
+    old_tab_log_id
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    table_name = 'test'
+    AND schema_name = 'public'
     AND upper(txid_range) = test_transaction;
 
   -- save table log id for next test
@@ -102,21 +108,25 @@ BEGIN
   SELECT
     id,
     table_name,
+    log_id,
     txid_range
   INTO
     tabid,
     tabname,
+    new_tab_log_id,
     tid_range
   FROM
     pgmemento.audit_table_log
   WHERE
-    relid = 'public.tests'::regclass::oid
+    table_name = 'tests'
+    AND schema_name = 'public'
     AND lower(txid_range) = test_transaction;
 
   -- save table log id for next test
   PERFORM set_config('pgmemento.rename_table_test3', tabid::text, FALSE);
 
   ASSERT tabname = 'tests', 'Did not find table ''%'' in audit_table_log', tabname;
+  ASSERT old_tab_log_id = new_tab_log_id, 'Error: audit_table_log.log_id mismatch: old % vs. new %', old_tab_log_id, new_tab_log_id;
   ASSERT upper(tid_range) IS NULL, 'Error: Renamed table should still exist and upper boundary of transaction range should be NULL, % instead', upper(tid_range);
 END;
 $$
