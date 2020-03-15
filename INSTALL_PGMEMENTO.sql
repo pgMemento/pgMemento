@@ -31,7 +31,7 @@ SET client_min_messages TO WARNING;
 \i src/RESTORE.sql
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
-\i ctl/CTL.sql
+\i src/CTL.sql
 
 \echo
 \echo 'Introducing pgMemento to search path ...'

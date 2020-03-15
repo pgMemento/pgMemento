@@ -4,13 +4,12 @@ cd $(dirname "$0");
 
 cat "../src/SCHEMA.sql" | grep -v 'DROP SCHEMA' | grep -v 'CREATE SCHEMA'
 
-scripts=("SETUP.sql" "LOG_UTIL.sql" "DDL_LOG.sql" "RESTORE.sql" "REVERT.sql" "SCHEMA_MANAGEMENT.sql");
+scripts=("SETUP.sql" "LOG_UTIL.sql" "DDL_LOG.sql" "RESTORE.sql" "REVERT.sql" "SCHEMA_MANAGEMENT.sql" "CTL.sql");
 
 for script in ${scripts[@]}; do
     cat "../src/$script";
     echo -e "\n\n\n";
 done
-
 
 echo "-- make all the data available for pg_dump";
 read -r -d '' CONFIG_DUMP <<'EOF'
