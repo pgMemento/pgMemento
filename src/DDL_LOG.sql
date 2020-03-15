@@ -1028,7 +1028,7 @@ BEGIN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
-      -- remove quotes if exists 
+      -- remove quotes if exists
       tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
       schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
@@ -1072,7 +1072,7 @@ BEGIN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
-      -- remove quotes if exists 
+      -- remove quotes if exists
       tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
       schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
@@ -1119,7 +1119,7 @@ BEGIN
       BEGIN
         tid := current_setting('pgmemento.' || txid_current())::int;
 
-        -- remove quotes if exists 
+        -- remove quotes if exists
         tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
         schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
@@ -1328,8 +1328,7 @@ BEGIN
   END IF;
 END;
 $$
-LANGUAGE plpgsql STRICT
-SECURITY DEFINER;
+LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_event_trigger() RETURNS SETOF VOID AS
 $$
@@ -1340,5 +1339,4 @@ $$
   DROP EVENT TRIGGER IF EXISTS table_drop_post_trigger;
   DROP EVENT TRIGGER IF EXISTS table_drop_pre_trigger;
 $$
-LANGUAGE sql
-SECURITY DEFINER;
+LANGUAGE sql;

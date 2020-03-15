@@ -57,7 +57,7 @@ CREATE OR REPLACE FUNCTION pgmemento.start(
   ) RETURNS TEXT AS
 $$
 BEGIN
-  SELECT pgmemento.create_schema_log_trigger($1, $2, $3);
+  PERFORM pgmemento.create_schema_log_trigger($1, $2, $3);
 
   RETURN format('pgMemento is started on %s schema.', schema_name);
 END;
@@ -70,7 +70,7 @@ CREATE OR REPLACE FUNCTION pgmemento.stop(
   ) RETURNS TEXT AS
 $$
 BEGIN
-  SELECT pgmemento.drop_schema_log_trigger($1, $2);
+  PERFORM pgmemento.drop_schema_log_trigger($1, $2);
 
   RETURN format('pgMemento is stopped on %s schema.', schema_name);
 END;
