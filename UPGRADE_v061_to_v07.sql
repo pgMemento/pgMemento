@@ -81,6 +81,7 @@ DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 \i src/RESTORE.sql
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
+\i src/CTL.sql
 
 \echo
 \echo 'pgMemento upgrade completed!'

@@ -64,7 +64,7 @@ UPDATE pgmemento.table_event_log e
    AND (atl.txid_range @> e.transaction_id::numeric
     OR lower(atl.txid_range) = e.transaction_id::numeric);
 
--- set columns to NOT NULL and update indexes 
+-- set columns to NOT NULL and update indexes
 ALTER TABLE pgmemento.table_event_log
   DROP COLUMN table_relid,
   ALTER COLUMN stmt_time SET NOT NULL,

@@ -18,8 +18,8 @@ psql postgres postgres -c 'CREATE DATABASE pgmemento_backup';
 echo "Creating initial data for backup";
 cat <<'EOF' | psql pgmemento_backup postgres
   CREATE EXTENSION pgmemento;
-  SELECT pgmemento.create_schema_event_trigger(true);
-  SELECT pgmemento.create_schema_audit('public', true);
+  SELECT pgmemento.create_schema_event_trigger(true, true);
+  SELECT pgmemento.create_schema_audit('public', true, true);
 
   CREATE TABLE valuable_data (id INTEGER, value VARCHAR);
   INSERT INTO valuable_data (id, value) VALUES (1, 'one'), (2, 'two'), (3, 'three');
