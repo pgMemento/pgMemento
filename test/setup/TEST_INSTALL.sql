@@ -182,7 +182,7 @@ BEGIN
   ASSERT pgm_objects[78] = 'sequence_schema_state;SETOF void;target_schema_name text, original_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[79] = 'split_table_from_query;record;INOUT query text, OUT audit_table_name text, OUT audit_schema_name text, OUT audit_table_log_id integer', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[80] = 'start;text;schema_name text DEFAULT ''public''::text, include_new boolean DEFAULT false, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[80] = 'stop;text;schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[81] = 'stop;text;schema_name text DEFAULT ''public''::text, except_tables text[] DEFAULT ''{}''::text[]', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[82] = 'table_alter_post_trigger;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[83] = 'table_alter_post_trigger_full;event_trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[84] = 'table_alter_pre_trigger;event_trigger', 'Error: Expected different function and/or arguments';
