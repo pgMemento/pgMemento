@@ -13,7 +13,7 @@ VALUES
   (1, 'init');
 
 -- test schema
---\i test/setup/TEST_INSTALL.sql
+\i test/setup/TEST_INSTALL.sql
 
 -- test setup functions
 \i test/setup/TEST_INIT.sql
