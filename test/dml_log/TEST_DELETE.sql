@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
@@ -41,7 +42,7 @@ BEGIN
   -- DELETE entry that has been inserted for other tests
   DELETE FROM public.object
     WHERE lineage = 'pgm_update_test'
-    RETURNING id, audit_id
+    RETURNING id, pgmemento_audit_id
     INTO delete_id, delete_audit_id;
 
   -- query for logged transaction
@@ -82,7 +83,7 @@ BEGIN
     audit_id = delete_audit_id
     AND event_key = test_event;
 
-  ASSERT old_jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong old content in row_log table: %' old_jsonb_log;
+  ASSERT old_jsonb_log = ('{"id": '||delete_id||', "lineage": "pgm_update_test", "pgmemento_audit_id": '||delete_audit_id||'}')::jsonb, 'Error: Wrong old content in row_log table: %' old_jsonb_log;
   ASSERT new_jsonb_log IS NULL, 'Error: Wrong new content in row_log table: %' new_jsonb_log;
 END;
 $$

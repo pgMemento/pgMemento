@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-19   initial commit                                   FKun
@@ -38,7 +39,7 @@ BEGIN
   -- UPDATE entry that has been inserted during INSERT test
   UPDATE public.object SET lineage = 'pgm_upsert_test'
     WHERE lineage = 'pgm_upsert_test'
-    RETURNING audit_id INTO update_audit_id;
+    RETURNING pgmemento_audit_id INTO update_audit_id;
 
   -- query for logged transaction
   ASSERT (
@@ -97,7 +98,7 @@ BEGIN
   -- UPDATE entry that has been inserted during INSERT test
   UPDATE public.object SET lineage = 'pgm_update_test'
     WHERE lineage = 'pgm_upsert_test'
-    RETURNING audit_id INTO update_audit_id;
+    RETURNING pgmemento_audit_id INTO update_audit_id;
 
   -- query for logged transaction
   ASSERT (

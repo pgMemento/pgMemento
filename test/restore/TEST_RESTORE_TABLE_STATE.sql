@@ -30,10 +30,10 @@ $$
 DECLARE
   tables TEXT[];
 BEGIN
-  -- restore states before txid 16 for tables 'object' and 'test'
-  PERFORM pgmemento.restore_schema_state(1, 9, 'public', 'public_1_9', 'VIEW', FALSE);
+  -- restore states before txid 10 for tables 'object' and 'test'
+  PERFORM pgmemento.restore_schema_state(1, 10, 'public', 'public_1_10', 'VIEW', FALSE);
 
-  -- test if schema 'public_1_9' exists
+  -- test if schema 'public_1_10' exists
   ASSERT (
     SELECT EXISTS(
       SELECT
@@ -41,9 +41,9 @@ BEGIN
       FROM
         pg_namespace
       WHERE
-        nspname = 'public_1_9'
+        nspname = 'public_1_10'
     )
-  ), 'Error: Did not find restore target ''public_1_9''!';
+  ), 'Error: Did not find restore target ''public_1_10''!';
 
   -- check if tables got restored as views
   SELECT
@@ -56,7 +56,7 @@ BEGIN
     pg_namespace n
     ON n.oid = c.relnamespace
   WHERE
-    n.nspname = 'public_1_9'
+    n.nspname = 'public_1_10'
     AND relkind = 'v';
 
   ASSERT tables[1] = 'object', 'Incorrect historic view for ''object'' table. Found %', tables[1];
@@ -72,8 +72,8 @@ $$
 DECLARE
   tables TEXT[];
 BEGIN
-  -- restore states before txid 16 for tables 'object' and 'test'
-  PERFORM pgmemento.restore_schema_state(1, 9, 'public', 'public_1_9', 'TABLE', TRUE);
+  -- restore states before txid 10 for tables 'object' and 'test'
+  PERFORM pgmemento.restore_schema_state(1, 10, 'public', 'public_1_10', 'TABLE', TRUE);
 
   -- check if tables got restored as tables
   SELECT
@@ -86,14 +86,14 @@ BEGIN
     pg_namespace n
     ON n.oid = c.relnamespace
   WHERE
-    n.nspname = 'public_1_9'
+    n.nspname = 'public_1_10'
     AND relkind = 'r';
 
   ASSERT tables[1] = 'object', 'Incorrect historic table for ''object'' table. Found %', tables[1];
   ASSERT tables[2] = 'tests', 'Incorrect historic table for ''tests'' table. Found %', tables[2];
 
-  -- drop the restore target schema
-  DROP SCHEMA public_1_9 CASCADE;
+  -- drop the restored target schema
+  DROP SCHEMA public_1_10 CASCADE;
 END
 $$
 LANGUAGE plpgsql;

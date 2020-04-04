@@ -41,11 +41,11 @@ BEGIN
         1
       FROM (
         VALUES
-          ('log_delete_trigger'),
-          ('log_insert_trigger'),
-          ('log_transaction_trigger'),
-          ('log_truncate_trigger'),
-          ('log_update_trigger')
+          ('pgmemento_delete_trigger'),
+          ('pgmemento_insert_trigger'),
+          ('pgmemento_transaction_trigger'),
+          ('pgmemento_truncate_trigger'),
+          ('pgmemento_update_trigger')
         ) AS p (pgm_trigger)
       JOIN (
         SELECT
@@ -80,12 +80,12 @@ BEGIN
         1
       FROM (
         VALUES
-          ('schema_drop_pre_trigger'),
-          ('table_alter_post_trigger'),
-          ('table_alter_pre_trigger'),
-          ('table_create_post_trigger'),
-          ('table_drop_post_trigger'),
-          ('table_drop_pre_trigger')
+          ('pgmemento_schema_drop_pre_trigger'),
+          ('pgmemento_table_alter_post_trigger'),
+          ('pgmemento_table_alter_pre_trigger'),
+          ('pgmemento_table_create_post_trigger'),
+          ('pgmemento_table_drop_post_trigger'),
+          ('pgmemento_table_drop_pre_trigger')
         ) AS p (pgm_event_trigger)
       JOIN (
         SELECT
@@ -122,7 +122,7 @@ BEGIN
         attrelid = pgmemento.get_table_oid(tab, 'public')
         AND attnum > 0
         AND NOT attisdropped
-        AND attname = 'audit_id'
+        AND attname = 'pgmemento_audit_id'
     )
   ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
 END;

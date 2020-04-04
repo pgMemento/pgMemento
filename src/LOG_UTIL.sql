@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.5     2020-03-23   add audit_id_column to audit_table_check       FKun
 -- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are      FKun
 --                        touched
 -- 0.7.3     2020-02-29   reflect new schema of row_log table            FKun
@@ -336,9 +337,11 @@ CREATE OR REPLACE FUNCTION pgmemento.audit_table_check(
   OUT table_log_id INTEGER,
   OUT log_tab_name TEXT,
   OUT log_tab_schema TEXT,
+  OUT log_audit_id_column TEXT,
   OUT log_tab_id INTEGER,
   OUT recent_tab_name TEXT,
   OUT recent_tab_schema TEXT,
+  OUT recent_audit_id_column TEXT,
   OUT recent_tab_id INTEGER
   ) RETURNS RECORD AS
 $$
@@ -348,17 +351,21 @@ BEGIN
     a_old.log_id,
     a_old.table_name,
     a_old.schema_name,
+    a_old.audit_id_column,
     a_old.id,
     a_new.table_name,
     a_new.schema_name,
+    a_new.audit_id_column,
     a_new.id
   INTO
     table_log_id,
     log_tab_name,
     log_tab_schema,
+    log_audit_id_column,
     log_tab_id,
     recent_tab_name,
     recent_tab_schema,
+    recent_audit_id_column,
     recent_tab_id
   FROM
     pgmemento.audit_table_log a_new
@@ -378,11 +385,13 @@ BEGIN
       log_id,
       table_name,
       schema_name,
+      audit_id_column,
       id
     INTO
       table_log_id,
       log_tab_name,
       log_tab_schema,
+      log_audit_id_column,
       log_tab_id
     FROM
       pgmemento.audit_table_log

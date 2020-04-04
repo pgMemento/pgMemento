@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.4     2020-03-23   reflect dynamic audit_id in logged tables           FKun    
 -- 0.7.3     2020-02-29   reflect new schema of row_log table                 FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers              FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes for tables             FKun
@@ -66,8 +67,10 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_records(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT, aid BIGINT,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_log_id INTEGER) RETURNS TEXT
-*   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS TEXT
+*   restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_log_id INTEGER,
+*     audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS TEXT
+*   restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
+*     audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS TEXT
 *   restore_recordset(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
@@ -177,9 +180,11 @@ DECLARE
   log_id INTEGER;
   tab_name TEXT;
   tab_schema TEXT;
+  tab_audit_id_column TEXT;
   tab_id INTEGER;
   new_tab_name TEXT;
   new_tab_schema TEXT;
+  new_audit_id_column TEXT;
   new_tab_id INTEGER;
   join_recent_state BOOLEAN := FALSE;
   query_text TEXT := E'SELECT\n';
@@ -191,17 +196,21 @@ BEGIN
     table_log_id,
     log_tab_name,
     log_tab_schema,
+    log_audit_id_column,
     log_tab_id,
     recent_tab_name,
     recent_tab_schema,
+    recent_audit_id_column,
     recent_tab_id
   INTO
     log_id,
     tab_name,
     tab_schema,
+    tab_audit_id_column,
     tab_id,
     new_tab_name,
     new_tab_schema,
+    new_audit_id_column,
     new_tab_id
   FROM
     pgmemento.audit_table_check($2, $3, $4);
@@ -284,14 +293,14 @@ BEGIN
   -- finish restore query
   query_text := query_text
     || extract_logs
-    || E',\n  audit_id'
+    || format(E',\n  audit_id AS %s', quote_ident(tab_audit_id_column))
     || CASE WHEN $6 THEN E',\n  stmt_time,\n  table_operation,\n  transaction_id\n' ELSE E'\n' END
     || E'FROM (\n'
     -- use DISTINCT ON to get only one row
     || '  SELECT DISTINCT ON ('
     || CASE WHEN $6 THEN 'f.event_key, ' ELSE '' END
     || 'a.audit_id'
-    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
+    || CASE WHEN join_recent_state THEN ', x.' || new_audit_id_column ELSE '' END
     || E')\n'
     -- add column selection that has been set up above 
     || find_logs
@@ -321,7 +330,7 @@ BEGIN
     -- left join on actual table to get the recent value for a field if nothing is found in the logs
     || CASE WHEN join_recent_state THEN
          E'  LEFT JOIN\n'
-         || format(E'    %I.%I x ON x.audit_id = f.audit_id\n', new_tab_schema, new_tab_name)
+         || format(E'    %I.%I x ON x.' || new_audit_id_column || E' = f.audit_id\n', new_tab_schema, new_tab_name)
        ELSE
          ''
        END
@@ -332,7 +341,7 @@ BEGIN
     || E'  ORDER BY\n'
     || CASE WHEN $6 THEN '    f.event_key, ' ELSE '    ' END
     || 'a.audit_id'
-    || CASE WHEN join_recent_state THEN ', x.audit_id' ELSE '' END
+    || CASE WHEN join_recent_state THEN ', x.' || new_audit_id_column ELSE '' END
     || E'\n) e';
 
   RETURN query_text;
@@ -463,7 +472,8 @@ LANGUAGE plpgsql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   tid INTEGER,
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  schema_name TEXT DEFAULT 'public'::text,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS TEXT AS
 $$
 SELECT
@@ -472,7 +482,7 @@ SELECT
     quote_ident(column_name) || ' ' || data_type,
     ', ' ORDER BY ordinal_position
   )
-  || ', audit_id bigint)'
+  || format(', %s bigint)', quote_ident($4))
 FROM
   pgmemento.get_column_list_by_txid($1, $2, $3);
 $$
@@ -481,7 +491,8 @@ LANGUAGE sql STABLE STRICT;
 CREATE OR REPLACE FUNCTION pgmemento.restore_record_definition(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
-  table_log_id INTEGER
+  table_log_id INTEGER,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS TEXT AS
 $$
 SELECT
@@ -491,7 +502,8 @@ SELECT
     || ' ' || data_type
   , ', ' ORDER BY ordinal_position, column_count
   )
-  || ', audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)'
+  || format(', %s bigint', quote_ident($4))
+  || ', stmt_time timestamp with time zone, table_operation text, transaction_id integer)'
 FROM
   pgmemento.get_column_list_by_txid_range($1, $2, $3);
 $$
@@ -515,6 +527,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_restore_template(
 $$
 DECLARE
   stmt TEXT;
+  audit_id_column_name TEXT;
 BEGIN
   -- get columns that exist before transaction with id end_at_tid
   SELECT
@@ -526,7 +539,11 @@ BEGIN
          THEN ' DEFAULT ' || c.column_default ELSE '' END
       || CASE WHEN c.not_null THEN ' NOT NULL' ELSE '' END,
       ', ' ORDER BY c.ordinal_position
-    ) INTO stmt
+    ),
+    (array_agg(DISTINCT t.audit_id_column))[1]
+  INTO
+    stmt,
+    audit_id_column_name
   FROM
     pgmemento.audit_column_log c
   JOIN
@@ -543,7 +560,8 @@ BEGIN
     EXECUTE format(
       'CREATE TEMPORARY TABLE IF NOT EXISTS %I ('
          || stmt
-         || ', audit_id bigint DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
+         || format(', %s bigint ', quote_ident(audit_id_column_name))
+         || 'DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) unique not null'
          || ') '
          || CASE WHEN $5 THEN 'ON COMMIT PRESERVE ROWS' ELSE 'ON COMMIT DROP' END, $2);
   END IF;

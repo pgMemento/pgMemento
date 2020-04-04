@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.1     2018-11-01   reflect range bounds change in audit tables      FKun
@@ -32,7 +33,7 @@ UPDATE
 SET
   test_tsrange_column = tsrange(now()::timestamp, NULL, '(]')
 WHERE
-  audit_id = current_setting('pgmemento.ddl_test_audit_id')::bigint
+  pgmemento_audit_id = current_setting('pgmemento.ddl_test_audit_id')::bigint
 RETURNING
   test_tsrange_column AS test_tsrange
 \gset

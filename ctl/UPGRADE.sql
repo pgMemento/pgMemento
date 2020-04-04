@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.3     2020-03-30   create and fill new audit_schema_log table       FKun
 -- 0.2.2     2020-02-29   reflect new schema of row_log table              FKun
 -- 0.2.1     2020-02-01   reflect more changes in schema                   FKun
 -- 0.2.0     2019-06-09   change to upgrade from v0.6.1 to v0.7            FKun
@@ -129,14 +130,23 @@ CREATE SEQUENCE pgmemento.table_log_id_seq
   OWNED BY NONE;
 
 ALTER TABLE pgmemento.audit_table_log
-  ADD COLUMN log_id INTEGER;
+  ADD COLUMN log_id INTEGER,
+  ADD COLUMN audit_id_column TEXT,
+  ADD COLUMN log_old_data BOOLEAN,
+  ADD COLUMN log_new_data BOOLEAN;
 
 COMMENT ON COLUMN pgmemento.audit_table_log.log_id IS 'ID to trace a changing table';
 COMMENT ON COLUMN pgmemento.audit_table_log.relid IS '[DEPRECATED] The table''s OID to trace a table when changed';
+COMMENT ON COLUMN pgmemento.audit_table_log.audit_id_column IS 'The name for the audit_id column added to the audited table';
+COMMENT ON COLUMN pgmemento.audit_table_log.log_old_data IS 'Flag that shows if old values are logged for audited table';
+COMMENT ON COLUMN pgmemento.audit_table_log.log_new_data IS 'Flag that shows if new values are logged for audited table';
 
 -- generate log_ids
 UPDATE pgmemento.audit_table_log atl
-   SET log_id = s.log_id
+   SET log_id = s.log_id,
+       audit_id_column = 'audit_id',
+       log_old_data = TRUE,
+       log_new_data = FALSE
   FROM (
        SELECT relid, nextval('pgmemento.table_log_id_seq') AS log_id
          FROM (
@@ -149,10 +159,80 @@ UPDATE pgmemento.audit_table_log atl
 
 -- set log_id to NOT NULL and create index
 ALTER TABLE pgmemento.audit_table_log
-  ALTER COLUMN log_id SET NOT NULL;
+  ALTER COLUMN log_id SET NOT NULL,
+  ALTER COLUMN audit_id_column SET NOT NULL,
+  ALTER COLUMN log_old_data SET NOT NULL,
+  ALTER COLUMN log_new_data SET NOT NULL;
 
 ALTER INDEX IF EXISTS table_log_idx RENAME TO table_log_name_idx;
 CREATE INDEX IF NOT EXISTS table_log_idx ON pgmemento.audit_table_log USING BTREE (log_id);
 
 -- update table statistics
 VACUUM ANALYZE pgmemento.audit_table_log;
+
+-- AUDIT_SCHEMA_LOG
+-- new table to log pgMemento's configuration per schema
+CREATE TABLE pgmemento.audit_schema_log (
+  id SERIAL,
+  log_id INTEGER NOT NULL,
+  schema_name TEXT NOT NULL,
+  default_audit_id_column TEXT NOT NULL,
+  default_log_old_data BOOLEAN DEFAULT TRUE,
+  default_log_new_data BOOLEAN DEFAULT FALSE,
+  trigger_create_table BOOLEAN DEFAULT FALSE,
+  txid_range numrange
+);
+
+ALTER TABLE pgmemento.audit_schema_log
+  ADD CONSTRAINT audit_schema_log_pk PRIMARY KEY (id);
+
+COMMENT ON TABLE pgmemento.audit_schema_log IS 'Stores information about how pgMemento is configured in audited database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.id IS 'The Primary Key';
+COMMENT ON COLUMN pgmemento.audit_schema_log.log_id IS 'ID to trace a changing database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.schema_name IS 'The name of the database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_audit_id_column IS 'The default name for the audit_id column added to audited tables';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_log_old_data IS 'Default setting for tables to log old values';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_log_new_data IS 'Default setting for tables to log new values';
+COMMENT ON COLUMN pgmemento.audit_schema_log.trigger_create_table IS 'Flag that shows if pgMemento starts auditing for newly created tables';
+COMMENT ON COLUMN pgmemento.audit_schema_log.txid_range IS 'Stores the transaction IDs when pgMemento has been activated or stopped in the schema';
+
+
+DROP SEQUENCE IF EXISTS pgmemento.schema_log_id_seq;
+CREATE SEQUENCE pgmemento.schema_log_id_seq
+  INCREMENT BY 1
+  MINVALUE 0
+  MAXVALUE 2147483647
+  START WITH 1
+  CACHE 1
+  NO CYCLE
+  OWNED BY NONE;
+
+SELECT EXISTS (
+  SELECT
+    1
+  FROM
+    pg_event_trigger
+  WHERE
+    evtname = 'pgmemento_table_create_post_trigger'
+) AS trigger_create_table_enabled \gset
+
+-- fill audit_schema_log with infos from audit_table_log
+INSERT INTO pgmemento.audit_schema_log
+  (log_id, schema_name, default_audit_id_column, trigger_create_table, txid_range)
+SELECT
+  nextval('pgmemento.schema_log_id_seq'),
+  schema_name,
+  'audit_id',
+  :'trigger_create_table_enabled',
+  schema_txid_range
+FROM (
+  SELECT
+    schema_name,
+    numrange(min(lower(txid_range)), NULL, '(]') AS schema_txid_range
+  FROM
+    pgmemento.audit_table_log
+  GROUP BY
+    schema_name
+) s
+ORDER BY
+  lower(schema_txid_range);

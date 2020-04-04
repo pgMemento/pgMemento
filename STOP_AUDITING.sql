@@ -23,6 +23,6 @@ SET client_min_messages TO WARNING;
 
 \echo
 \prompt 'Please enter the name of the schema that is used along with pgMemento: ' schema_name
-\prompt 'Specify tables that were not logged (seperated by comma): ' except_tables
+\prompt 'Specify tables that were not logged (separated by comma): ' except_tables
 
 \i ctl/STOP.sql

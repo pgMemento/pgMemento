@@ -20,6 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.6.0     2020-04-03   reflect dynamic audit_id in logged tables       FKun  
 -- 0.5.0     2020-03-07   set SECURITY DEFINER in all functions           FKun
 -- 0.4.1     2020-02-08   use get_table_oid instead of trimming quotes    FKun
 -- 0.4.0     2019-02-14   support for quoted tables and schemas           FKun
@@ -51,7 +52,7 @@
 *     RETURNS SETOF VOID
 *   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   pkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
+*   pkey_table_state(target_table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
 *     RETURNS SETOF VOID
 *   sequence_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
@@ -67,17 +68,20 @@
 ***********************************************************/
 -- define a primary key for a produced table
 CREATE OR REPLACE FUNCTION pgmemento.pkey_table_state( 
-  table_name TEXT,
+  target_table_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
   pkey_columns TEXT := '';
+  audit_id_column_name TEXT;
 BEGIN
   -- rebuild primary key columns to index produced tables
   SELECT
-    string_agg(quote_ident(pga.attname),', ') INTO pkey_columns
+    string_agg(quote_ident(pga.attname),', ')
+  INTO
+    pkey_columns
   FROM
     pg_index pgi,
     pg_class pgc,
@@ -90,8 +94,18 @@ BEGIN
     AND pgi.indisprimary;
 
   IF pkey_columns IS NULL THEN
-    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''audit_id'' will be used as primary key.', $1;
-    pkey_columns := 'audit_id';
+    SELECT
+      audit_id_column
+    INTO
+      audit_id_column_name
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      table_name = $1
+      AND schema_name = $2;
+
+    RAISE NOTICE 'Table ''%'' has no primary key defined. Column ''%'' will be used as primary key.', $1, audit_id_column_name;
+    pkey_columns := audit_id_column_name;
   END IF;
 
   EXECUTE format('ALTER TABLE %I.%I ADD PRIMARY KEY (' || pkey_columns || ')', $2, $1);

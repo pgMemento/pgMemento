@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.6     2020-03-29   reflect that logging old data isconfigurable     FKun
+-- 0.7.5     2020-03-23   use audit_schema_log to check audit config       FKun
 -- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are used   FKun
 -- 0.7.3     2020-02-29   add triggers to log new data in row_log          FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers           FKun
@@ -47,14 +49,14 @@
 * C-o-n-t-e-n-t:
 *
 * FUNCTIONS:
-*   create_schema_event_trigger(trigger_create_table BOOLEAN DEFAULT FALSE, include_new BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
+*   create_schema_event_trigger(trigger_create_table BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_schema_event_trigger() RETURNS SETOF VOID
 *   fetch_ident(context TEXT, fetch_count INTEGER DEFAULT 1) RETURNS TEXT
 *   flatten_ddl(ddl_command TEXT) RETURNS TEXT
 *   get_ddl_from_context(stack TEXT) RETURNS TEXT
-*   modify_ddl_log_tables(tablename TEXT, schemaname TEXT) RETURNS SETOF VOID
+*   modify_ddl_log_tables(tablename TEXT, schemaname TEXT, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
 *   split_table_from_query(INOUT query TEXT, OUT audit_table_name TEXT, OUT audit_schema_name TEXT,
-*     OUT audit_table_log_id INTEGER) RETURNS RECORD AS
+*     OUT audit_table_log_id INTEGER, OUT audit_id_column_name TEXT, OUT audit_old_data BOOLEAN) RETURNS RECORD AS
 *
 * TRIGGER FUNCTIONS:
 *   schema_drop_pre_trigger() RETURNS event_trigger
@@ -215,7 +217,9 @@ CREATE OR REPLACE FUNCTION pgmemento.split_table_from_query(
   INOUT query TEXT,
   OUT audit_table_name TEXT,
   OUT audit_schema_name TEXT,
-  OUT audit_table_log_id INTEGER
+  OUT audit_table_log_id INTEGER,
+  OUT audit_id_column_name TEXT,
+  OUT audit_old_data BOOLEAN
   ) RETURNS RECORD AS
 $$
 DECLARE
@@ -265,11 +269,15 @@ BEGIN
     SELECT
       table_name,
       schema_name,
-      log_id
+      log_id,
+      audit_id_column,
+      log_old_data
     INTO
       audit_table_name,
       audit_schema_name,
-      audit_table_log_id
+      audit_table_log_id,
+      audit_id_column_name,
+      audit_old_data
     FROM
       pgmemento.audit_table_log
     WHERE
@@ -288,7 +296,9 @@ BEGIN
     FOR rec IN
       SELECT
         schema_name AS schema_name,
-        log_id
+        log_id,
+        audit_id_column,
+        log_old_data
       FROM
         pgmemento.audit_table_log
       WHERE
@@ -303,6 +313,8 @@ BEGIN
       END IF;
       audit_schema_name := rec.schema_name;
       audit_table_log_id := rec.log_id;
+      audit_id_column_name := rec.audit_id_column;
+      audit_old_data := rec.log_old_data;
     END LOOP;
   END IF;
 
@@ -357,6 +369,7 @@ BEGIN
         ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
       LEFT JOIN (
         SELECT
+          a.audit_id_column,
           c.ordinal_position,
           c.column_name
         FROM
@@ -372,13 +385,14 @@ BEGIN
           AND lower(c.txid_range) IS NOT NULL
         ) acl
       ON acl.ordinal_position = a.attnum
+      OR acl.audit_id_column = a.attname
       WHERE
         a.attrelid = pgmemento.get_table_oid($1, $2)
-        AND a.attname <> 'audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped
         AND (acl.ordinal_position IS NULL
-         OR acl.column_name <> a.attname)
+         OR (acl.column_name <> a.attname
+        AND acl.audit_id_column <> a.attname))
       ORDER BY
         a.attnum
     );
@@ -521,7 +535,8 @@ SECURITY DEFINER;
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.modify_row_log(
   tablename TEXT,
-  schemaname TEXT
+  schemaname TEXT,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -553,13 +568,15 @@ BEGIN
 
   IF added_columns IS NOT NULL OR array_length(added_columns, 1) > 0 THEN
     PERFORM pgmemento.log_new_table_state(added_columns, $1, $2,
-      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ADD COLUMN'), $1, $2)
+      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ADD COLUMN'), $1, $2),
+      $3
     );
   END IF;
 
   IF altered_columns IS NOT NULL OR array_length(altered_columns, 1) > 0 THEN
     PERFORM pgmemento.log_new_table_state(altered_columns, $1, $2,
-      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ALTER COLUMN'), $1, $2)
+      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ALTER COLUMN'), $1, $2),
+      $3
     );
   END IF;
 END;
@@ -630,36 +647,52 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- truncate tables to log the data
-  FOR rec IN
-    SELECT
-      n.nspname AS schemaname,
-      c.relname AS tablename
-    FROM
-      pg_class c
-    JOIN
-      pg_namespace n
-      ON n.oid = c.relnamespace
-    JOIN
-      pgmemento.audit_tables_dependency d
-      ON d.schemaname = n.nspname
-      AND d.tablename = c.relname
-    WHERE
-      n.nspname = pgmemento.trim_outer_quotes(schema_ident)
-    ORDER BY
-      n.oid,
-      d.depth DESC
-  LOOP
-    -- log the whole content of the dropped table as truncated
-    table_event_key := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
-    PERFORM pgmemento.log_old_table_state('{}'::text[], rec.tablename, rec.schemaname, table_event_key);
+  IF EXISTS (
+    SELECT 1 FROM pgmemento.audit_schema_log
+     WHERE schema_name = schema_ident
+       AND upper(txid_range) IS NULL
+  ) THEN
+    -- truncate tables to log the data
+    FOR rec IN
+      SELECT
+        n.nspname AS schemaname,
+        c.relname AS tablename,
+        a.audit_id_column,
+        a.log_old_data
+      FROM
+        pg_class c
+      JOIN
+        pg_namespace n
+        ON n.oid = c.relnamespace
+      JOIN
+        pgmemento.audit_table_log a
+        ON a.table_name = c.relname
+       AND a.schema_name = n.nspname
+       AND upper(a.txid_range) IS NULL
+       AND lower(a.txid_range) IS NOT NULL
+      JOIN
+        pgmemento.audit_tables_dependency d
+        ON d.schemaname = a.table_name
+       AND d.tablename = a.schema_name
+      WHERE
+        n.nspname = pgmemento.trim_outer_quotes(schema_ident)
+      ORDER BY
+        n.oid,
+        d.depth DESC
+    LOOP
+      -- log the whole content of the dropped table as truncated
+      table_event_key := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
+      IF rec.log_old_data THEN
+        PERFORM pgmemento.log_old_table_state('{}'::text[], rec.tablename, rec.schemaname, table_event_key, rec.audit_id_column);
+      END IF;
 
-    -- now log drop table event
-    PERFORM pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'DROP TABLE');
+      -- now log drop table event
+      PERFORM pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'DROP TABLE');
 
-    -- unregister table from log tables
-    PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
-  END LOOP;
+      -- unregister table from log tables
+      PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
+    END LOOP;
+  END IF;
 END;
 $$
 LANGUAGE plpgsql
@@ -678,84 +711,14 @@ DECLARE
   obj RECORD;
   tid INTEGER;
   table_log_id INTEGER;
-  tablename TEXT;
-  schemaname TEXT;
-BEGIN
-  tid := current_setting('pgmemento.' || txid_current())::int;
-
-  FOR obj IN
-    SELECT * FROM pg_event_trigger_ddl_commands()
-  LOOP
-    BEGIN
-      -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
-      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
-
-      -- get old table and schema name for this log_id
-      SELECT
-        table_name,
-        schema_name
-      INTO
-        tablename,
-        schemaname
-      FROM
-        pgmemento.audit_table_log
-      WHERE
-        log_id = table_log_id
-        AND upper(txid_range) IS NULL
-        AND lower(txid_range) IS NOT NULL;
-
-     EXCEPTION
-       WHEN others THEN
-         NULL; -- no log id set or no open txid_range. Use names from obj.
-    END;
-
-    IF tablename IS NULL THEN
-      -- get table from trigger variable - remove quotes if exists
-      tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
-      schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
-    END IF;
-
-    -- check for existing table events
-    IF EXISTS (
-      SELECT
-        1
-      FROM
-        pgmemento.table_event_log
-      WHERE
-        transaction_id = tid
-        AND table_name = tablename
-        AND schema_name = schemaname
-        AND op_id IN (12, 2, 21, 22, 5, 6)
-    ) THEN
-      PERFORM pgmemento.modify_ddl_log_tables(
-        pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2)),
-        pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1))
-      );
-    END IF;
-  END LOOP;
-
-  EXCEPTION
-    WHEN undefined_object THEN
-      RETURN; -- no event has been logged, yet
-END;
-$$
-LANGUAGE plpgsql
-SECURITY DEFINER;
-
-
-/**********************************************************
-* EVENT TRIGGER PROCEDURE table_alter_post_trigger_full
-*
-* Procedure that is called AFTER tables have been altered
-* to update 'row_log' table
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.table_alter_post_trigger_full() RETURNS event_trigger AS
-$$
-DECLARE
-  obj RECORD;
-  tid INTEGER;
-  tablename TEXT;
-  schemaname TEXT;
+  tg_tablename TEXT;
+  tg_schemaname TEXT;
+  current_table_name TEXT;
+  current_schema_name TEXT;
+  current_audit_id_column TEXT;
+  current_log_old_data BOOLEAN;
+  current_log_new_data BOOLEAN;
+  event_op_id SMALLINT;
 BEGIN
   tid := current_setting('pgmemento.' || txid_current())::int;
 
@@ -763,22 +726,86 @@ BEGIN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
     -- get table from trigger variable - remove quotes if exists
-    tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
-    schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+    tg_tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+    tg_schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
-    -- check for existing table events
-    IF EXISTS (
+    BEGIN
+      -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
+      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
+
+      -- get old table and schema name for this log_id
       SELECT
-        1
+        table_name,
+        schema_name,
+        audit_id_column,
+        log_old_data,
+        log_new_data
+      INTO
+        current_table_name,
+        current_schema_name,
+        current_audit_id_column,
+        current_log_old_data,
+        current_log_new_data
       FROM
-        pgmemento.table_event_log
+        pgmemento.audit_table_log
       WHERE
-        transaction_id = tid
-        AND table_name = tablename
-        AND schema_name = schemaname
-        AND op_id = 2 OR op_id = 5
-    ) THEN
-      PERFORM pgmemento.modify_row_log(tablename, schemaname);
+        log_id = table_log_id
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+
+      EXCEPTION
+        WHEN others THEN
+          NULL; -- no log id set or no open txid_range. Use names from obj.
+    END;
+
+    IF current_table_name IS NULL THEN
+      current_table_name := tg_tablename;
+      current_schema_name := tg_schemaname;
+
+      -- get current settings for audit table
+      SELECT
+        audit_id_column,
+        log_old_data,
+        log_new_data
+      INTO
+        current_audit_id_column,
+        current_log_old_data,
+        current_log_new_data
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = current_table_name
+        AND schema_name = current_schema_name
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+    ELSE
+      -- table got renamed and so remember audit_id_column and logging behavior to register renamed version
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.audit_id.' || txid_current(), current_audit_id_column, TRUE);
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.log_data.' || txid_current(),
+        CASE WHEN current_log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
+        CASE WHEN current_log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
+    END IF;
+
+    -- modify audit_table_log and audit_column_log if DDL events happened
+    SELECT
+      op_id
+    INTO
+      event_op_id
+    FROM
+      pgmemento.table_event_log
+    WHERE
+      transaction_id = tid
+      AND table_name = current_table_name
+      AND schema_name = current_schema_name
+      AND op_id IN (12, 2, 21, 22, 5, 6);
+    
+    IF event_op_id IS NOT NULL THEN
+      PERFORM pgmemento.modify_ddl_log_tables(tg_tablename, tg_schemaname);
+    END IF;
+
+    -- update row_log to with new log data
+    IF current_log_new_data AND (event_op_id = 2 OR event_op_id = 5) THEN
+      PERFORM pgmemento.modify_row_log(tg_tablename, tg_schemaname, current_audit_id_column);
     END IF;
   END LOOP;
 
@@ -809,6 +836,8 @@ DECLARE
   schemaname TEXT;
   table_log_id INTEGER;
   ntables INTEGER := 0;
+  audit_id_columnname TEXT;
+  log_old_data BOOLEAN;
   column_candidate TEXT;
   columnname TEXT;
   event_type TEXT;
@@ -848,12 +877,16 @@ BEGIN
       query,
       audit_table_name,
       audit_schema_name,
-      audit_table_log_id
+      audit_table_log_id,
+      audit_id_column_name,
+      audit_old_data
     INTO
       ddl_text,
       tablename,
       schemaname,
-      table_log_id
+      table_log_id,
+      audit_id_columnname,
+      log_old_data
     FROM
       pgmemento.split_table_from_query(ddl_text);
 
@@ -919,7 +952,7 @@ BEGIN
               END;
             END LOOP;
           ELSE
-            IF column_candidate = 'audit_id' THEN
+            IF column_candidate = audit_id_columnname THEN
               columnname := column_candidate;
             ELSE
               SELECT
@@ -941,8 +974,8 @@ BEGIN
             IF columnname IS NOT NULL THEN
               CASE event_type
                 WHEN 'RENAME' THEN
-                  IF column_candidate = 'audit_id' THEN
-                    RAISE EXCEPTION 'Renaming the audit_id column is not possible!';
+                  IF column_candidate = audit_id_columnname THEN
+                    RAISE EXCEPTION 'Renaming the % column is not possible!', audit_id_columnname;
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
                   PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME COLUMN');
@@ -989,20 +1022,22 @@ BEGIN
       table_event_key := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ALTER COLUMN');
 
       -- log data of entire column(s)
-      IF array_length(altered_columns_log, 1) > 0 THEN
-        PERFORM pgmemento.log_old_table_state(altered_columns_log, tablename, schemaname, table_event_key);
+      IF array_length(altered_columns_log, 1) > 0 AND log_old_data THEN
+        PERFORM pgmemento.log_old_table_state(altered_columns_log, tablename, schemaname, table_event_key, audit_id_columnname);
       END IF;
     END IF;
 
     IF array_length(dropped_columns, 1) > 0 THEN
-      IF NOT ('audit_id' = ANY(dropped_columns)) THEN
+      IF NOT (audit_id_columnname = ANY(dropped_columns)) THEN
         -- log DROP COLUMN table event
         table_event_key := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP COLUMN');
 
         -- log data of entire column(s)
-        PERFORM pgmemento.log_old_table_state(dropped_columns, tablename, schemaname, table_event_key);
+        IF log_old_data THEN
+          PERFORM pgmemento.log_old_table_state(dropped_columns, tablename, schemaname, table_event_key, audit_id_columnname);
+        END IF;
       ELSE
-        RAISE EXCEPTION 'To remove the audit_id column, please use pgmemento.drop_table_audit!';
+        RAISE EXCEPTION 'To remove the % column, please use pgmemento.drop_table_audit!', audit_id_columnname;
       END IF;
     END IF;
   END IF;
@@ -1023,74 +1058,52 @@ DECLARE
   obj record;
   tablename TEXT;
   schemaname TEXT;
+  current_default_column TEXT;
+  current_log_old_data BOOLEAN;
+  current_log_new_data BOOLEAN;
 BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
+    IF obj.object_type = 'table' THEN
       -- remove quotes if exists
       tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
       schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
 
-      -- log as 'create table' event
-      PERFORM pgmemento.log_table_event(
-        txid_current(),
-        tablename,
-        schemaname,
-        'CREATE TABLE'
-      );
+      -- check if auditing is active for schema
+      SELECT
+        default_audit_id_column,
+        default_log_old_data,
+        default_log_new_data
+      INTO
+        current_default_column,
+        current_log_old_data,
+        current_log_new_data
+      FROM
+        pgmemento.audit_schema_log
+      WHERE
+        schema_name = schemaname
+        AND upper(txid_range) IS NULL;
 
-      -- start auditing for new table
-      PERFORM pgmemento.create_table_audit(
-        tablename,
-        schemaname,
-        FALSE,
-        FALSE
-      );
-    END IF;
-  END LOOP;
-END;
-$$
-LANGUAGE plpgsql
-SECURITY DEFINER;
+      IF current_default_column IS NOT NULL THEN
+        -- log as 'create table' event
+        PERFORM pgmemento.log_table_event(
+          txid_current(),
+          tablename,
+          schemaname,
+          'CREATE TABLE'
+        );
 
-
-/**********************************************************
-* EVENT TRIGGER PROCEDURE table_create_post_trigger_full
-*
-* Procedure that is called AFTER new tables have been created
-* and created an audited table which logs also new data
-**********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.table_create_post_trigger_full() RETURNS event_trigger AS
-$$
-DECLARE
-  obj record;
-  tablename TEXT;
-  schemaname TEXT;
-BEGIN
-  FOR obj IN
-    SELECT * FROM pg_event_trigger_ddl_commands()
-  LOOP
-    IF obj.object_type = 'table' AND obj.schema_name NOT LIKE 'pg_temp%' THEN
-      -- remove quotes if exists
-      tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
-      schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
-
-      -- log as 'create table' event
-      PERFORM pgmemento.log_table_event(
-        txid_current(),
-        tablename,
-        schemaname,
-        'CREATE TABLE'
-      );
-
-      -- start auditing for new table
-      PERFORM pgmemento.create_table_audit(
-        tablename,
-        schemaname,
-        FALSE,
-        TRUE
-      );
+        -- start auditing for new table
+        PERFORM pgmemento.create_table_audit(
+          tablename,
+          schemaname,
+          current_default_column,
+          current_log_old_data,
+          current_log_new_data,
+          FALSE
+        );
+      END IF;
     END IF;
   END LOOP;
 END;
@@ -1131,7 +1144,7 @@ BEGIN
           FROM
             pgmemento.table_event_log
           WHERE
-            transaction_id = current_setting('pgmemento.' || txid_current())::int
+            transaction_id = tid
             AND table_name = tablename
             AND schema_name = schemaname
             AND op_id = 8
@@ -1173,11 +1186,10 @@ $$
 DECLARE
   ddl_text TEXT := current_query();
   stack TEXT;
-  fetch_next BOOLEAN := TRUE;
-  table_ident TEXT;
   schemaname TEXT;
   tablename TEXT;
-  ntables INTEGER := 0;
+  audit_id_columnname TEXT;
+  log_old_data BOOLEAN;
   table_event_key TEXT;
 BEGIN
   -- get context in which trigger has been fired
@@ -1197,11 +1209,15 @@ BEGIN
   SELECT
     query,
     audit_table_name,
-    audit_schema_name
+    audit_schema_name,
+    audit_id_column_name,
+    audit_old_data
   INTO
     ddl_text,
     tablename,
-    schemaname
+    schemaname,
+    audit_id_columnname,
+    log_old_data
   FROM
     pgmemento.split_table_from_query(ddl_text);
 
@@ -1212,7 +1228,9 @@ BEGIN
 
   -- log the whole content of the dropped table as truncated
   table_event_key :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
-  PERFORM pgmemento.log_old_table_state('{}'::text[], tablename, schemaname, table_event_key);
+  IF log_old_data THEN
+    PERFORM pgmemento.log_old_table_state('{}'::text[], tablename, schemaname, table_event_key, audit_id_columnname);
+  END IF;
 
   -- now log drop table event
   PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
@@ -1229,8 +1247,7 @@ SECURITY DEFINER;
 * created, altered or dropped
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_event_trigger(
-  trigger_create_table BOOLEAN DEFAULT FALSE,
-  include_new BOOLEAN DEFAULT FALSE
+  trigger_create_table BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
@@ -1238,9 +1255,9 @@ BEGIN
   -- before it is lost
   IF NOT EXISTS (
     SELECT 1 FROM pg_event_trigger
-      WHERE evtname = 'schema_drop_pre_trigger'
+      WHERE evtname = 'pgmemento_schema_drop_pre_trigger'
   ) THEN
-    CREATE EVENT TRIGGER schema_drop_pre_trigger ON ddl_command_start
+    CREATE EVENT TRIGGER pgmemento_schema_drop_pre_trigger ON ddl_command_start
       WHEN TAG IN ('DROP SCHEMA')
         EXECUTE PROCEDURE pgmemento.schema_drop_pre_trigger();
   END IF;
@@ -1249,33 +1266,20 @@ BEGIN
   -- after table is altered
   IF NOT EXISTS (
     SELECT 1 FROM pg_event_trigger
-      WHERE evtname = 'table_alter_post_trigger'
+      WHERE evtname = 'pgmemento_table_alter_post_trigger'
   ) THEN
-    CREATE EVENT TRIGGER table_alter_post_trigger ON ddl_command_end
+    CREATE EVENT TRIGGER pgmemento_table_alter_post_trigger ON ddl_command_end
       WHEN TAG IN ('ALTER TABLE')
         EXECUTE PROCEDURE pgmemento.table_alter_post_trigger();
-  END IF;
-
-  IF $2 THEN
-    -- Create event trigger for ALTER TABLE events to update 'row_log' table
-    -- after table is altered
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_event_trigger
-        WHERE evtname = 'table_alter_post_trigger_full'
-    ) THEN
-      CREATE EVENT TRIGGER table_alter_post_trigger_full ON ddl_command_end
-        WHEN TAG IN ('ALTER TABLE')
-          EXECUTE PROCEDURE pgmemento.table_alter_post_trigger_full();
-    END IF;
   END IF;
 
   -- Create event trigger for ALTER TABLE events to log data
   -- before table is altered
   IF NOT EXISTS (
     SELECT 1 FROM pg_event_trigger
-      WHERE evtname = 'table_alter_pre_trigger'
+      WHERE evtname = 'pgmemento_table_alter_pre_trigger'
   ) THEN
-    CREATE EVENT TRIGGER table_alter_pre_trigger ON ddl_command_start
+    CREATE EVENT TRIGGER pgmemento_table_alter_pre_trigger ON ddl_command_start
       WHEN TAG IN ('ALTER TABLE')
         EXECUTE PROCEDURE pgmemento.table_alter_pre_trigger();
   END IF;
@@ -1283,25 +1287,13 @@ BEGIN
   -- Create event trigger for CREATE TABLE events to automatically start auditing on new tables
   -- The user can decide if he wants this behaviour during initializing pgMemento.
   IF $1 THEN
-    -- if new data should be included in logs create a different event trigger
-    IF $2 THEN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_event_trigger
-          WHERE evtname = 'table_create_post_trigger_full'
-      ) THEN
-        CREATE EVENT TRIGGER table_create_post_trigger_full ON ddl_command_end
-          WHEN TAG IN ('CREATE TABLE')
-            EXECUTE PROCEDURE pgmemento.table_create_post_trigger_full();
-      END IF;
-    ELSE
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_event_trigger
-          WHERE evtname = 'table_create_post_trigger'
-      ) THEN
-        CREATE EVENT TRIGGER table_create_post_trigger ON ddl_command_end
-          WHEN TAG IN ('CREATE TABLE')
-            EXECUTE PROCEDURE pgmemento.table_create_post_trigger();
-      END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_event_trigger
+        WHERE evtname = 'pgmemento_table_create_post_trigger'
+    ) THEN
+      CREATE EVENT TRIGGER pgmemento_table_create_post_trigger ON ddl_command_end
+        WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
+          EXECUTE PROCEDURE pgmemento.table_create_post_trigger();
     END IF;
   END IF;
 
@@ -1309,9 +1301,9 @@ BEGIN
   -- after table is dropped
   IF NOT EXISTS (
     SELECT 1 FROM pg_event_trigger
-      WHERE evtname = 'table_drop_post_trigger'
+      WHERE evtname = 'pgmemento_table_drop_post_trigger'
   ) THEN
-    CREATE EVENT TRIGGER table_drop_post_trigger ON sql_drop
+    CREATE EVENT TRIGGER pgmemento_table_drop_post_trigger ON sql_drop
       WHEN TAG IN ('DROP TABLE')
         EXECUTE PROCEDURE pgmemento.table_drop_post_trigger();
   END IF;
@@ -1320,9 +1312,9 @@ BEGIN
   -- before it is lost
   IF NOT EXISTS (
     SELECT 1 FROM pg_event_trigger
-      WHERE evtname = 'table_drop_pre_trigger'
+      WHERE evtname = 'pgmemento_table_drop_pre_trigger'
   ) THEN
-    CREATE EVENT TRIGGER table_drop_pre_trigger ON ddl_command_start
+    CREATE EVENT TRIGGER pgmemento_table_drop_pre_trigger ON ddl_command_start
       WHEN TAG IN ('DROP TABLE')
         EXECUTE PROCEDURE pgmemento.table_drop_pre_trigger();
   END IF;
@@ -1332,11 +1324,11 @@ LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_event_trigger() RETURNS SETOF VOID AS
 $$
-  DROP EVENT TRIGGER IF EXISTS schema_drop_pre_trigger;
-  DROP EVENT TRIGGER IF EXISTS table_alter_post_trigger;
-  DROP EVENT TRIGGER IF EXISTS table_alter_pre_trigger;
-  DROP EVENT TRIGGER IF EXISTS table_create_post_trigger;
-  DROP EVENT TRIGGER IF EXISTS table_drop_post_trigger;
-  DROP EVENT TRIGGER IF EXISTS table_drop_pre_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_schema_drop_pre_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_table_alter_post_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_table_alter_pre_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_table_create_post_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_table_drop_post_trigger;
+  DROP EVENT TRIGGER IF EXISTS pgmemento_table_drop_pre_trigger;
 $$
 LANGUAGE sql;

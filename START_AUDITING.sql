@@ -24,7 +24,8 @@ SET client_min_messages TO WARNING;
 
 \echo
 \prompt 'Please enter the name of the schema to be used along with pgMemento: ' schema_name
-\prompt 'Specify tables to be excluded from logging processes (seperated by comma): ' except_tables
 \prompt 'Store new data in audit logs, too? (y|N): ' log_new_data
+\prompt 'Trigger CREATE TABLE statements? (y|N): ' trigger_create_table
+\prompt 'Specify tables to be excluded from logging processes (separated by comma): ' except_tables
 
 \i ctl/START.sql

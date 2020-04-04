@@ -18,8 +18,7 @@ psql postgres postgres -c 'CREATE DATABASE pgmemento_backup';
 echo "Creating initial data for backup";
 cat <<'EOF' | psql pgmemento_backup postgres
   CREATE EXTENSION pgmemento;
-  SELECT pgmemento.create_schema_event_trigger(true, true);
-  SELECT pgmemento.create_schema_audit('public', true, true);
+  SELECT pgmemento.init('public', 'pgmemento_audit_id' true, true, false, true);
 
   CREATE TABLE valuable_data (id INTEGER, value VARCHAR);
   INSERT INTO valuable_data (id, value) VALUES (1, 'one'), (2, 'two'), (3, 'three');
@@ -31,7 +30,7 @@ cat <<'EOF' | psql pgmemento_backup postgres -qAt > /tmp/restore_data.sql
   SELECT format(
     'SELECT set_config(''pgmemento.restore_value'', pgmemento.restore_value(%1$s, %2$s, ''value'', NULL::varchar), FALSE) AS restore',
     (SELECT txid_max FROM pgmemento.audit_tables WHERE tablename = 'valuable_data'),
-    (SELECT audit_id FROM valuable_data WHERE id = 2)
+    (SELECT pgmemento_audit_id FROM valuable_data WHERE id = 2)
   );
 EOF
 

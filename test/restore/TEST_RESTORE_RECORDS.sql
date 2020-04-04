@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-11-07   initial commit                                   FKun
 --
@@ -32,7 +33,7 @@ DECLARE
   column_list TEXT;
 BEGIN
   SELECT
-    pgmemento.restore_record_definition(1, 19, log_id)
+    pgmemento.restore_record_definition(1, 20, log_id)
   INTO
     column_list
   FROM
@@ -41,7 +42,7 @@ BEGIN
     table_name = 'object'
     AND schema_name = 'public';
 
-  ASSERT column_list = 'AS (id integer, lineage text, audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)', 'Incorrect column definition list: %', column_list;
+  ASSERT column_list = 'AS (id integer, lineage text, pgmemento_audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)', 'Incorrect column definition list: %', column_list;
   
   -- save column_list for next tests
   PERFORM set_config('pgmemento.column_list', column_list, FALSE);
@@ -54,12 +55,12 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  query_sring TEXT := 'SELECT array_agg(lineage) FROM pgmemento.restore_records(1, 19, ''object'', ''public'', 3)';
+  query_sring TEXT := 'SELECT array_agg(lineage) FROM pgmemento.restore_records(1, 20, ''object'', ''public'', 3)';
   lineage_values TEXT[];
   jsonb_log JSONB;
 BEGIN
   -- append saved column list to query string
-  query_sring := query_sring || current_setting('pgmemento.column_list');
+  query_sring := query_sring || ' ' || current_setting('pgmemento.column_list');
   
   EXECUTE query_sring INTO lineage_values;
 
@@ -73,18 +74,18 @@ BEGIN
   INTO
     jsonb_log
   FROM
-    pgmemento.restore_records(1, 19, 'object', 'public', 3, TRUE)
+    pgmemento.restore_records(1, 20, 'object', 'public', 3, TRUE)
     AS (log JSONB);
 
   ASSERT jsonb_log->0->>'lineage' = 'pgm_insert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_insert_test'', but found %', jsonb_log->0->>'lineage';
   ASSERT jsonb_log->0->>'table_operation' = 'INSERT' , 'Incorrect historic value for ''table_operation''. Expected ''INSERT'', but found %', jsonb_log->0->>'table_operation';
-  ASSERT jsonb_log->0->>'transaction_id' = '14', 'Incorrect historic value for ''transaction_id'' column. Expected 14, but found %', jsonb_log->0->>'transaction_id';
+  ASSERT jsonb_log->0->>'transaction_id' = '15', 'Incorrect historic value for ''transaction_id'' column. Expected 15, but found %', jsonb_log->0->>'transaction_id';
   ASSERT jsonb_log->1->>'lineage' = 'pgm_upsert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_upsert_test'', but found %', jsonb_log->1->>'lineage';
   ASSERT jsonb_log->1->>'table_operation' = 'UPDATE' , 'Incorrect historic value for ''table_operation''. Expected ''UPDATE'', but found %', jsonb_log->1->>'table_operation';
-  ASSERT jsonb_log->1->>'transaction_id' = '15', 'Incorrect historic value for ''transaction_id'' column. Expected 15, but found %', jsonb_log->1->>'transaction_id';
+  ASSERT jsonb_log->1->>'transaction_id' = '16', 'Incorrect historic value for ''transaction_id'' column. Expected 16, but found %', jsonb_log->1->>'transaction_id';
   ASSERT jsonb_log->2->>'lineage' = 'pgm_update_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_update_test'', but found %', jsonb_log->2->>'lineage';
   ASSERT jsonb_log->2->>'table_operation' = 'UPDATE' , 'Incorrect historic value for ''table_operation''. Expected ''UPDATE'', but found %', jsonb_log->2->>'table_operation';
-  ASSERT jsonb_log->2->>'transaction_id' = '18', 'Incorrect historic value for ''transaction_id'' column. Expected 18, but found %', jsonb_log->2->>'transaction_id';
+  ASSERT jsonb_log->2->>'transaction_id' = '19', 'Incorrect historic value for ''transaction_id'' column. Expected 19, but found %', jsonb_log->2->>'transaction_id';
 END;
 $$
 LANGUAGE plpgsql;

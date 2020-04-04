@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-20   initial commit                                   FKun
 --
@@ -43,7 +44,7 @@ DECLARE
 BEGIN
   -- collect ids into array before doing a TRUNCATE
   SELECT
-    array_agg(audit_id)
+    array_agg(pgmemento_audit_id)
   INTO
     truncate_audit_ids
   FROM

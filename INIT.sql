@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.3.0     2020-03-30   simply call new init function                  FKun
 -- 0.2.0     2020-02-29   add new option to log new data in row_log      FKun
 -- 0.1.0     2016-03-09   initial commit                                 FKun
 --
@@ -24,23 +25,20 @@ SET client_min_messages TO WARNING;
 
 \echo
 \prompt 'Please enter the name of the schema to be used along with pgMemento: ' schema_name
-\prompt 'Specify tables to be excluded from logging processes (seperated by comma): ' except_tables
 \prompt 'Store new data in audit logs, too? (y|N): ' log_new_data
 \prompt 'Log existing data as inserted (baseline)? (y|N): ' log_baseline
 \prompt 'Trigger CREATE TABLE statements? (y|N): ' trigger_create_table
+\prompt 'Specify tables to be excluded from logging processes (separated by comma): ' except_tables
 
 \echo
-\echo 'Create event trigger to log schema changes ...'
-SELECT pgmemento.create_schema_event_trigger(
-  CASE WHEN lower(:'trigger_create_table') = 'y' OR lower(:'trigger_create_table') = 'yes' THEN TRUE ELSE FALSE END,
-  CASE WHEN lower(:'log_new_data') = 'y' OR lower(:'log_new_data') = 'yes' THEN TRUE ELSE FALSE END);
+\echo 'Initializing pgMemento in ':schema_name' schema ...'
 
-\echo
-\echo 'Start auditing for tables in ':schema_name' schema ...'
-SELECT pgmemento.create_schema_audit(:'schema_name',
-  CASE WHEN lower(:'log_baseline') = 'y' OR lower(:'log_baseline') = 'yes' THEN TRUE ELSE FALSE END,
+SELECT pgmemento.init(
+  :'schema_name'
+  'pgmemento_audit_id',
+  TRUE,
   CASE WHEN lower(:'log_new_data') = 'y' OR lower(:'log_new_data') = 'yes' THEN TRUE ELSE FALSE END,
-  string_to_array(:'except_tables',','));
-
-\echo
-\echo 'pgMemento is now initialized on ':schema_name' schema.'
+  CASE WHEN lower(:'log_baseline') = 'y' OR lower(:'log_baseline') = 'yes' THEN TRUE ELSE FALSE END,
+  CASE WHEN lower(:'trigger_create_table') = 'y' OR lower(:'trigger_create_table') = 'yes' THEN TRUE ELSE FALSE END,
+  string_to_array(:'except_tables',',')
+);
