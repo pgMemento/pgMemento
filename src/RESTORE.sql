@@ -593,7 +593,7 @@ DECLARE
   replace_view TEXT := ' ';
   restore_query TEXT;
 BEGIN
-  -- test if target schema already exist
+  -- test if target schema already exists
   IF NOT EXISTS (
     SELECT
       1
@@ -605,7 +605,7 @@ BEGIN
     EXECUTE format('CREATE SCHEMA %I', $5);
   END IF;
 
-  -- test if table, view or materialized view already exist in target schema
+  -- test if table, view or materialized view already exists in target schema
   SELECT
     c.relkind
   INTO
@@ -639,7 +639,7 @@ BEGIN
       END IF;
     ELSE
       RAISE EXCEPTION
-        'Relation ''%'' in schema ''%'' does already exist. Either set the update_state flag to TRUE or choose another target schema.',
+        'Relation ''%'' in schema ''%'' does already exists. Either set the update_state flag to TRUE or choose another target schema.',
         $3, $5;
     END IF;
   END IF;

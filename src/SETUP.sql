@@ -735,7 +735,7 @@ BEGIN
       'ALTER TABLE %I.%I ADD COLUMN %I BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
       $2, $1, $3);
   ELSE
-    RAISE NOTICE 'Column ''%'' already exist.', $3;
+    RAISE NOTICE 'Column ''%'' already exists.', $3;
   END IF;
 END;
 $$

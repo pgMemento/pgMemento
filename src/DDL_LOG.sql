@@ -1292,7 +1292,7 @@ BEGIN
         WHERE evtname = 'pgmemento_table_create_post_trigger'
     ) THEN
       CREATE EVENT TRIGGER pgmemento_table_create_post_trigger ON ddl_command_end
-        WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
+        WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
           EXECUTE PROCEDURE pgmemento.table_create_post_trigger();
     END IF;
   END IF;

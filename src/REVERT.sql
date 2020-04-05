@@ -344,7 +344,7 @@ BEGIN
 
       EXCEPTION
         WHEN duplicate_column THEN
-          -- if column already exist just do an UPDATE
+          -- if column already exists just do an UPDATE
           PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6, $7);
 	END;
 
