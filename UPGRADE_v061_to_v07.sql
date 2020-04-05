@@ -27,8 +27,17 @@ SET client_min_messages TO WARNING;
 \echo
 \echo 'Updgrade pgMemento from v0.6.1 to v0.7.0 ...'
 
+SELECT EXISTS (
+  SELECT
+    1
+  FROM
+    pg_event_trigger
+  WHERE
+    evtname = 'table_create_post_trigger'
+) AS trigger_create_table_enabled \gset
+
 \echo
-\echo 'Rename triggers'
+\echo 'Rename table triggers, drop event triggers'
 DO
 $$
 DECLARE
@@ -169,6 +178,32 @@ DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 \i src/REVERT.sql
 \i src/SCHEMA_MANAGEMENT.sql
 \i src/CTL.sql
+
+\echo
+\echo 'Register all schemas with audited tables in audit_schema_log'
+INSERT INTO pgmemento.audit_schema_log
+  (log_id, schema_name, default_audit_id_column, trigger_create_table, txid_range)
+SELECT
+  nextval('pgmemento.schema_log_id_seq'),
+  schema_name,
+  'audit_id',
+  :'trigger_create_table_enabled',
+  schema_txid_range
+FROM (
+  SELECT
+    schema_name,
+    numrange(min(lower(txid_range)), NULL, '(]') AS schema_txid_range
+  FROM
+    pgmemento.audit_table_log
+  GROUP BY
+    schema_name
+) s
+ORDER BY
+  lower(schema_txid_range);
+
+\echo
+\echo 'Recreate event triggers'
+SELECT pgmemento.create_schema_event_trigger(:'trigger_create_table_enabled');
 
 \echo
 \echo 'pgMemento upgrade completed!'

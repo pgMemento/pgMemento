@@ -206,33 +206,3 @@ CREATE SEQUENCE pgmemento.schema_log_id_seq
   CACHE 1
   NO CYCLE
   OWNED BY NONE;
-
-SELECT EXISTS (
-  SELECT
-    1
-  FROM
-    pg_event_trigger
-  WHERE
-    evtname = 'pgmemento_table_create_post_trigger'
-) AS trigger_create_table_enabled \gset
-
--- fill audit_schema_log with infos from audit_table_log
-INSERT INTO pgmemento.audit_schema_log
-  (log_id, schema_name, default_audit_id_column, trigger_create_table, txid_range)
-SELECT
-  nextval('pgmemento.schema_log_id_seq'),
-  schema_name,
-  'audit_id',
-  :'trigger_create_table_enabled',
-  schema_txid_range
-FROM (
-  SELECT
-    schema_name,
-    numrange(min(lower(txid_range)), NULL, '(]') AS schema_txid_range
-  FROM
-    pgmemento.audit_table_log
-  GROUP BY
-    schema_name
-) s
-ORDER BY
-  lower(schema_txid_range);
