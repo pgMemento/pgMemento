@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.7.6     2020-03-29   reflect that logging old data isconfigurable     FKun
+-- 0.7.7     2020-04-05   add tags CREATE TABLE AS and SELECT INTO         FKun
+-- 0.7.6     2020-03-29   reflect that logging old data is configurable    FKun
 -- 0.7.5     2020-03-23   use audit_schema_log to check audit config       FKun
 -- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are used   FKun
 -- 0.7.3     2020-02-29   add triggers to log new data in row_log          FKun
