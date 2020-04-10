@@ -204,7 +204,7 @@ CREATE TABLE pgmemento.audit_column_log (
   column_default TEXT,
   not_null BOOLEAN,
   txid_range numrange
-); 
+);
 
 ALTER TABLE pgmemento.audit_column_log
   ADD CONSTRAINT audit_column_log_pk PRIMARY KEY (id);

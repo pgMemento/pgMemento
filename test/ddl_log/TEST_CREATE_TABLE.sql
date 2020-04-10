@@ -145,11 +145,11 @@ BEGIN
 
   ASSERT colnames[1] = 'id', 'Did not find column ''id'' in audit_column_log, but % instead', colnames[1];
   ASSERT datatypes[1] = 'integer', 'Incorrect datatype for integer-based ''id'' column in audit_column_log: %', datatypes[1];
-  --ASSERT defaults[1] = E'nextval(\'public.test_id_seq\'::regclass)', 'Incorrect default value for serial column ''id'' in audit_column_log: %', defaults[1];  
+  --ASSERT defaults[1] = E'nextval(\'public.test_id_seq\'::regclass)', 'Incorrect default value for serial column ''id'' in audit_column_log: %', defaults[1];
   ASSERT lower(tid_ranges[1]) = test_transaction, 'Error: Starting transaction id % for ''id'' column does not match the id % of CREATE TABLE event', lower(tid_ranges[1]), test_transaction;
   ASSERT upper(tid_ranges[1]) IS NULL, 'Error: Table should still exist and upper boundary of transaction range for ''id'' column should be NULL, but % instead', upper(tid_ranges[1]);
   ASSERT colnames[2] = 'test_column', 'Did not find column ''test_column'' in audit_column_log, but % instead', colnames[2];
-  ASSERT datatypes[2] = 'text', 'Incorrect datatype for text-based ''test_column'' column in audit_column_log: %', datatypes[2]; 
+  ASSERT datatypes[2] = 'text', 'Incorrect datatype for text-based ''test_column'' column in audit_column_log: %', datatypes[2];
   ASSERT lower(tid_ranges[2]) = test_transaction, 'Error: Starting transaction id % for ''test_column'' column does not match the id % of CREATE TABLE event', lower(tid_ranges[2]), test_transaction;
   ASSERT upper(tid_ranges[2]) IS NULL, 'Error: Table should still exist and upper boundary of transaction range for ''test_column'' column should be NULL, but % instead', upper(tid_ranges[2]);
   ASSERT colnames[3] = 'test_geom_column', 'Did not find column ''test_geom_column'' in audit_column_log, but % instead', colnames[3];

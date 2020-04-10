@@ -15,7 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.7.4     2020-03-23   reflect dynamic audit_id in logged tables           FKun    
+-- 0.7.4     2020-03-23   reflect dynamic audit_id in logged tables           FKun
 -- 0.7.3     2020-02-29   reflect new schema of row_log table                 FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers              FKun
 -- 0.7.1     2020-02-08   stop using trim_outer_quotes for tables             FKun
@@ -75,9 +75,9 @@
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
 *   restore_recordsets(start_from_tid INTEGER, end_at_tid INTEGER, table_name TEXT, schema_name TEXT DEFAULT 'public'::text,
 *     jsonb_output BOOLEAN DEFAULT FALSE) RETURNS SETOF RECORD
-*   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT, 
+*   restore_schema_state(start_from_tid INTEGER, end_at_tid INTEGER, original_schema_name TEXT, target_schema_name TEXT,
 *     target_table_type TEXT DEFAULT 'VIEW', update_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
-*   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT, 
+*   restore_table_state(start_from_tid INTEGER, end_at_tid INTEGER, original_table_name TEXT, original_schema_name TEXT,
 *     target_schema_name TEXT, target_table_type TEXT DEFAULT 'VIEW', update_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   restore_value(until_tid INTEGER, aid BIGINT, column_name TEXT, INOUT restored_value anyelement) RETURNS anyelement
 ***********************************************************/
@@ -241,13 +241,13 @@ BEGIN
       ),
       string_agg(
         '  COALESCE(('
-        || format('CASE WHEN transaction_id >= %L AND transaction_id < %L THEN %I ->> 0 ELSE NULL END', 
+        || format('CASE WHEN transaction_id >= %L AND transaction_id < %L THEN %I ->> 0 ELSE NULL END',
              CASE WHEN lower(c_old.txid_range) IS NOT NULL THEN lower(c_old.txid_range) ELSE $1 END,
              CASE WHEN upper(c_old.txid_range) IS NOT NULL THEN upper(c_old.txid_range) ELSE $2 END,
              c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END
            )
         || format(')::%s, NULL::%s) AS %s',
-             c_old.data_type, c_old.data_type, 
+             c_old.data_type, c_old.data_type,
              quote_ident(c_old.column_name || CASE WHEN c_old.column_count > 1 THEN '_' || c_old.column_count ELSE '' END)
            )
         , E',\n' ORDER BY c_old.ordinal_position, c_old.column_count
@@ -262,7 +262,7 @@ BEGIN
       ON c_old.ordinal_position = c_new.ordinal_position
      AND c_old.data_type = c_new.data_type
      AND c_new.audit_table_id = new_tab_id
-     AND upper(c_new.txid_range) IS NULL; 
+     AND upper(c_new.txid_range) IS NULL;
   ELSE
     SELECT
       string_agg(
@@ -302,7 +302,7 @@ BEGIN
     || 'a.audit_id'
     || CASE WHEN join_recent_state THEN ', x.' || new_audit_id_column ELSE '' END
     || E')\n'
-    -- add column selection that has been set up above 
+    -- add column selection that has been set up above
     || find_logs
     || E',\n    f.audit_id'
     || CASE WHEN $6 THEN E',\n    f.stmt_time,\n    f.table_operation,\n    f.transaction_id\n' ELSE E'\n' END
@@ -515,7 +515,7 @@ LANGUAGE sql STABLE STRICT;
 *
 * Function to create a temporary table to be used as a
 * historically correct template for restoring data with
-* jsonb_populate_record function 
+* jsonb_populate_record function
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_restore_template(
   until_tid INTEGER,
@@ -646,8 +646,8 @@ BEGIN
 
   -- let's go back in time - restore a table state for given transaction interval
   IF upper($6) = 'VIEW' OR upper($6) = 'MATERIALIZED VIEW' OR upper($6) = 'TABLE' THEN
-    restore_query := 'CREATE' 
-      || replace_view || $6 
+    restore_query := 'CREATE'
+      || replace_view || $6
       || format(E' %I.%I AS\n', $5, $3)
       || pgmemento.restore_query($1, $2, $3, $4);
 
@@ -665,7 +665,7 @@ CREATE OR REPLACE FUNCTION pgmemento.restore_schema_state(
   start_from_tid INTEGER,
   end_at_tid INTEGER,
   original_schema_name TEXT,
-  target_schema_name TEXT, 
+  target_schema_name TEXT,
   target_table_type TEXT DEFAULT 'VIEW',
   update_state BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
@@ -673,7 +673,7 @@ $$
 SELECT
   pgmemento.restore_table_state($1, $2, table_name, schema_name, $4, $5, $6)
 FROM
-  pgmemento.audit_table_log 
+  pgmemento.audit_table_log
 WHERE
   schema_name = $3
   AND txid_range @> $2::numeric;

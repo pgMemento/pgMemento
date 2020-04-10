@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- Script that drop essential logging parts from test table 
+-- Script that drop essential logging parts from test table
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:

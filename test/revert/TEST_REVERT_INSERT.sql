@@ -87,7 +87,7 @@ BEGIN
       SELECT
         id
       FROM
-        pgmemento.row_log 
+        pgmemento.row_log
       WHERE
         event_key = test_event
         AND old_data = jsonb_log

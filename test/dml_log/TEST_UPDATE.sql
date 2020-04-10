@@ -31,7 +31,7 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 DO
 $$
 DECLARE
-  update_audit_id INTEGER; 
+  update_audit_id INTEGER;
   test_txid BIGINT := txid_current();
   test_event TEXT;
   update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');
@@ -88,7 +88,7 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
-  update_audit_id INTEGER; 
+  update_audit_id INTEGER;
   test_txid BIGINT := txid_current();
   test_event TEXT;
   update_op_id SMALLINT := pgmemento.get_operation_id('UPDATE');

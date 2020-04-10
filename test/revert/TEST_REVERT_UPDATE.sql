@@ -46,7 +46,7 @@ BEGIN
   FROM
     public.object
   WHERE
-    pgmemento_audit_id = 3; 
+    pgmemento_audit_id = 3;
 
   -- get min and max transaction_ids of update events on test table
   PERFORM
@@ -94,7 +94,7 @@ BEGIN
         public.object t
       LEFT JOIN
         pgmemento.row_log r
-        ON t.pgmemento_audit_id = r.audit_id 
+        ON t.pgmemento_audit_id = r.audit_id
       WHERE
         r.event_key = test_event
         AND r.old_data = jsonb_log

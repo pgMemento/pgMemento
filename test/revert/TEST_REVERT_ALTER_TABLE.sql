@@ -165,7 +165,7 @@ BEGIN
      AND colnames[3] = colnames[6], 'Error: Column names of renamed table in audit_column_log are not identical.';
   ASSERT datatypes[1] = datatypes[4]
      AND datatypes[2] = datatypes[5]
-     AND datatypes[3] = datatypes[6], 'Error: Data types of columns of renamed table in audit_column_log are not identical.';  
+     AND datatypes[3] = datatypes[6], 'Error: Data types of columns of renamed table in audit_column_log are not identical.';
   ASSERT upper(tid_ranges[1]) = test_transaction
      AND upper(tid_ranges[2]) = test_transaction
      AND upper(tid_ranges[3]) = test_transaction

@@ -43,7 +43,7 @@ BEGIN
     AND schema_name = 'public';
 
   ASSERT column_list = 'AS (id integer, lineage text, pgmemento_audit_id bigint, stmt_time timestamp with time zone, table_operation text, transaction_id integer)', 'Incorrect column definition list: %', column_list;
-  
+
   -- save column_list for next tests
   PERFORM set_config('pgmemento.column_list', column_list, FALSE);
 END
@@ -61,7 +61,7 @@ DECLARE
 BEGIN
   -- append saved column list to query string
   query_sring := query_sring || ' ' || current_setting('pgmemento.column_list');
-  
+
   EXECUTE query_sring INTO lineage_values;
 
   ASSERT lineage_values[1] = 'pgm_insert_test', 'Incorrect historic value for ''lineage'' column. Expected ''pgm_insert_test'', but found %', lineage_values[1];

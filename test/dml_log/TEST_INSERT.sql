@@ -80,7 +80,7 @@ BEGIN
         public.object o
       LEFT JOIN
         pgmemento.row_log r
-        ON o.pgmemento_audit_id = r.audit_id 
+        ON o.pgmemento_audit_id = r.audit_id
       WHERE
         r.audit_id IS NULL
     )
@@ -97,7 +97,7 @@ DO
 $$
 DECLARE
   insert_id INTEGER;
-  insert_audit_id INTEGER; 
+  insert_audit_id INTEGER;
   test_txid BIGINT := txid_current();
   test_event TEXT;
   insert_op_id SMALLINT := pgmemento.get_operation_id('INSERT');
@@ -191,7 +191,7 @@ BEGIN
     (insert_id, 'pgm_insert_test')
   ON CONFLICT (id)
     DO UPDATE SET lineage = 'pgm_upsert_test'
-  RETURNING 
+  RETURNING
     pgmemento_audit_id
   INTO
     upsert_audit_id;

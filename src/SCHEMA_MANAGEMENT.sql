@@ -9,8 +9,8 @@
 -------------------------------------------------------------------------------
 -- About:
 -- If pgMemento has been used to restore tables as BASE TABLEs they do not include
--- PRIMARY KEYs, FOREIGN KEYs, INDEXes, SEQUENCEs and DEFAULT values for columns. 
--- This script provides procedures to add those elements by querying information 
+-- PRIMARY KEYs, FOREIGN KEYs, INDEXes, SEQUENCEs and DEFAULT values for columns.
+-- This script provides procedures to add those elements by querying information
 -- on recent contraints (as such metadata is yet not logged by pgMemento).
 -- Moreover, recreated tables can be moved or copied to another schema or they
 -- can just be dropped. This could be useful when choosing a restored state as to
@@ -20,7 +20,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.6.0     2020-04-03   reflect dynamic audit_id in logged tables       FKun  
+-- 0.6.0     2020-04-03   reflect dynamic audit_id in logged tables       FKun
 -- 0.5.0     2020-03-07   set SECURITY DEFINER in all functions           FKun
 -- 0.4.1     2020-02-08   use get_table_oid instead of trimming quotes    FKun
 -- 0.4.0     2019-02-14   support for quoted tables and schemas           FKun
@@ -38,21 +38,21 @@
 * FUNCTIONS:
 *   drop_schema_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   drop_table_state(table_name TEXT, target_schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
-*   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
+*   fkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text,
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
+*   fkey_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
-*   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
+*   index_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text,
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   index_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
+*   index_table_state(table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
 *   move_schema_state(target_schema_name TEXT, source_schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}',
 *     copy_data INTEGER DEFAULT 1) RETURNS SETOF void AS
 *   move_table_state(table_name TEXT, target_schema_name TEXT, source_schema_name TEXT, copy_data BOOLEAN DEFAULT TRUE
 *     RETURNS SETOF VOID
-*   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text, 
+*   pkey_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text,
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   pkey_table_state(target_table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text) 
+*   pkey_table_state(target_table_name TEXT, target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
 *   sequence_schema_state(target_schema_name TEXT, original_schema_name TEXT DEFAULT 'public'::text)
 *     RETURNS SETOF VOID
@@ -67,7 +67,7 @@
 * can be redefined the audit_id column will be used.
 ***********************************************************/
 -- define a primary key for a produced table
-CREATE OR REPLACE FUNCTION pgmemento.pkey_table_state( 
+CREATE OR REPLACE FUNCTION pgmemento.pkey_table_state(
   target_table_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text
@@ -85,11 +85,11 @@ BEGIN
   FROM
     pg_index pgi,
     pg_class pgc,
-    pg_attribute pga 
+    pg_attribute pga
   WHERE
     pgc.oid = pgmemento.get_table_oid($1, $3)
-    AND pgi.indrelid = pgc.oid 
-    AND pga.attrelid = pgc.oid 
+    AND pgi.indrelid = pgc.oid
+    AND pga.attrelid = pgc.oid
     AND pga.attnum = ANY(pgi.indkey)
     AND pgi.indisprimary;
 
@@ -116,7 +116,7 @@ SECURITY DEFINER;
 
 -- perform pkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.pkey_schema_state(
-  target_schema_name TEXT, 
+  target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
@@ -130,7 +130,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}')); 
+  AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -144,7 +144,7 @@ SECURITY DEFINER;
 * reconstructed by querying the recent foreign keys of the table.
 ***********************************************************/
 -- define foreign keys between produced tables
-CREATE OR REPLACE FUNCTION pgmemento.fkey_table_state( 
+CREATE OR REPLACE FUNCTION pgmemento.fkey_table_state(
   table_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text
@@ -154,7 +154,7 @@ DECLARE
   fkey RECORD;
 BEGIN
   -- rebuild foreign key constraints
-  FOR fkey IN 
+  FOR fkey IN
     SELECT
       c.conname AS fkey_name,
       a.attname AS fkey_column,
@@ -220,7 +220,7 @@ SECURITY DEFINER;
 
 -- perform fkey_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.fkey_schema_state(
-  target_schema_name TEXT, 
+  target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
@@ -234,7 +234,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}')); 
+  AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -243,12 +243,12 @@ SECURITY DEFINER;
 /**********************************************************
 * INDEX TABLE STATE
 *
-* If a produced table shall be used for queries indexes will 
+* If a produced table shall be used for queries indexes will
 * be necessary in order to guarantee high performance. Indexes
 * might be reconstructed by querying recent indexes of the table.
 ***********************************************************/
 -- define index(es) on columns of a produced table
-CREATE OR REPLACE FUNCTION pgmemento.index_table_state( 
+CREATE OR REPLACE FUNCTION pgmemento.index_table_state(
   table_name TEXT,
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text
@@ -258,7 +258,7 @@ DECLARE
   stmt TEXT;
 BEGIN
   -- rebuild user defined indexes
-  FOR stmt IN 
+  FOR stmt IN
     SELECT
       replace(pg_get_indexdef(c.oid),' ON ', format(' ON %I.', $2))
     FROM
@@ -285,7 +285,7 @@ SECURITY DEFINER;
 
 -- perform index_table_state on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.index_schema_state(
-  target_schema_name TEXT, 
+  target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
@@ -299,7 +299,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}')); 
+  AND c.relname <> ALL (COALESCE($3,'{}'));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -308,11 +308,11 @@ SECURITY DEFINER;
 /**********************************************************
 * SEQUENCE SCHEMA STATE
 *
-* Adds sequences to the created target schema by querying the 
+* Adds sequences to the created target schema by querying the
 * recent sequences of the source schema. This is only necessary
 * if new data will be inserted in a previous database state.
 ***********************************************************/
-CREATE OR REPLACE FUNCTION pgmemento.sequence_schema_state( 
+CREATE OR REPLACE FUNCTION pgmemento.sequence_schema_state(
   target_schema_name TEXT,
   original_schema_name TEXT DEFAULT 'public'::text
   ) RETURNS SETOF VOID AS
@@ -348,10 +348,10 @@ SECURITY DEFINER;
 /**********************************************************
 * MOVE (or COPY) TABLE STATE
 *
-* Allows for moving or copying tables to another schema. 
+* Allows for moving or copying tables to another schema.
 * This can be useful when resetting the production state
-* by using an already restored state. In this case the 
-* content of the production schema should be removed and 
+* by using an already restored state. In this case the
+* content of the production schema should be removed and
 * the content of the restored state would be moved.
 * Triggers for tables would have to be created again.
 ***********************************************************/
@@ -373,7 +373,7 @@ $$
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.move_schema_state(
-  target_schema_name TEXT, 
+  target_schema_name TEXT,
   source_schema_name TEXT DEFAULT 'public'::text,
   except_tables TEXT[] DEFAULT '{}',
   copy_data BOOLEAN DEFAULT TRUE
@@ -387,7 +387,7 @@ BEGIN
   EXECUTE format('CREATE SCHEMA %I', $1);
 
   -- copy or move sequences
-  FOR seq IN 
+  FOR seq IN
     SELECT
       c.relname
     FROM
@@ -423,8 +423,8 @@ BEGIN
     c.relnamespace = n.oid
     AND n.nspname = $2
     AND c.relkind = 'r'
-    AND c.relname <> ALL (COALESCE($3,'{}')); 
- 
+    AND c.relname <> ALL (COALESCE($3,'{}'));
+
   -- remove old schema if data were not copied but moved
   IF NOT $4 THEN
     EXECUTE format('DROP SCHEMA %I CASCADE', $2);
@@ -488,7 +488,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($2,'{}')); 
+  AND c.relname <> ALL (COALESCE($2,'{}'));
 $$
 LANGUAGE sql
 SECURITY DEFINER;

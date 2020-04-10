@@ -130,7 +130,7 @@ BEGIN
   -- save table log id for next test
   PERFORM set_config('pgmemento.revert_drop_table_test3', tabid::text, FALSE);
 
-  ASSERT tab_log_id = test_log_id, 'Error: Expected log_id % got %', test_log_id, tab_log_id; 
+  ASSERT tab_log_id = test_log_id, 'Error: Expected log_id % got %', test_log_id, tab_log_id;
   ASSERT lower(tid_range) IS NOT NULL, 'Error: Lower transaction id % does not match the id % of DROP TABLE event', upper(tid_range[1]), test_transaction;
 END;
 $$

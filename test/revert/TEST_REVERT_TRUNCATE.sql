@@ -81,7 +81,7 @@ BEGIN
         public.object t
       LEFT JOIN
         pgmemento.row_log r
-        ON t.pgmemento_audit_id = r.audit_id 
+        ON t.pgmemento_audit_id = r.audit_id
       WHERE
         r.event_key = test_event
         AND r.old_data IS NULL

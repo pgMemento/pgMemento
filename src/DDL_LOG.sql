@@ -799,7 +799,7 @@ BEGIN
       AND table_name = current_table_name
       AND schema_name = current_schema_name
       AND op_id IN (12, 2, 21, 22, 5, 6);
-    
+
     IF event_op_id IS NOT NULL THEN
       PERFORM pgmemento.modify_ddl_log_tables(tg_tablename, tg_schemaname);
     END IF;

@@ -52,7 +52,7 @@ BEGIN
   PERFORM set_config(
     'pgmemento.session_info',
     format('{"pgmemento_init": {"schema_name", %L, "default_audit_id_column", %L, "default_log_old_data": %L, "default_log_new_data": %L, "log_state": %L, "trigger_create_table": %L, "except_tables": %L}}',
-    to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6), to_jsonb($7))::text, 
+    to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6), to_jsonb($7))::text,
     TRUE
   );
 
@@ -109,7 +109,7 @@ BEGIN
   PERFORM set_config(
     'pgmemento.session_info',
      format('{"pgmemento_start": {"schema_name", %L, "default_audit_id_column": %L, "default_log_old_data": %L, "default_log_new_data": %L, "trigger_create_table": %L, "except_tables": %L}}',
-       to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6))::text, 
+       to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6))::text,
      TRUE
   );
 
@@ -118,7 +118,7 @@ BEGIN
   IF upper(current_audit_schema_log.txid_range) IS NULL THEN
     -- configuration differs, so close txid_range for audit_schema_log entry
     IF current_audit_schema_log.default_log_old_data != $3
-       OR current_audit_schema_log.default_log_new_data != $4 
+       OR current_audit_schema_log.default_log_new_data != $4
        OR current_audit_schema_log.trigger_create_table != $5
     THEN
       UPDATE pgmementp.audit_schema_log
@@ -196,7 +196,7 @@ BEGIN
   PERFORM set_config(
     'pgmemento.session_info',
      format('{"pgmemento_stop": {"schema_name", %L, "except_tables": %L}}',
-       to_jsonb($1), to_jsonb($2))::text, 
+       to_jsonb($1), to_jsonb($2))::text,
      TRUE
   );
 

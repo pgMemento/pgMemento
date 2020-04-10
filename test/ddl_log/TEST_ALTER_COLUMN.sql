@@ -62,7 +62,7 @@ BEGIN
   SELECT
     event_key INTO test_event
   FROM
-    pgmemento.table_event_log 
+    pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
     AND table_name = 'tests'

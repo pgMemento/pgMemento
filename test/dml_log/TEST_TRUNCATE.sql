@@ -87,7 +87,7 @@ BEGIN
         unnest(truncate_audit_ids) AS t(t_audit_id)
       LEFT JOIN
         pgmemento.row_log r
-        ON t.t_audit_id = r.audit_id 
+        ON t.t_audit_id = r.audit_id
       WHERE
         r.audit_id IS NULL
     )

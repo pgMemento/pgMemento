@@ -10,7 +10,7 @@
 -- About:
 -- This script provides functions to revert single transactions and entire database
 -- states.
--- 
+--
 -------------------------------------------------------------------------------
 --
 -- ChangeLog:
@@ -298,7 +298,7 @@ BEGIN
                     WHEN c_old.data_type = 'integer' THEN 'serial'
                     WHEN c_old.data_type = 'bigint' THEN 'bigserial'
                     ELSE c_old.data_type END
-             ELSE 
+             ELSE
                c_old.data_type
                || CASE WHEN c_old.column_default IS NOT NULL
                   THEN ' DEFAULT ' || c_old.column_default ELSE '' END
@@ -379,7 +379,7 @@ BEGIN
                   WHEN c_old.data_type = 'integer' THEN 'serial'
                   WHEN c_old.data_type = 'bigint' THEN 'bigserial'
                   ELSE c_old.data_type END
-           ELSE 
+           ELSE
              c_old.data_type
              || CASE WHEN c_old.column_default IS NOT NULL
                 THEN ' DEFAULT ' || c_old.column_default ELSE '' END
@@ -438,8 +438,8 @@ LANGUAGE plpgsql;
 * REVERT TRANSACTION
 *
 * Procedures to revert a single transaction or a range of
-* transactions. All table operations are processed in 
-* order of table dependencies so no foreign keys should be 
+* transactions. All table operations are processed in
+* order of table dependencies so no foreign keys should be
 * violated.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.revert_transaction(tid INTEGER) RETURNS SETOF VOID AS
@@ -450,9 +450,9 @@ BEGIN
   FOR rec IN
     SELECT
       t.id,
-      r.audit_id, 
+      r.audit_id,
       r.old_data,
-      e.op_id, 
+      e.op_id,
       a.table_name,
       a.schema_name,
       a.audit_id_column,
@@ -462,15 +462,15 @@ BEGIN
       ELSE
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
-    FROM 
-      pgmemento.transaction_log t 
+    FROM
+      pgmemento.transaction_log t
     JOIN
       pgmemento.table_event_log e
       ON e.transaction_id = t.id
     JOIN
-      pgmemento.audit_table_log a 
+      pgmemento.audit_table_log a
       ON a.table_name = e.table_name
-     AND a.schema_name = e.schema_name 
+     AND a.schema_name = e.schema_name
      AND (a.txid_range @> t.id::numeric
       OR lower(a.txid_range) = t.id::numeric)
     LEFT JOIN
@@ -490,11 +490,11 @@ BEGIN
     PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
-$$ 
+$$
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_transactions(
-  start_from_tid INTEGER, 
+  start_from_tid INTEGER,
   end_at_tid INTEGER
   ) RETURNS SETOF VOID AS
 $$
@@ -504,7 +504,7 @@ BEGIN
   FOR rec IN
     SELECT
       t.id,
-      r.audit_id, 
+      r.audit_id,
       r.old_data,
       e.op_id,
       a.table_name,
@@ -517,12 +517,12 @@ BEGIN
         rank() OVER (ORDER BY d.depth DESC)
       END AS dependency_order
     FROM
-      pgmemento.transaction_log t 
+      pgmemento.transaction_log t
     JOIN
       pgmemento.table_event_log e
       ON e.transaction_id = t.id
     JOIN
-      pgmemento.audit_table_log a 
+      pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
      AND (a.txid_range @> t.id::numeric
@@ -545,7 +545,7 @@ BEGIN
     PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
-$$ 
+$$
 LANGUAGE plpgsql STRICT;
 
 
@@ -553,7 +553,7 @@ LANGUAGE plpgsql STRICT;
 * REVERT DISTINCT TRANSACTION
 *
 * Procedures to revert a single transaction or a range of
-* transactions. For each distinct audit_id only the oldest 
+* transactions. For each distinct audit_id only the oldest
 * operation is applied to make the revert process faster.
 * This can be a fallback method for revert_transaction if
 * foreign key violations are occurring.
@@ -563,12 +563,12 @@ $$
 DECLARE
   rec RECORD;
 BEGIN
-  FOR rec IN 
+  FOR rec IN
     SELECT
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.old_data, 
+      q.old_data,
       a.table_name,
       a.schema_name,
       a.audit_id_column,
@@ -623,7 +623,7 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
-     AND a.schema_name = q.schema_name 
+     AND a.schema_name = q.schema_name
      AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
@@ -649,19 +649,19 @@ $$
 LANGUAGE plpgsql STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.revert_distinct_transactions(
-  start_from_tid INTEGER, 
+  start_from_tid INTEGER,
   end_at_tid INTEGER
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
   rec RECORD;
 BEGIN
-  FOR rec IN 
+  FOR rec IN
     SELECT
       q.tid,
       q.audit_id,
       CASE WHEN e2.op_id > 6 THEN e2.op_id ELSE e1.op_id END AS op_id,
-      q.old_data, 
+      q.old_data,
       a.table_name,
       a.schema_name,
       a.audit_id_column,
@@ -715,7 +715,7 @@ BEGIN
     JOIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
-     AND a.schema_name = q.schema_name 
+     AND a.schema_name = q.schema_name
      AND (a.txid_range @> q.tid::numeric
       OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
@@ -738,5 +738,5 @@ BEGIN
     PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
-$$ 
+$$
 LANGUAGE plpgsql STRICT;

@@ -374,7 +374,7 @@ LANGUAGE sql IMMUTABLE STRICT;
 * Returns the OID for schema.table / "schema"."table"
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.get_table_oid(
-  table_name TEXT, 
+  table_name TEXT,
   schema_name TEXT DEFAULT 'public'::text
   ) RETURNS OID AS
 $$
@@ -988,7 +988,7 @@ BEGIN
     (transaction_id, stmt_time, op_id, table_operation, table_name, schema_name, event_key)
   VALUES
     (txid_log_id, stmt_ts, operation_id, $4, $2, $3,
-     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from stmt_ts), $1, operation_id, $2, $3)) 
+     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from stmt_ts), $1, operation_id, $2, $3))
   ON CONFLICT (event_key)
     DO NOTHING
   RETURNING event_key
@@ -1065,7 +1065,7 @@ BEGIN
   VALUES
     (new_audit_id,
      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
-     CASE WHEN TG_ARGV[1] = 'true' THEN to_json(NEW) ELSE NULL END);     
+     CASE WHEN TG_ARGV[1] = 'true' THEN to_json(NEW) ELSE NULL END);
 
   RETURN NULL;
 END;
@@ -1114,7 +1114,7 @@ BEGIN
        WHERE
          to_jsonb(OLD) ->> key IS DISTINCT FROM to_jsonb(NEW) ->> key
       ),
-      '{}')::jsonb INTO jsonb_diff_new;    
+      '{}')::jsonb INTO jsonb_diff_new;
   END IF;
 
   IF jsonb_diff_old <> '{}'::jsonb OR jsonb_diff_new <> '{}'::jsonb THEN

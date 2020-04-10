@@ -38,7 +38,7 @@ BEGIN
     column_list;
 
   ASSERT column_list = 'AS (id integer, lineage text, pgmemento_audit_id bigint)', 'Incorrect column definition list: %', column_list;
-  
+
   -- save column_list for next test
   PERFORM set_config('pgmemento.column_list', column_list, FALSE);
 END
@@ -55,7 +55,7 @@ DECLARE
 BEGIN
   -- append saved column list to query string
   query_sring := query_sring || ' ' || current_setting('pgmemento.column_list');
-  
+
   EXECUTE query_sring INTO rec;
 
   ASSERT rec.id = 2, 'Incorrect historic value for ''id'' column. Expected 2, but found %', rec.id;
