@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.1     2020-03-05   insert dummy tuple for subsequent tests          FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-07-17   initial commit                                   FKun
@@ -165,7 +166,7 @@ INSERT INTO
 VALUES
   ('test')
 RETURNING
-  audit_id AS ddl_audit_id
+  pgmemento_audit_id AS ddl_audit_id
 \gset
 
 -- save table log id for next test

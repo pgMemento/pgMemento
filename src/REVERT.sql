@@ -44,7 +44,7 @@
 *
 * FUNCTIONS:
 *   recover_audit_version(tid INTEGER, aid BIGINT, changes JSONB, table_op INTEGER,
-*     table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
+*     table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
 *   revert_distinct_transaction(tid INTEGER) RETURNS SETOF VOID
 *   revert_distinct_transactions(start_from_tid INTEGER, end_at_tid INTEGER) RETURNS SETOF VOID
 *   revert_transaction(tid INTEGER) RETURNS SETOF VOID
@@ -58,11 +58,12 @@
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   tid INTEGER,
-  aid BIGINT, 
+  aid BIGINT,
   changes JSONB,
   table_op INTEGER,
   table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text
+  schema_name TEXT DEFAULT 'public'::text,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -144,7 +145,7 @@ BEGIN
 
   -- ADD AUDIT_ID case
   WHEN $4 = 21 THEN
-    PERFORM pgmemento.drop_table_audit($5, $6);
+    PERFORM pgmemento.drop_table_audit($5, $6, $7);
 
 
   -- RENAME COLUMN case
@@ -187,8 +188,8 @@ BEGIN
       -- delete inserted row
       BEGIN
         EXECUTE format(
-          'DELETE FROM %I.%I WHERE audit_id = $1',
-          $6, $5)
+          'DELETE FROM %I.%I WHERE %I = $1',
+          $6, $5, $7)
           USING $2;
 
         -- row is already deleted
@@ -235,8 +236,8 @@ BEGIN
 
         -- try to execute UPDATE command
         EXECUTE format(
-          'UPDATE %I.%I t SET ' || stmt || ' WHERE t.audit_id = $1',
-          $6, $5)
+          'UPDATE %I.%I t SET ' || stmt || ' WHERE t.%I = $1',
+          $6, $5, $7)
           USING $2;
 
         -- row is already deleted
@@ -252,8 +253,8 @@ BEGIN
       -- collect information of altered columns
       SELECT
         string_agg(
-          format('ALTER COLUMN %I SET DATA TYPE %s USING pgmemento.restore_change(%L, audit_id, %L, NULL::%s)',
-            c_new.column_name, c_old.data_type, $1, quote_ident(c_old.column_name), c_old.data_type),
+          format('ALTER COLUMN %I SET DATA TYPE %s USING pgmemento.restore_change(%L, %I, %L, NULL::%s)',
+            c_new.column_name, c_old.data_type, $1, $7, quote_ident(c_old.column_name), c_old.data_type),
           ', ' ORDER BY c_new.id
         ) INTO stmt
       FROM
@@ -338,13 +339,13 @@ BEGIN
 
       -- fill in data with an UPDATE statement if audit_id is set
       IF $2 IS NOT NULL THEN
-        PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+        PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6, $7);
       END IF;
 
       EXCEPTION
         WHEN duplicate_column THEN
-          -- if column already exist just do an UPDATE
-          PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+          -- if column already exists just do an UPDATE
+          PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6, $7);
 	END;
 
   -- DELETE or TRUNCATE case
@@ -360,7 +361,7 @@ BEGIN
         EXCEPTION
           WHEN unique_violation THEN
             -- merge changes with recent version of table record and update row
-            PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6);
+            PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6, $7);
       END;
     END IF;
 
@@ -408,7 +409,7 @@ BEGIN
       ON t.table_name = t_new.table_name
     WHERE
       upper(c_old.txid_range) = $1
-      AND c_old.column_name <> 'audit_id'
+      AND c_old.column_name <> $7
       AND t_new.table_name IS NULL
       AND t.table_name = $5
       AND t.schema_name = $6
@@ -424,7 +425,7 @@ BEGIN
 
     -- fill in truncated data with an INSERT statement if audit_id is set
     IF $2 IS NOT NULL THEN
-      PERFORM pgmemento.recover_audit_version($1, $2, $3, 8, $5, $6);
+      PERFORM pgmemento.recover_audit_version($1, $2, $3, 8, $5, $6, $7);
     END IF;
 
   END CASE;
@@ -454,6 +455,7 @@ BEGIN
       e.op_id, 
       a.table_name,
       a.schema_name,
+      a.audit_id_column,
       rank() OVER (PARTITION BY r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
@@ -485,7 +487,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
 $$ 
@@ -507,6 +509,7 @@ BEGIN
       e.op_id,
       a.table_name,
       a.schema_name,
+      a.audit_id_column,
       rank() OVER (PARTITION BY t.id, r.event_key ORDER BY r.id DESC) AS audit_order,
       CASE WHEN e.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
@@ -539,7 +542,7 @@ BEGIN
       e.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.id, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
 $$ 
@@ -550,7 +553,7 @@ LANGUAGE plpgsql STRICT;
 * REVERT DISTINCT TRANSACTION
 *
 * Procedures to revert a single transaction or a range of
-* transactions. For each distinct audit_it only the oldest 
+* transactions. For each distinct audit_id only the oldest 
 * operation is applied to make the revert process faster.
 * This can be a fallback method for revert_transaction if
 * foreign key violations are occurring.
@@ -568,6 +571,7 @@ BEGIN
       q.old_data, 
       a.table_name,
       a.schema_name,
+      a.audit_id_column,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
       CASE WHEN e1.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
@@ -638,7 +642,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
 $$
@@ -660,6 +664,7 @@ BEGIN
       q.old_data, 
       a.table_name,
       a.schema_name,
+      a.audit_id_column,
       rank() OVER (PARTITION BY e1.id ORDER BY q.row_log_id DESC) AS audit_order,
       CASE WHEN e1.op_id > 4 THEN
         rank() OVER (ORDER BY d.depth ASC)
@@ -730,7 +735,7 @@ BEGIN
       e1.id DESC,
       audit_order
   LOOP
-    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name);
+    PERFORM pgmemento.recover_audit_version(rec.tid, rec.audit_id, rec.old_data, rec.op_id, rec.table_name, rec.schema_name, rec.audit_id_column);
   END LOOP;
 END;
 $$ 

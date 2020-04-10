@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-20   initial commit                                   FKun
 --
@@ -45,7 +46,7 @@ BEGIN
   FROM
     public.object
   WHERE
-    audit_id = 3;
+    pgmemento_audit_id = 3;
 
   -- get transaction_id of insert event on test table
   PERFORM

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.1.0     2018-11-13   initial commit                                   FKun
 --
 
@@ -36,7 +37,7 @@ BEGIN
   INTO
     lineage_values
   FROM
-    pgmemento.restore_recordset(1, 19, 'object', 'public')
+    pgmemento.restore_recordset(1, 20, 'object', 'public')
     AS (id integer, lineage text, audit_id bigint);
 
   ASSERT lineage_values[1] = 'init', 'Incorrect historic value for ''lineage'' column. Expected ''init'', but found %', lineage_values[1];
@@ -48,11 +49,11 @@ BEGIN
   INTO
     jsonb_log
   FROM
-    pgmemento.restore_recordset(1, 19, 'object', 'public', TRUE)
+    pgmemento.restore_recordset(1, 20, 'object', 'public', TRUE)
     AS (log JSONB);
 
-  ASSERT jsonb_log->0 = '{"id": 1, "lineage": "init", "audit_id": 1}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 1, "lineage": "init", "audit_id": 1}'', but found %', jsonb_log->0;
-  ASSERT jsonb_log->1 = '{"id": 2, "lineage": "pgm_update_test", "audit_id": 3}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_update_test", "audit_id": 3}'', but found %', jsonb_log->1;
+  ASSERT jsonb_log->0 = '{"id": 1, "lineage": "init", "pgmemento_audit_id": 1}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 1, "lineage": "init", "pgmemento_audit_id": 1}'', but found %', jsonb_log->0;
+  ASSERT jsonb_log->1 = '{"id": 2, "lineage": "pgm_update_test", "pgmemento_audit_id": 3}'::jsonb, 'Incorrect historic record. Expected JSON ''{"id": 2, "lineage": "pgm_update_test", "pgmemento_audit_id": 3}'', but found %', jsonb_log->1;
 END;
 $$
 LANGUAGE plpgsql;

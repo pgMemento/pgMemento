@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                        | Author
+-- 0.7.4     2020-03-23   add audit_id_column to audit_table_log               FKun
+-- 0.7.3     2020-03-21   new audit_schema_log table                           FKun
 -- 0.7.2     2020-02-29   new column in row_log to also audit new data         FKun
 --                        new unique index on event_key and audit_id
 -- 0.7.1     2020-02-02   put unique index of table_event_log on event_key     FKun
@@ -34,6 +36,7 @@
 * TABLES:
 *   audit_column_log
 *   audit_table_log
+*   audit_schema_log
 *   row_log
 *   table_event_log
 *   transaction_log
@@ -55,6 +58,8 @@
 *
 * SEQUENCES:
 *   audit_id_seq
+*   schema_log_id_seq
+*   table_log_id_seq
 *
 ***********************************************************/
 DROP SCHEMA IF EXISTS pgmemento CASCADE;
@@ -137,6 +142,31 @@ COMMENT ON COLUMN pgmemento.row_log.event_key IS 'Concatenated information of ta
 COMMENT ON COLUMN pgmemento.row_log.old_data IS 'The old values of changed columns in a JSONB object';
 COMMENT ON COLUMN pgmemento.row_log.new_data IS 'The new values of changed columns in a JSONB object';
 
+-- if and how pgMemento is running, is logged in the audit_schema_log
+CREATE TABLE pgmemento.audit_schema_log (
+  id SERIAL,
+  log_id INTEGER NOT NULL,
+  schema_name TEXT NOT NULL,
+  default_audit_id_column TEXT NOT NULL,
+  default_log_old_data BOOLEAN DEFAULT TRUE,
+  default_log_new_data BOOLEAN DEFAULT FALSE,
+  trigger_create_table BOOLEAN DEFAULT FALSE,
+  txid_range numrange
+);
+
+ALTER TABLE pgmemento.audit_schema_log
+  ADD CONSTRAINT audit_schema_log_pk PRIMARY KEY (id);
+
+COMMENT ON TABLE pgmemento.audit_schema_log IS 'Stores information about how pgMemento is configured in audited database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.id IS 'The Primary Key';
+COMMENT ON COLUMN pgmemento.audit_schema_log.log_id IS 'ID to trace a changing database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.schema_name IS 'The name of the database schema';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_audit_id_column IS 'The default name for the audit_id column added to audited tables';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_log_old_data IS 'Default setting for tables to log old values';
+COMMENT ON COLUMN pgmemento.audit_schema_log.default_log_new_data IS 'Default setting for tables to log new values';
+COMMENT ON COLUMN pgmemento.audit_schema_log.trigger_create_table IS 'Flag that shows if pgMemento starts auditing for newly created tables';
+COMMENT ON COLUMN pgmemento.audit_schema_log.txid_range IS 'Stores the transaction IDs when pgMemento has been activated or stopped in the schema';
+
 -- liftime of audited tables is logged in the audit_table_log table
 CREATE TABLE pgmemento.audit_table_log (
   id SERIAL,
@@ -144,7 +174,10 @@ CREATE TABLE pgmemento.audit_table_log (
   relid OID,
   table_name TEXT NOT NULL,
   schema_name TEXT NOT NULL,
-  txid_range numrange  
+  audit_id_column TEXT NOT NULL,
+  log_old_data BOOLEAN NOT NULL,
+  log_new_data BOOLEAN NOT NULL,
+  txid_range numrange
 );
 
 ALTER TABLE pgmemento.audit_table_log
@@ -156,6 +189,9 @@ COMMENT ON COLUMN pgmemento.audit_table_log.log_id IS 'ID to trace a changing ta
 COMMENT ON COLUMN pgmemento.audit_table_log.relid IS '[DEPRECATED] The table''s OID to trace a table when changed';
 COMMENT ON COLUMN pgmemento.audit_table_log.table_name IS 'The name of the table';
 COMMENT ON COLUMN pgmemento.audit_table_log.schema_name IS 'The schema the table belongs to';
+COMMENT ON COLUMN pgmemento.audit_table_log.audit_id_column IS 'The name for the audit_id column added to the audited table';
+COMMENT ON COLUMN pgmemento.audit_table_log.log_old_data IS 'Flag that shows if old values are logged for audited table';
+COMMENT ON COLUMN pgmemento.audit_table_log.log_new_data IS 'Flag that shows if new values are logged for audited table';
 COMMENT ON COLUMN pgmemento.audit_table_log.txid_range IS 'Stores the transaction IDs when the table has been created and dropped';
 
 -- lifetime of columns of audited tables is logged in the audit_column_log table
@@ -237,6 +273,16 @@ CREATE SEQUENCE
 ***********************************************************/
 DROP SEQUENCE IF EXISTS pgmemento.audit_id_seq;
 CREATE SEQUENCE pgmemento.audit_id_seq
+  INCREMENT BY 1
+  MINVALUE 0
+  MAXVALUE 2147483647
+  START WITH 1
+  CACHE 1
+  NO CYCLE
+  OWNED BY NONE;
+
+DROP SEQUENCE IF EXISTS pgmemento.schema_log_id_seq;
+CREATE SEQUENCE pgmemento.schema_log_id_seq
   INCREMENT BY 1
   MINVALUE 0
   MAXVALUE 2147483647

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-10-19   initial commit                                   FKun
 --
@@ -45,7 +46,7 @@ BEGIN
   FROM
     public.object
   WHERE
-    audit_id = 3; 
+    pgmemento_audit_id = 3; 
 
   -- get min and max transaction_ids of update events on test table
   PERFORM
@@ -88,12 +89,12 @@ BEGIN
   ASSERT (
     SELECT EXISTS (
       SELECT
-        t.audit_id
+        t.pgmemento_audit_id
       FROM
         public.object t
       LEFT JOIN
         pgmemento.row_log r
-        ON t.audit_id = r.audit_id 
+        ON t.pgmemento_audit_id = r.audit_id 
       WHERE
         r.event_key = test_event
         AND r.old_data = jsonb_log

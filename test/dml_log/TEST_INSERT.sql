@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
 -- 0.1.2     2018-11-10   reflect changes in SETUP                         FKun
@@ -37,7 +38,13 @@ DECLARE
   test_event TEXT;
 BEGIN
   -- create baseline for test table
-  PERFORM pgmemento.log_table_baseline('object', 'public', TRUE);
+  PERFORM
+    pgmemento.log_table_baseline(table_name, schema_name, audit_id_column, log_new_data)
+  FROM
+    pgmemento.audit_table_log
+  WHERE
+    table_name = 'object'
+    AND schema_name = 'public';
 
   -- query for logged transaction
   ASSERT (
@@ -73,7 +80,7 @@ BEGIN
         public.object o
       LEFT JOIN
         pgmemento.row_log r
-        ON o.audit_id = r.audit_id 
+        ON o.pgmemento_audit_id = r.audit_id 
       WHERE
         r.audit_id IS NULL
     )
@@ -106,7 +113,7 @@ BEGIN
   VALUES
     (2, 'pgm_insert_test')
   RETURNING
-    id, audit_id
+    id, pgmemento_audit_id
   INTO
     insert_id, insert_audit_id;
 
@@ -149,7 +156,7 @@ BEGIN
     AND event_key = test_event;
 
   ASSERT old_jsonb_log IS NULL, 'Error: Wrong old content in row_log table: %', old_jsonb_log;
-  ASSERT new_jsonb_log = ('{"id": '||insert_id||', "lineage": "pgm_insert_test", "audit_id": '||insert_audit_id||'}')::jsonb, 'Error: Wrong new content in row_log table: %', new_jsonb_log;
+  ASSERT new_jsonb_log = ('{"id": '||insert_id||', "lineage": "pgm_insert_test", "pgmemento_audit_id": '||insert_audit_id||'}')::jsonb, 'Error: Wrong new content in row_log table: %', new_jsonb_log;
 END;
 $$
 LANGUAGE plpgsql;
@@ -185,7 +192,7 @@ BEGIN
   ON CONFLICT (id)
     DO UPDATE SET lineage = 'pgm_upsert_test'
   RETURNING 
-    audit_id
+    pgmemento_audit_id
   INTO
     upsert_audit_id;
 
