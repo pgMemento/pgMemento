@@ -37,7 +37,11 @@ SELECT EXISTS (
 ) AS trigger_create_table_enabled \gset
 
 \echo
-\echo 'Rename table triggers, drop event triggers'
+\echo 'Drop event triggers'
+SELECT pgmemento.drop_schema_event_trigger();
+
+\echo
+\echo 'Rename log_transaction_trigger'
 DO
 $$
 DECLARE
@@ -46,16 +50,11 @@ BEGIN
   FOR rec IN
     SELECT schemaname, tablename
       FROM pgmemento.audit_tables
+     WHERE tg_is_active
      ORDER BY schemaname, tablename
   LOOP
-    EXECUTE format('ALTER TRIGGER log_delete_trigger ON %I.%I RENAME TO pgmemento_delete_trigger', rec.schemaname, rec.tablename);
-    EXECUTE format('ALTER TRIGGER log_insert_trigger ON %I.%I RENAME TO pgmemento_insert_trigger', rec.schemaname, rec.tablename);
-    EXECUTE format('ALTER TRIGGER log_transaction_trigger ON %I.%I RENAME TO pgmemento_statement_trigger', rec.schemaname, rec.tablename);
-    EXECUTE format('ALTER TRIGGER log_truncate_trigger ON %I.%I RENAME TO pgmemento_truncate_trigger', rec.schemaname, rec.tablename);
-    EXECUTE format('ALTER TRIGGER log_update_trigger ON %I.%I RENAME TO pgmemento_update_trigger', rec.schemaname, rec.tablename);
+    EXECUTE format('ALTER TRIGGER log_transaction_trigger ON %I.%I RENAME TO pgmemento_transaction_trigger', rec.schemaname, rec.tablename);
   END LOOP;
-
-  PERFORM pgmemento.drop_schema_event_trigger();
 END;
 $$
 LANGUAGE plpgsql;
@@ -200,6 +199,38 @@ FROM (
 ) s
 ORDER BY
   lower(schema_txid_range);
+
+\echo
+\echo 'Replace log triggers'
+DO
+$$
+DECLARE
+  rec RECORD;
+  remove_all_tx_tg BOOLEAN := TRUE; 
+BEGIN
+  FOR rec IN
+    SELECT schemaname, tablename, tg_is_active
+      FROM pgmemento.audit_tables
+     ORDER BY schemaname, tablename
+  LOOP
+    -- the first iteration will remove all pgmemento_transaction_triggers
+    IF remove_all_tx_tg THEN
+      DROP FUNCTION IF EXISTS pgmemento.log_transaction() CASCADE;
+      remove_all_tx_tg := FALSE;
+    END IF;
+
+    EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', rec.schemaname, rec.tablename);
+    EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', rec.schemaname, rec.tablename);
+    EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', rec.schemaname, rec.tablename);
+    EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', rec.schemaname, rec.tablename);
+
+    IF rec.tg_is_active THEN
+      PERFORM pgmemento.create_table_log_trigger(rec.tablename, rec.schemaname, 'audit_id');
+    END IF;
+  END LOOP;
+END;
+$$
+LANGUAGE plpgsql;
 
 \echo
 \echo 'Recreate event triggers'

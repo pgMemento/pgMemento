@@ -1004,8 +1004,9 @@ SECURITY DEFINER;
 /**********************************************************
 * TRIGGER PROCEDURE log_statement
 *
-* Procedure that is called when a log_statement_trigger is fired.
-* Metadata of each transaction is written to the transaction_log table.
+* Procedure that is called when a pgmemento_transaction_trigger
+* is fired. Metadata of each transaction is written to the
+* transaction_log table.
 ***********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_statement() RETURNS trigger AS
 $$
