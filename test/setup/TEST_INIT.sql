@@ -13,10 +13,11 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                    | Author
--- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
--- 0.2.0     2017-09-08   moved drop parts to TEST_UNINSTALL.sql           FKun
--- 0.1.0     2017-07-20   initial commit                                   FKun
+-- Version | Date       | Description                                  | Author
+-- 0.4.0     2020-04-12   call new init function to start auditing       FKun
+-- 0.3.0     2020-03-05   reflect new_data column in row_log             FKun
+-- 0.2.0     2017-09-08   moved drop parts to TEST_UNINSTALL.sql         FKun
+-- 0.1.0     2017-07-20   initial commit                                 FKun
 --
 
 -- get test number
@@ -66,11 +67,21 @@ LANGUAGE plpgsql;
 DO
 $$
 DECLARE
+  tab_schema TEXT := 'public';
   tab TEXT := 'object';
 BEGIN
   -- create table audit which creates triggers and adds the audit_it column
-  -- as this is the first audited table it will also initialize auditing for the schema
-  PERFORM pgmemento.create_schema_audit('public', 'pgmemento_audit_id', TRUE, TRUE, FALSE, TRUE, ARRAY['spatial_ref_sys']);
+  -- as this is the first audited table call init to start auditing for the schema
+  PERFORM pgmemento.init(tab_schema, 'pgmemento_audit_id', TRUE, TRUE, FALSE, TRUE, ARRAY['spatial_ref_sys']);
+
+  -- query for logged transaction
+  ASSERT (
+    SELECT EXISTS (
+      SELECT session_info ? 'pgmemento_init'
+        FROM pgmemento.transaction_log
+       WHERE id = current_setting('pgmemento.' || txid_current())::numeric
+    )
+  ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
 
   -- query for log trigger
   ASSERT (
@@ -93,7 +104,7 @@ BEGIN
           pg_class c
         WHERE
           tg.tgrelid = c.oid
-          AND c.relname = 'object'
+          AND c.relname = tab
         ) t
         ON t.tgname = p.pgm_trigger
       WHERE
@@ -111,6 +122,18 @@ BEGIN
     )
   ), 'Error: Did not find pgmemento_audit_id column in % table!', tab;
 
+  -- test if entry was made in audit_schema_log table
+  ASSERT (
+    SELECT EXISTS(
+      SELECT
+        1
+      FROM
+        pgmemento.audit_schema_log
+      WHERE
+        schema_name = tab_schema
+    )
+  ), 'Error: Did not find entry for % schema in audit_schema_log!', tab_schema;
+
   -- test if entry was made in audit_table_log table
   ASSERT (
     SELECT EXISTS(
@@ -120,6 +143,7 @@ BEGIN
         pgmemento.audit_table_log
       WHERE
         table_name = tab
+        AND schema_name = tab_schema
     )
   ), 'Error: Did not find entry for % table in audit_table_log!', tab;
 
@@ -134,7 +158,7 @@ BEGIN
         pgmemento.audit_column_log c
         ON c.column_name = a.attname
       WHERE
-        a.attrelid = pgmemento.get_table_oid(tab, 'public')
+        a.attrelid = pgmemento.get_table_oid(tab, tab_schema)
         AND a.attname <> 'pgmemento_audit_id'
         AND a.attnum > 0
         AND NOT a.attisdropped

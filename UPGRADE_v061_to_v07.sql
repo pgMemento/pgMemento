@@ -163,6 +163,8 @@ DROP FUNCTION IF EXISTS pgmemento.create_schema_log_trigger(schema_name TEXT, ex
 
 DROP FUNCTION IF EXISTS pgmemento.create_table_log_trigger(table_name TEXT, schema_name TEXT);
 
+DROP FUNCTION IF EXISTS pgmemento.drop_schema_audit(schema_name TEXT, keep_log BOOLEAN, except_tables TEXT[]);
+
 DROP FUNCTION IF EXISTS pgmemento.drop_table_audit(table_name TEXT, schema_name TEXT, keep_log BOOLEAN);
 
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);

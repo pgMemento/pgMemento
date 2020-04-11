@@ -13,8 +13,9 @@
 --
 -- ChangeLog:
 --
--- Version | Date       | Description                                    | Author
--- 0.1.0     2017-09-08   initial commit                                   FKun
+-- Version | Date       | Description                                  | Author
+-- 0.2.0     2020-04-12   use new drop function                          FKun
+-- 0.1.0     2017-09-08   initial commit                                 FKun
 --
 
 -- get test number
@@ -23,47 +24,57 @@ SELECT nextval('pgmemento.test_seq') AS n \gset
 \echo
 \echo 'TEST ':n': pgMemento drop log components'
 
-
 \echo
-\echo 'TEST ':n'.1: Drop log trigger'
+\echo 'TEST ':n'.1: Drop pgMemento in public schema'
 DO
 $$
 DECLARE
+  tab_schema TEXT := 'public';
   tab TEXT := 'object';
 BEGIN
-  -- drop logging triggers
-  PERFORM pgmemento.drop_table_log_trigger(tab, 'public');
+  -- drop pgMemento from public schema which should drop audit_id column
+  -- this should fire a DDL trigger to fill audit tables and update audit_column_log
+  PERFORM pgmemento.drop(tab_schema, FALSE);
 
-  -- query for log trigger
+  -- query for logged transaction
   ASSERT (
-    SELECT NOT EXISTS (
+    SELECT EXISTS (
+      SELECT session_info ? 'pgmemento_drop'
+        FROM pgmemento.transaction_log
+       WHERE id = current_setting('pgmemento.' || txid_current())::numeric
+    )
+  ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
+
+  -- test if audit_id column has been dropped
+  ASSERT (
+    SELECT NOT EXISTS(
       SELECT
         1
-      FROM (
-        VALUES
-          ('pgmemento_delete_trigger'),
-          ('pgmemento_insert_trigger'),
-          ('pgmemento_transaction_trigger'),
-          ('pgmemento_truncate_trigger'),
-          ('pgmemento_update_trigger')
-        ) AS p (pgm_trigger)
-      JOIN (
-        SELECT
-          tg.tgname
-        FROM
-          pg_trigger tg,
-          pg_class c
-        WHERE
-          tg.tgrelid = c.oid
-          AND c.relname = 'object'
-        ) t
-        ON t.tgname = p.pgm_trigger
+      FROM
+        pg_attribute
+      WHERE
+        attrelid = pgmemento.get_table_oid(tab, tab_schema)
+        AND attnum > 0
+        AND NOT attisdropped
+        AND attname = 'pgmemento_audit_id'
     )
-  ), 'Error: Some log trigger still exist for % table. Drop function did not work properly!', tab;
+  ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
+
+  -- test if range was closed for schema in audit_schema_log table
+  ASSERT (
+    SELECT EXISTS(
+      SELECT
+        1
+      FROM
+        pgmemento.audit_schema_log
+      WHERE
+        schema_name = tab_schema
+        AND upper(txid_range) = current_setting('pgmemento.' || txid_current())::numeric
+    )
+  ), 'Error: Did not find entry for % schema in audit_schema_log!', tab_schema;
 END;
 $$
 LANGUAGE plpgsql;
-
 
 \echo
 \echo 'TEST ':n'.2: Drop event trigger'
@@ -96,35 +107,6 @@ BEGIN
         ON t.evtname = p.pgm_event_trigger
     )
   ), 'Error: Some event trigger still exist. Drop function did not work properly!';
-END;
-$$
-LANGUAGE plpgsql;
-
-
-\echo
-\echo 'TEST ':n'.3: Drop audit_id column'
-DO
-$$
-DECLARE
-  tab TEXT := 'object';
-BEGIN
-  -- drop audit_id column. It should fire a DDL trigger to fill audit tables and update audit_column_log
-  PERFORM pgmemento.drop_table_audit_id(tab, 'public');
-
-  -- test if audit_id column has been dropped
-  ASSERT (
-    SELECT NOT EXISTS(
-      SELECT
-        1
-      FROM
-        pg_attribute
-      WHERE
-        attrelid = pgmemento.get_table_oid(tab, 'public')
-        AND attnum > 0
-        AND NOT attisdropped
-        AND attname = 'pgmemento_audit_id'
-    )
-  ), 'Error: Audit_id column still exist in % table. Drop function did not work!', tab;
 END;
 $$
 LANGUAGE plpgsql;
