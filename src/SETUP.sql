@@ -72,7 +72,7 @@
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schemaname TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_log_trigger(schemaname TEXT DEFAULT 'public'::text, log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
+*   create_table_audit(tablename TEXT, schemaname TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
 *     log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE ,log_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
 *   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
@@ -690,16 +690,28 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_log_trigger(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-SELECT
-  pgmemento.drop_table_log_trigger(tablename, $1)
-FROM
-  pgmemento.audit_tables
-WHERE
-  schemaname = $1
-  AND tablename <> ALL (COALESCE($2,'{}'))
-  AND tg_is_active;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pgmemento.audit_tables
+     WHERE schemaname = $1
+       AND tablename <> ALL (COALESCE($2,'{}'))
+       AND tg_is_active
+  ) THEN
+    PERFORM
+      pgmemento.drop_table_log_trigger(tablename, $1)
+    FROM
+      pgmemento.audit_tables
+    WHERE
+      schemaname = $1
+      AND tablename <> ALL (COALESCE($2,'{}'))
+      AND tg_is_active;
+
+    PERFORM pgmemento.stop($1, $2);
+  END IF;
+END;
 $$
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER;
 
 
@@ -1263,8 +1275,8 @@ e/schema.
 ***********************************************************/
 -- create pgMemento for one table
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text,
+  tablename TEXT,
+  schemaname TEXT DEFAULT 'public'::text,
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
   log_old_data BOOLEAN DEFAULT TRUE,
   log_new_data BOOLEAN DEFAULT FALSE,
@@ -1272,11 +1284,31 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
+  -- check if pgMemento is already initialized for schema
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pgmemento.audit_schema_log
+     WHERE schema_name = $2
+       AND upper(txid_range) IS NULL
+  ) THEN
+    PERFORM
+      pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, array_agg(c.relname))
+    FROM
+      pg_class c
+    JOIN
+      pg_namespace n
+      ON c.relnamespace = n.oid
+    WHERE
+      n.nspname = $2
+      AND c.relname <> $1
+      AND c.relkind = 'r';
+  END IF;
+
   -- remember audit_id_column when registering table in audit_table_log later
   PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.audit_id.' || txid_current(), $3, TRUE);
 
   -- remember logging behavior when registering table in audit_table_log later
-  PERFORM set_config('pgmemento.' || schema_name || '.' || table_name || '.log_data.' || txid_current(),
+  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.log_data.' || txid_current(),
     CASE WHEN log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
     CASE WHEN log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
 
@@ -1389,13 +1421,24 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
-SELECT
-  pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2)
-FROM
-  pgmemento.audit_tables
-WHERE
-  schemaname = $1
-  AND tablename <> ALL (COALESCE($3,'{}'));
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pgmemento.audit_tables
+     WHERE schemaname = $1
+       AND tablename <> ALL (COALESCE($3,'{}'))
+  ) THEN
+    PERFORM
+      pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2)
+    FROM
+      pgmemento.audit_tables
+    WHERE
+      schemaname = $1
+      AND tablename <> ALL (COALESCE($3,'{}'));
+
+    PERFORM pgmemento.drop($1, $2, $3);
+  END IF;
+END;
 $$
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER;
