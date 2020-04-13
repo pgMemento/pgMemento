@@ -34,7 +34,7 @@ SET client_min_messages TO WARNING;
 \echo 'Initializing pgMemento in ':schema_name' schema ...'
 
 SELECT pgmemento.init(
-  :'schema_name'
+  :'schema_name',
   'pgmemento_audit_id',
   TRUE,
   CASE WHEN lower(:'log_new_data') = 'y' OR lower(:'log_new_data') = 'yes' THEN TRUE ELSE FALSE END,

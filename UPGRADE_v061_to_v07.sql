@@ -167,6 +167,8 @@ DROP FUNCTION IF EXISTS pgmemento.drop_schema_audit(schema_name TEXT, keep_log B
 
 DROP FUNCTION IF EXISTS pgmemento.drop_table_audit(table_name TEXT, schema_name TEXT, keep_log BOOLEAN);
 
+DROP FUNCTION IF EXISTS pgmemento.drop_table_audit_id(table_name TEXT, schema_name TEXT);
+
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 
 \echo

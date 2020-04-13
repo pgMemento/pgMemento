@@ -23,7 +23,7 @@
 \echo 'Starting pgMemento for tables in ':schema_name' schema ...'
 
 SELECT pgmemento.start(
-  :'schema_name'
+  :'schema_name',
   'pgmemento_audit_id',
   TRUE,
   CASE WHEN lower(:'log_new_data') = 'y' OR lower(:'log_new_data') = 'yes' THEN TRUE ELSE FALSE END,
