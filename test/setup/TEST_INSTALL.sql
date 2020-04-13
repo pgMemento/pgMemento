@@ -156,7 +156,7 @@ BEGIN
   ASSERT pgm_objects[49] = 'log_schema_baseline;SETOF void;audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[50] = 'log_statement;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[51] = 'log_table_baseline;SETOF void;table_name text, schema_name text DEFAULT ''public''::text, audit_id_column_name text DEFAULT ''pgmemento_audit_id''::text, log_new_data boolean DEFAULT false', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[52] = 'log_table_event;text;event_txid bigint, tablename text, schemaname text, op_type text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[52] = 'log_table_event;text;tablename text, schemaname text, op_type text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[53] = 'log_transaction;integer;current_txid bigint', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[54] = 'log_truncate;trigger', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[55] = 'log_update;trigger', 'Error: Expected different function and/or arguments';

@@ -730,7 +730,7 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit_id(
 $$
 BEGIN
   -- log as 'add column' event, as it is not done by event triggers
-  PERFORM pgmemento.log_table_event(txid_current(), $1, $2, 'ADD AUDIT_ID');
+  PERFORM pgmemento.log_table_event($1, $2, 'ADD AUDIT_ID');
 
   -- add audit column to table if it does not exist, yet
   IF NOT EXISTS (
@@ -979,7 +979,6 @@ SECURITY DEFINER;
 * transaction_log and table_event_log and returns the event ID
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.log_table_event(
-  event_txid BIGINT,
   tablename TEXT,
   schemaname TEXT,
   op_type TEXT
@@ -988,7 +987,7 @@ $$
 DECLARE
   txid_log_id INTEGER;
   stmt_ts TIMESTAMP WITH TIME ZONE := statement_timestamp();
-  operation_id SMALLINT := pgmemento.get_operation_id($4);
+  operation_id SMALLINT := pgmemento.get_operation_id($3);
   table_event_key TEXT;
 BEGIN
   -- try to log corresponding transaction
@@ -999,8 +998,8 @@ BEGIN
   INSERT INTO pgmemento.table_event_log
     (transaction_id, stmt_time, op_id, table_operation, table_name, schema_name, event_key)
   VALUES
-    (txid_log_id, stmt_ts, operation_id, $4, $2, $3,
-     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from stmt_ts), $1, operation_id, $2, $3))
+    (txid_log_id, stmt_ts, operation_id, $3, $1, $2,
+     concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from stmt_ts), txid_current(), operation_id, $1, $2))
   ON CONFLICT (event_key)
     DO NOTHING
   RETURNING event_key
@@ -1023,7 +1022,7 @@ SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION pgmemento.log_statement() RETURNS trigger AS
 $$
 BEGIN
-  PERFORM pgmemento.log_table_event(txid_current(), TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_OP);
+  PERFORM pgmemento.log_table_event(TG_TABLE_NAME, TG_TABLE_SCHEMA, TG_OP);
   RETURN NULL;
 END;
 $$
@@ -1200,7 +1199,7 @@ BEGIN
 
   IF is_empty <> 0 THEN
     RAISE NOTICE 'Log existing data in table %.% as inserted', $1, $2;
-    table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'INSERT');
+    table_event_key := pgmemento.log_table_event($1, $2, 'INSERT');
 
     -- fill row_log table
     IF table_event_key IS NOT NULL THEN
@@ -1393,7 +1392,7 @@ BEGIN
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
 
   -- log event as event triggers will walk around anything related to the audit_id
-  table_event_key := pgmemento.log_table_event(txid_current(), $1, $2, 'DROP AUDIT_ID');
+  table_event_key := pgmemento.log_table_event($1, $2, 'DROP AUDIT_ID');
 
   -- update audit_table_log and audit_column_log
   PERFORM pgmemento.unregister_audit_table($1, $2);

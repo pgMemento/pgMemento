@@ -682,13 +682,13 @@ BEGIN
         d.depth DESC
     LOOP
       -- log the whole content of the dropped table as truncated
-      table_event_key := pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'TRUNCATE');
+      table_event_key := pgmemento.log_table_event(rec.tablename, rec.schemaname, 'TRUNCATE');
       IF rec.log_old_data THEN
         PERFORM pgmemento.log_old_table_state('{}'::text[], rec.tablename, rec.schemaname, table_event_key, rec.audit_id_column);
       END IF;
 
       -- now log drop table event
-      PERFORM pgmemento.log_table_event(txid_current(), rec.tablename, rec.schemaname, 'DROP TABLE');
+      PERFORM pgmemento.log_table_event(rec.tablename, rec.schemaname, 'DROP TABLE');
 
       -- unregister table from log tables
       PERFORM pgmemento.unregister_audit_table(rec.tablename, rec.schemaname);
@@ -898,7 +898,7 @@ BEGIN
 
     -- check if table got renamed and log event if yes
     IF lower(ddl_text) LIKE ' rename to%' THEN
-      PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME TABLE');
+      PERFORM pgmemento.log_table_event(tablename, schemaname, 'RENAME TABLE');
       -- make sure to quote ident as variable will later be read
       -- from obj trigger variable which can come with quotes
       PERFORM set_config(
@@ -979,7 +979,7 @@ BEGIN
                     RAISE EXCEPTION 'Renaming the % column is not possible!', audit_id_columnname;
                   END IF;
                   -- log event as only one RENAME COLUMN action is possible per table per transaction
-                  PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'RENAME COLUMN');
+                  PERFORM pgmemento.log_table_event(tablename, schemaname, 'RENAME COLUMN');
                 WHEN 'DROP' THEN
                   dropped_columns := array_append(dropped_columns, columnname);
                 WHEN 'ALTER' THEN
@@ -1015,12 +1015,12 @@ BEGIN
 
     IF added_columns THEN
       -- log ADD COLUMN table event
-      table_event_key := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ADD COLUMN');
+      table_event_key := pgmemento.log_table_event(tablename, schemaname, 'ADD COLUMN');
     END IF;
 
     IF array_length(altered_columns, 1) > 0 THEN
       -- log ALTER COLUMN table event
-      table_event_key := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'ALTER COLUMN');
+      table_event_key := pgmemento.log_table_event(tablename, schemaname, 'ALTER COLUMN');
 
       -- log data of entire column(s)
       IF array_length(altered_columns_log, 1) > 0 AND log_old_data THEN
@@ -1031,7 +1031,7 @@ BEGIN
     IF array_length(dropped_columns, 1) > 0 THEN
       IF NOT (audit_id_columnname = ANY(dropped_columns)) THEN
         -- log DROP COLUMN table event
-        table_event_key := pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP COLUMN');
+        table_event_key := pgmemento.log_table_event(tablename, schemaname, 'DROP COLUMN');
 
         -- log data of entire column(s)
         IF log_old_data THEN
@@ -1089,7 +1089,6 @@ BEGIN
       IF current_default_column IS NOT NULL THEN
         -- log as 'create table' event
         PERFORM pgmemento.log_table_event(
-          txid_current(),
           tablename,
           schemaname,
           'CREATE TABLE'
@@ -1152,7 +1151,6 @@ BEGIN
             AND table_operation = 'DROP AUDIT_ID'
         ) THEN
           PERFORM pgmemento.log_table_event(
-            txid_current(),
             tablename,
             schemaname,
             'DROP TABLE'
@@ -1228,13 +1226,13 @@ BEGIN
   END IF;
 
   -- log the whole content of the dropped table as truncated
-  table_event_key :=  pgmemento.log_table_event(txid_current(), tablename, schemaname, 'TRUNCATE');
+  table_event_key :=  pgmemento.log_table_event(tablename, schemaname, 'TRUNCATE');
   IF log_old_data THEN
     PERFORM pgmemento.log_old_table_state('{}'::text[], tablename, schemaname, table_event_key, audit_id_columnname);
   END IF;
 
   -- now log drop table event
-  PERFORM pgmemento.log_table_event(txid_current(), tablename, schemaname, 'DROP TABLE');
+  PERFORM pgmemento.log_table_event(tablename, schemaname, 'DROP TABLE');
 END;
 $$
 LANGUAGE plpgsql
