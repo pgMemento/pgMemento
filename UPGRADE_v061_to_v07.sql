@@ -137,7 +137,7 @@ DROP FUNCTION IF EXISTS pgmemento.pkey_table_state(table_name TEXT, target_schem
 
 DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID);
 
-DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(start_from_tid INTEGER, end_at_tid INTEGER, table_oid OID);
+DROP FUNCTION IF EXISTS pgmemento.restore_record_definition(tid INTEGER, table_name TEXT, schema_name TEXT);
 
 DROP FUNCTION IF EXISTS pgmemento.recover_audit_version(tid INTEGER, aid BIGINT, changes JSONB, table_op INTEGER, table_name TEXT, schema_name TEXT);
 
@@ -166,6 +166,8 @@ DROP FUNCTION IF EXISTS pgmemento.create_table_log_trigger(table_name TEXT, sche
 DROP FUNCTION IF EXISTS pgmemento.drop_schema_audit(schema_name TEXT, keep_log BOOLEAN, except_tables TEXT[]);
 
 DROP FUNCTION IF EXISTS pgmemento.drop_table_audit(table_name TEXT, schema_name TEXT, keep_log BOOLEAN);
+
+DROP FUNCTION IF EXISTS pgmemento.drop_table_audit_id(table_name TEXT, schema_name TEXT);
 
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 

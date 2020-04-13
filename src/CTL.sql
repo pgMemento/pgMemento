@@ -72,7 +72,7 @@ BEGIN
   -- start auditing for tables in given schema'
   PERFORM pgmemento.create_schema_audit(quote_ident($1), $2, $3, $4, $5, $6, $7);
 
-  RETURN format('pgMemento is initialized on %s schema.', $1);
+  RETURN format('pgMemento is initialized for %s schema.', $1);
 END;
 $$
 LANGUAGE plpgsql;
@@ -104,7 +104,7 @@ BEGIN
   LIMIT 1;
 
   IF current_audit_schema_log.id IS NULL THEN
-    RETURN format('pgMemento is not yet intialized on %s schema. Run init first.', $1);
+    RETURN format('pgMemento is not yet intialized for %s schema. Run init first.', $1);
   END IF;
 
   -- log transaction that starts pgMemento for a schema
@@ -127,7 +127,7 @@ BEGIN
          SET txid_range = numrange(lower(txid_range), txid_log_id::numeric, '(]')
        WHERE id = current_audit_schema_log.id;
     ELSE
-      RETURN format('pgMemento is already started on %s schema.', $1);
+      RETURN format('pgMemento is already started for %s schema.', $1);
     END IF;
   END IF;
 
@@ -160,7 +160,7 @@ BEGIN
     PERFORM pgmemento.create_schema_event_trigger($5);
   END IF;
 
-  RETURN format('pgMemento is started on %s schema.', $1);
+  RETURN format('pgMemento is started for %s schema.', $1);
 END;
 $$
 LANGUAGE plpgsql;
@@ -190,11 +190,11 @@ BEGIN
   LIMIT 1;
 
   IF current_schema_log_id IS NULL THEN
-    RETURN format('pgMemento is not intialized on %s schema.', $1);
+    RETURN format('pgMemento is not intialized for %s schema.', $1);
   END IF;
 
   IF upper(current_schema_log_range) IS NOT NULL THEN
-    RETURN format('pgMemento is already stopped on %s schema.', $1);
+    RETURN format('pgMemento is already stopped for %s schema.', $1);
   END IF;
 
   -- log transaction that stops pgMemento for a schema
@@ -220,11 +220,11 @@ BEGIN
          AND at.schemaname = $1
        WHERE tg_is_active
     ) THEN
-      RETURN format('pgMemento is partly stopped on %s schema.', $1);
+      RETURN format('pgMemento is partly stopped for %s schema.', $1);
     END IF;
   END IF;
 
-  RETURN format('pgMemento is stopped on %s schema.', $1);
+  RETURN format('pgMemento is stopped for %s schema.', $1);
 END;
 $$
 LANGUAGE plpgsql;
@@ -256,7 +256,7 @@ BEGIN
   LIMIT 1;
 
   IF current_schema_log_id IS NULL THEN
-    RETURN format('pgMemento is not intialized on %s schema.', $1);
+    RETURN format('pgMemento is not intialized for %s schema.', $1);
   END IF;
 
   -- log transaction that drops pgMemento from a schema
@@ -305,6 +305,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '49'::text AS build_id;
+SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '51'::text AS build_id;
 $$
 LANGUAGE sql;
