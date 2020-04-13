@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.4     2020-04-13   reflect configurable audit_id column            FKun
 -- 0.7.3     2020-02-29   reflect new schema of row_log table             FKun
 -- 0.7.2     2020-01-09   reflect changes on schema and triggers          FKun
 -- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
@@ -145,8 +146,7 @@ BEGIN
 
   -- ADD AUDIT_ID case
   WHEN $4 = 21 THEN
-    PERFORM pgmemento.drop_table_audit($5, $6, $7);
-
+    PERFORM pgmemento.drop_table_audit($5, $6, $7, TRUE);
 
   -- RENAME COLUMN case
   WHEN $4 = 22 THEN
