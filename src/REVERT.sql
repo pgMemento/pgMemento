@@ -418,7 +418,7 @@ BEGIN
 
     -- try to create table
     IF stmt IS NOT NULL THEN
-      PERFORM pgmemento.log_table_event(txid_current(), $5, $6, 'RECREATE TABLE');
+      PERFORM pgmemento.log_table_event($5, $6, 'RECREATE TABLE');
       PERFORM set_config('pgmemento.' || $6 || '.' || $5, table_log_id::text, TRUE);
       EXECUTE format('CREATE TABLE IF NOT EXISTS %I.%I (' || stmt || ')', $6, $5);
     END IF;
