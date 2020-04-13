@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.5     2020-04-13   fix NULL check in restore_record function           FKun
 -- 0.7.4     2020-03-23   reflect dynamic audit_id in logged tables           FKun
 -- 0.7.3     2020-02-29   reflect new schema of row_log table                 FKun
 -- 0.7.2     2020-02-09   reflect changes on schema and triggers              FKun
@@ -336,7 +337,7 @@ BEGIN
        END
     -- if 'all_versions' flag is FALSE do not produce a result if row did not exist before second transaction ID
     -- therefore, filter out DELETE, TRUNCATE or DROP TABLE events
-    || CASE WHEN $6 THEN '' ELSE E'WHERE\n    f.op_id < 7\n' END
+    || CASE WHEN $6 THEN '' ELSE E'  WHERE\n    f.op_id < 7\n' END
     -- order by oldest log entry for given audit_id
     || E'  ORDER BY\n'
     || CASE WHEN $6 THEN '    f.event_key, ' ELSE '    ' END
@@ -375,19 +376,13 @@ $$
 DECLARE
   -- init query string
   restore_query_text TEXT := pgmemento.restore_query($1, $2, $3, $4, $5);
-  restore_result RECORD;
 BEGIN
   IF $6 IS TRUE THEN
     restore_query_text := E'SELECT to_jsonb(t) FROM (\n' || restore_query_text || E'\n) t';
   END IF;
 
   -- execute the SQL command
-  EXECUTE restore_query_text INTO restore_result;
-
-  IF restore_result IS NOT NULL THEN
-    RETURN NEXT restore_result;
-  END IF;
-  RETURN;
+  RETURN QUERY EXECUTE restore_query_text;
 END;
 $$
 LANGUAGE plpgsql STABLE STRICT;
