@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.8     2020-04-13   remove txid from log_table_event                 FKun
 -- 0.7.7     2020-04-05   add tags CREATE TABLE AS and SELECT INTO         FKun
 -- 0.7.6     2020-03-29   reflect that logging old data is configurable    FKun
 -- 0.7.5     2020-03-23   use audit_schema_log to check audit config       FKun

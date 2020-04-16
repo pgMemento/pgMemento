@@ -16,7 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
--- 0.7.4     2020-04-13   reflect configurable audit_id column            FKun
+-- 0.7.5     2020-04-13   remove txid from log_table_event                FKun
+-- 0.7.4     2020-03-23   reflect configurable audit_id column            FKun
 -- 0.7.3     2020-02-29   reflect new schema of row_log table             FKun
 -- 0.7.2     2020-01-09   reflect changes on schema and triggers          FKun
 -- 0.7.1     2019-04-21   reuse log_id when reverting DROP TABLE events   FKun
