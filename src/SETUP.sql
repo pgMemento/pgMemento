@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.9     2020-04-13   remove txid from log_table_event                    FKun
 -- 0.7.8     2020-03-29   make logging of old data configurable, too          FKun
 -- 0.7.7     2020-03-23   allow configurable audit_id column                  FKun
 -- 0.7.6     2020-03-21   new function log_transaction to do writes and       FKun
@@ -1077,7 +1078,7 @@ BEGIN
   VALUES
     (new_audit_id,
      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
-     CASE WHEN TG_ARGV[1] = 'true' THEN to_json(NEW) ELSE NULL END);
+     CASE WHEN TG_ARGV[2] = 'true' THEN to_json(NEW) ELSE NULL END);
 
   RETURN NULL;
 END;
