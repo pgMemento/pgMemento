@@ -111,7 +111,7 @@ DECLARE
   current_audit_schema_log pgmemento.audit_schema_log%ROWTYPE;
   txid_log_id INTEGER;
 BEGIN
-  -- make sure schema is quoted no matter how it is passed to init
+  -- make sure schema is quoted no matter how it is passed to start
   schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
 
   -- check if schema is already logged
@@ -195,7 +195,7 @@ DECLARE
   current_schema_log_id INTEGER;
   current_schema_log_range numrange;
 BEGIN
-  -- make sure schema is quoted no matter how it is passed to init
+  -- make sure schema is quoted no matter how it is passed to stop
   schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
 
   -- check if schema is already logged
@@ -265,7 +265,7 @@ DECLARE
   current_schema_log_range numrange;
   txid_log_id INTEGER;
 BEGIN
-  -- make sure schema is quoted no matter how it is passed to init
+  -- make sure schema is quoted no matter how it is passed to drop
   schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
 
   -- check if schema is already logged
