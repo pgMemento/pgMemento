@@ -62,6 +62,7 @@ BEGIN
       pgmemento.audit_schema_log
     WHERE
       schema_name = pgmemento.trim_outer_quotes($1)
+      AND upper(txid_range) IS NULL
     ORDER BY
       id DESC
     LIMIT 1
@@ -123,9 +124,7 @@ BEGIN
     pgmemento.audit_schema_log
   WHERE
     schema_name = pgmemento.trim_outer_quotes($1)
-  ORDER BY
-    id DESC
-  LIMIT 1;
+    AND upper(txid_range) IS NULL;
 
   IF current_audit_schema_log.id IS NULL THEN
     RETURN format('pgMemento is not yet intialized for %s schema. Run init first.', schema_quoted);
@@ -156,6 +155,23 @@ BEGIN
     VALUES
       (current_audit_schema_log.log_id, $1, $2, $3, $4, $5,
        numrange(txid_log_id, NULL, '(]'));
+
+    -- drop active triggers as they need to be replaced
+    PERFORM
+      pgmemento.drop_table_log_trigger(c.relname, $1)
+    FROM
+      pg_class c
+    JOIN
+      pg_namespace n
+      ON c.relnamespace = n.oid
+    JOIN pgmemento.audit_tables at
+      ON at.tablename = c.relname
+     AND at.schemaname = n.nspname
+     AND tg_is_active
+    WHERE
+      n.nspname = pgmemento.trim_outer_quotes($1)
+      AND c.relkind = 'r'
+      AND c.relname <> ALL (COALESCE($6,'{}'));
   END IF;
 
   -- enable triggers where they are not active
@@ -192,33 +208,21 @@ CREATE OR REPLACE FUNCTION pgmemento.stop(
 $$
 DECLARE
   schema_quoted TEXT;
-  current_schema_log_id INTEGER;
-  current_schema_log_range numrange;
 BEGIN
   -- make sure schema is quoted no matter how it is passed to stop
   schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
 
   -- check if schema is already logged
-  SELECT
-    id,
-    txid_range
-  INTO
-    current_schema_log_id,
-    current_schema_log_range
-  FROM
-    pgmemento.audit_schema_log
-  WHERE
-    schema_name = pgmemento.trim_outer_quotes($1)
-  ORDER BY
-    id DESC
-  LIMIT 1;
-
-  IF current_schema_log_id IS NULL THEN
-    RETURN format('pgMemento is not intialized for %s schema.', schema_quoted);
-  END IF;
-
-  IF upper(current_schema_log_range) IS NOT NULL THEN
-    RETURN format('pgMemento is already stopped for %s schema.', schema_quoted);
+  IF NOT EXISTS (
+    SELECT
+      1
+    FROM
+      pgmemento.audit_schema_log
+    WHERE
+      schema_name = pgmemento.trim_outer_quotes($1)
+      AND upper(txid_range) IS NULL
+  ) THEN
+    RETURN format('pgMemento is not intialized for %s schema. Nothing to stop.', schema_quoted);
   END IF;
 
   -- log transaction that stops pgMemento for a schema
@@ -284,7 +288,11 @@ BEGIN
   LIMIT 1;
 
   IF current_schema_log_id IS NULL THEN
-    RETURN format('pgMemento is not intialized for %s schema.', schema_quoted);
+    RETURN format('pgMemento is not intialized for %s schema. Nothing to drop.', schema_quoted);
+  END IF;
+
+  IF upper(current_schema_log_range) IS NOT NULL THEN
+    RETURN format('pgMemento is already dropped from %s schema.', schema_quoted);
   END IF;
 
   -- log transaction that drops pgMemento from a schema
@@ -333,6 +341,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '53'::text AS build_id;
+SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '54'::text AS build_id;
 $$
 LANGUAGE sql;
