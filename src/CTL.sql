@@ -189,7 +189,7 @@ BEGIN
        OR at.log_new_data IS DISTINCT FROM $4)
   LOOP
     -- log recreate event to keep log_id in audit_table_log
-    PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'RECREATE TABLE');
+    PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'REINIT TABLE');
 
     -- drop auditing from table but do not log or drop anything 
     PERFORM pgmemento.drop_table_audit(rec.table_name, rec.schema_name, rec.audit_id_column, FALSE, FALSE);

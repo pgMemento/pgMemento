@@ -15,7 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
--- 0.7.10    2020-04-19   change signature for drop audit functions           FKun
+-- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
+--                        define new REINIT TABLE event
 -- 0.7.9     2020-04-13   remove txid from log_table_event                    FKun
 -- 0.7.8     2020-03-29   make logging of old data configurable, too          FKun
 -- 0.7.7     2020-03-23   allow configurable audit_id column                  FKun
@@ -358,6 +359,7 @@ $$
 SELECT (CASE $1
   WHEN 'CREATE TABLE' THEN 1
   WHEN 'RECREATE TABLE' THEN 1
+  WHEN 'REINIT TABLE' THEN 11
   WHEN 'RENAME TABLE' THEN 12
   WHEN 'ADD COLUMN' THEN 2
   WHEN 'ADD AUDIT_ID' THEN 21
@@ -484,8 +486,8 @@ BEGIN
         transaction_id = current_setting('pgmemento.' || txid_current())::int
         AND table_name = $1
         AND schema_name = $2
-        AND op_id = 1
-        AND table_operation = 'RECREATE TABLE'
+        AND ((op_id = 1 AND table_operation = 'RECREATE TABLE')
+         OR op_id = 11)
     ) THEN
       SELECT
         table_name,
@@ -1289,6 +1291,8 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
   log_state BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
+DECLARE
+  except_tables TEXT[] DEFAULT '{}';
 BEGIN
   -- check if pgMemento is already initialized for schema
   IF NOT EXISTS (
@@ -1297,8 +1301,10 @@ BEGIN
      WHERE schema_name = $2
        AND upper(txid_range) IS NULL
   ) THEN
-    PERFORM
-      pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, array_agg(c.relname))
+    SELECT
+      array_agg(c.relname)
+    INTO
+      except_tables
     FROM
       pg_class c
     JOIN
@@ -1308,6 +1314,8 @@ BEGIN
       n.nspname = $2
       AND c.relname <> $1
       AND c.relkind = 'r';
+
+    PERFORM pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, except_tables);
   END IF;
 
   -- remember audit_id_column when registering table in audit_table_log later
@@ -1439,7 +1447,7 @@ BEGIN
        AND tablename <> ALL (COALESCE($4,'{}'))
   ) THEN
     PERFORM
-      pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2, $4)
+      pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2, $3)
     FROM
       pgmemento.audit_tables
     WHERE
