@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.6     2020-04-19   add revert for REINIT TABLE event               FKun 
 -- 0.7.5     2020-04-13   remove txid from log_table_event                FKun
 -- 0.7.4     2020-03-23   reflect configurable audit_id column            FKun
 -- 0.7.3     2020-02-29   reflect new schema of row_log table             FKun
@@ -69,6 +70,7 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
+  except_tables TEXT[] DEFAULT '{}';
   stmt TEXT;
   table_log_id INTEGER;
 BEGIN
@@ -82,6 +84,34 @@ BEGIN
       EXCEPTION
         WHEN undefined_table THEN
           RAISE NOTICE 'Could not revert CREATE TABLE event for table %.%: %', $6, $5, SQLERRM;
+    END;
+
+  -- REINIT TABLE case
+  WHEN $4 = 11 THEN
+    BEGIN
+      SELECT
+        array_agg(table_name)
+      INTO
+        except_tables
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name <> $5
+        AND schema_name = $6
+        AND upper(txid_range) = $1;
+
+      PERFORM
+        pgmemento.reinit($6, audit_id_column, log_old_data, log_new_data, FALSE, except_tables)
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = $5
+        AND schema_name = $6
+        AND upper(txid_range) = $1;
+
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert REINIT TABLE event for table %.%: %', $6, $5, SQLERRM;
     END;
 
   -- RENAME TABLE case
@@ -147,7 +177,7 @@ BEGIN
 
   -- ADD AUDIT_ID case
   WHEN $4 = 21 THEN
-    PERFORM pgmemento.drop_table_audit($5, $6, $7, TRUE);
+    PERFORM pgmemento.drop_table_audit($5, $6, $7, FALSE, FALSE);
 
   -- RENAME COLUMN case
   WHEN $4 = 22 THEN

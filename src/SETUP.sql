@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
+--                        define new REINIT TABLE event
 -- 0.7.9     2020-04-13   remove txid from log_table_event                    FKun
 -- 0.7.8     2020-03-29   make logging of old data configurable, too          FKun
 -- 0.7.7     2020-03-23   allow configurable audit_id column                  FKun
@@ -72,16 +74,18 @@
 *     log_state BOOLEAN DEFAULT FALSE, log_new_data BOOLEAN DEFAULT FALSE, trigger_create_table BOOLEAN DEFAULT FALSE,
 *     except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_schema_audit_id(schemaname TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   create_schema_log_trigger(schemaname TEXT DEFAULT 'public'::text, log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   create_schema_log_trigger(schemaname TEXT DEFAULT 'public'::text, log_old_data BOOLEAN DEFAULT TRUE,
+*     log_new_data BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   create_table_audit(tablename TEXT, schemaname TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
 *     log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE ,log_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   create_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
 *   create_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
 *     log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE, log_state BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
-*   drop_schema_audit(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
+*   drop_schema_audit(schema_name TEXT DEFAULT 'public'::text, log_state BOOLEAN DEFAULT TRUE, drop_log BOOLEAN DEFAULT FALSE, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_audit_id(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
 *   drop_schema_log_trigger(schema_name TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS SETOF VOID
-*   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
+*   drop_table_audit(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
+*     log_state BOOLEAN DEFAULT TRUE, drop_log BOOLEAN DEFAULT FALSE) RETURNS SETOF VOID
 *   drop_table_audit_id(table_name TEXT, schema_name TEXT DEFAULT 'public'::text, audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text) RETURNS SETOF VOID
 *   drop_table_log_trigger(table_name TEXT, schema_name TEXT DEFAULT 'public'::text) RETURNS SETOF VOID
 *   get_operation_id(operation TEXT) RETURNS SMALLINT
@@ -160,6 +164,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
   JOIN
     pgmemento.audit_schema_log asl
     ON asl.schema_name = n.nspname
+   AND upper(asl.txid_range) IS NULL
   JOIN (
     SELECT DISTINCT ON (log_id)
       log_id,
@@ -170,6 +175,8 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
       log_new_data
     FROM
       pgmemento.audit_table_log
+    WHERE
+      upper(txid_range) IS NULL
     ORDER BY
       log_id, id
     ) atl
@@ -352,6 +359,7 @@ $$
 SELECT (CASE $1
   WHEN 'CREATE TABLE' THEN 1
   WHEN 'RECREATE TABLE' THEN 1
+  WHEN 'REINIT TABLE' THEN 11
   WHEN 'RENAME TABLE' THEN 12
   WHEN 'ADD COLUMN' THEN 2
   WHEN 'ADD AUDIT_ID' THEN 21
@@ -478,8 +486,8 @@ BEGIN
         transaction_id = current_setting('pgmemento.' || txid_current())::int
         AND table_name = $1
         AND schema_name = $2
-        AND op_id = 1
-        AND table_operation = 'RECREATE TABLE'
+        AND ((op_id = 1 AND table_operation = 'RECREATE TABLE')
+         OR op_id = 11)
     ) THEN
       SELECT
         table_name,
@@ -1283,6 +1291,8 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
   log_state BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
+DECLARE
+  except_tables TEXT[] DEFAULT '{}';
 BEGIN
   -- check if pgMemento is already initialized for schema
   IF NOT EXISTS (
@@ -1291,8 +1301,10 @@ BEGIN
      WHERE schema_name = $2
        AND upper(txid_range) IS NULL
   ) THEN
-    PERFORM
-      pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, array_agg(c.relname))
+    SELECT
+      array_agg(c.relname)
+    INTO
+      except_tables
     FROM
       pg_class c
     JOIN
@@ -1302,6 +1314,8 @@ BEGIN
       n.nspname = $2
       AND c.relname <> $1
       AND c.relkind = 'r';
+
+    PERFORM pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, except_tables);
   END IF;
 
   -- remember audit_id_column when registering table in audit_table_log later
@@ -1383,7 +1397,8 @@ CREATE OR REPLACE FUNCTION pgmemento.drop_table_audit(
   table_name TEXT,
   schema_name TEXT DEFAULT 'public'::text,
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
-  keep_log BOOLEAN DEFAULT TRUE
+  log_state BOOLEAN DEFAULT TRUE,
+  drop_log BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -1398,12 +1413,14 @@ BEGIN
   -- update audit_table_log and audit_column_log
   PERFORM pgmemento.unregister_audit_table($1, $2);
 
-  -- then either keep the audit trail for table or delete everything
+  -- log the whole content of the table to keep the reference between audit_id and table rows
   IF $4 THEN
     -- log the whole content of the table to keep the reference between audit_id and table rows
     PERFORM pgmemento.log_old_table_state('{}'::text[], $1, $2, table_event_key, $3);
-  ELSE
-    -- remove all logs related to given table
+  END IF;
+
+  -- remove all logs related to given table
+  IF $5 THEN
     PERFORM pgmemento.delete_audit_table_log($1, $2);
   END IF;
 
@@ -1417,7 +1434,8 @@ SECURITY DEFINER;
 -- perform drop_table_audit on multiple tables in one schema
 CREATE OR REPLACE FUNCTION pgmemento.drop_schema_audit(
   schema_name TEXT DEFAULT 'public'::text,
-  keep_log BOOLEAN DEFAULT TRUE,
+  log_state BOOLEAN DEFAULT TRUE,
+  drop_log BOOLEAN DEFAULT FALSE,
   except_tables TEXT[] DEFAULT '{}'
   ) RETURNS SETOF VOID AS
 $$
@@ -1426,17 +1444,17 @@ BEGIN
     SELECT 1
       FROM pgmemento.audit_tables
      WHERE schemaname = $1
-       AND tablename <> ALL (COALESCE($3,'{}'))
+       AND tablename <> ALL (COALESCE($4,'{}'))
   ) THEN
     PERFORM
-      pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2)
+      pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2, $3)
     FROM
       pgmemento.audit_tables
     WHERE
       schemaname = $1
-      AND tablename <> ALL (COALESCE($3,'{}'));
+      AND tablename <> ALL (COALESCE($4,'{}'));
 
-    PERFORM pgmemento.drop($1, $2, $3);
+    PERFORM pgmemento.drop($1, $2, $3, $4);
   END IF;
 END;
 $$
