@@ -65,8 +65,8 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   aid BIGINT,
   changes JSONB,
   table_op INTEGER,
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text,
+  tab_name TEXT,
+  tab_schema TEXT DEFAULT 'public'::text,
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS SETOF VOID AS
 $$
@@ -126,7 +126,7 @@ BEGIN
           AND schema_name = $6
           AND op_id = 11  -- REINIT TABLE event
       ) THEN
-        PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'REINIT TABLE');
+        PERFORM pgmemento.log_table_event($5, $6, 'REINIT TABLE');
       END IF;
 
       EXCEPTION
@@ -418,6 +418,7 @@ BEGIN
 
   -- DROP AUDIT_ID case
   WHEN $4 = 81 THEN
+    -- first check if a preceding CREATE TABLE event already recreated the audit_id
     BEGIN
       current_transaction := current_setting('pgmemento.' || txid_current())::int;
 
@@ -438,8 +439,9 @@ BEGIN
           AND schema_name = $6
           AND op_id = 1  -- RE/CREATE TABLE event
       ) THEN
+        -- try to restart auditing for table
         PERFORM
-          pgmemento.create_table_audit(table_name, schema_name, audit_column_log, log_old_data, log_new_data, FALSE)
+          pgmemento.create_table_audit(table_name, schema_name, audit_id_column, log_old_data, log_new_data, FALSE)
         FROM
           pgmemento.audit_table_log
         WHERE
@@ -560,8 +562,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND (a.txid_range @> t.id::numeric
-      OR lower(a.txid_range) = t.id::numeric)
+     AND ((a.txid_range @> t.id::numeric AND NOT lower(a.txid_range) = t.id::numeric)
+      OR (a.txid_range @> t.id::numeric AND lower(a.txid_range) = t.id::numeric))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -614,8 +616,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND (a.txid_range @> t.id::numeric
-      OR lower(a.txid_range) = t.id::numeric)
+     AND ((a.txid_range @> t.id::numeric AND NOT lower(a.txid_range) = t.id::numeric)
+      OR (a.txid_range @> t.id::numeric AND lower(a.txid_range) = t.id::numeric))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -713,8 +715,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND (a.txid_range @> q.tid::numeric
-      OR lower(a.txid_range) = q.tid::numeric)
+     AND ((a.txid_range @> q.tid::numeric AND NOT lower(a.txid_range) = q.tid::numeric)
+      OR (a.txid_range @> q.tid::numeric AND lower(a.txid_range) = q.tid::numeric))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
@@ -805,8 +807,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND (a.txid_range @> q.tid::numeric
-      OR lower(a.txid_range) = q.tid::numeric)
+     AND ((a.txid_range @> q.tid::numeric AND NOT lower(a.txid_range) = q.tid::numeric)
+      OR (a.txid_range @> q.tid::numeric AND lower(a.txid_range) = q.tid::numeric))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
