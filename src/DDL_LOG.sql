@@ -1148,8 +1148,7 @@ BEGIN
             transaction_id = tid
             AND table_name = tablename
             AND schema_name = schemaname
-            AND op_id = 8
-            AND table_operation = 'DROP AUDIT_ID'
+            AND op_id = 81  -- DROP AUDIT_ID event
         ) THEN
           PERFORM pgmemento.log_table_event(
             tablename,

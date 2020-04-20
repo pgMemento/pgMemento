@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.7     2020-04-20   add revert for DROP AUDIT_ID event              FKun
 -- 0.7.6     2020-04-19   add revert for REINIT TABLE event               FKun 
 -- 0.7.5     2020-04-13   remove txid from log_table_event                FKun
 -- 0.7.4     2020-03-23   reflect configurable audit_id column            FKun
@@ -73,6 +74,7 @@ DECLARE
   except_tables TEXT[] DEFAULT '{}';
   stmt TEXT;
   table_log_id INTEGER;
+  current_transaction INTEGER;
 BEGIN
   CASE
   -- CREATE TABLE case
@@ -89,6 +91,7 @@ BEGIN
   -- REINIT TABLE case
   WHEN $4 = 11 THEN
     BEGIN
+      -- reinit only given table and exclude all others
       SELECT
         array_agg(table_name)
       INTO
@@ -108,6 +111,23 @@ BEGIN
         table_name = $5
         AND schema_name = $6
         AND upper(txid_range) = $1;
+
+      -- if auditing was stopped within the same transaction (e.g. reverted ADD AUDIT_ID event)
+      -- the REINIT TABLE event will not be logged by reinit function
+      -- therefore, we have to make the insert here
+      IF NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pgmemento.table_event_log
+        WHERE
+          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          AND table_name = $5
+          AND schema_name = $6
+          AND op_id = 11  -- REINIT TABLE event
+      ) THEN
+        PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'REINIT TABLE');
+      END IF;
 
       EXCEPTION
         WHEN others THEN
@@ -395,6 +415,44 @@ BEGIN
             PERFORM pgmemento.recover_audit_version($1, $2, $3, 4, $5, $6, $7);
       END;
     END IF;
+
+  -- DROP AUDIT_ID case
+  WHEN $4 = 81 THEN
+    BEGIN
+      current_transaction := current_setting('pgmemento.' || txid_current())::int;
+
+      EXCEPTION
+        WHEN undefined_object THEN
+          NULL;
+    END;
+
+    BEGIN
+      IF current_transaction IS NULL OR NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pgmemento.table_event_log
+        WHERE
+          transaction_id = current_transaction
+          AND table_name = $5
+          AND schema_name = $6
+          AND op_id = 1  -- RE/CREATE TABLE event
+      ) THEN
+        PERFORM
+          pgmemento.create_table_audit(table_name, schema_name, audit_column_log, log_old_data, log_new_data, FALSE)
+        FROM
+          pgmemento.audit_table_log
+        WHERE
+          table_name = $5
+          AND schema_name = $6
+          AND upper(txid_range) = $1;
+      END IF;
+      
+      -- audit_id already exists
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert DROP AUDIT_ID event for table %.%: %', $6, $5, SQLERRM;
+    END;
 
   -- DROP TABLE case
   WHEN $4 = 9 THEN

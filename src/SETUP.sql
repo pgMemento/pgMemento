@@ -370,7 +370,7 @@ SELECT (CASE $1
   WHEN 'DROP COLUMN' THEN 6
   WHEN 'DELETE' THEN 7
   WHEN 'TRUNCATE' THEN 8
-  WHEN 'DROP AUDIT_ID' THEN 8
+  WHEN 'DROP AUDIT_ID' THEN 81
   WHEN 'DROP TABLE' THEN 9
   ELSE NULL
 END)::smallint;
@@ -487,7 +487,7 @@ BEGIN
         AND table_name = $1
         AND schema_name = $2
         AND ((op_id = 1 AND table_operation = 'RECREATE TABLE')
-         OR op_id = 11)
+         OR op_id = 11)  -- REINIT TABLE event
     ) THEN
       SELECT
         table_name,
@@ -1407,17 +1407,20 @@ BEGIN
   -- first drop log trigger
   PERFORM pgmemento.drop_table_log_trigger($1, $2);
 
+  -- log the whole content of the table to keep the reference between audit_id and table rows
+  IF $4 THEN
+    -- log event as event triggers will walk around anything related to the audit_id
+    table_event_key := pgmemento.log_table_event($1, $2, 'TRUNCATE');
+
+    -- log the whole content of the table to keep the reference between audit_id and table rows
+    PERFORM pgmemento.log_old_table_state('{}'::text[], $1, $2, table_event_key, $3);
+  END IF;
+
   -- log event as event triggers will walk around anything related to the audit_id
   table_event_key := pgmemento.log_table_event($1, $2, 'DROP AUDIT_ID');
 
   -- update audit_table_log and audit_column_log
   PERFORM pgmemento.unregister_audit_table($1, $2);
-
-  -- log the whole content of the table to keep the reference between audit_id and table rows
-  IF $4 THEN
-    -- log the whole content of the table to keep the reference between audit_id and table rows
-    PERFORM pgmemento.log_old_table_state('{}'::text[], $1, $2, table_event_key, $3);
-  END IF;
 
   -- remove all logs related to given table
   IF $5 THEN
