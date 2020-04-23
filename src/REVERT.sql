@@ -562,8 +562,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND ((a.txid_range @> t.id::numeric AND NOT lower(a.txid_range) = t.id::numeric)
-      OR (a.txid_range @> t.id::numeric AND lower(a.txid_range) = t.id::numeric))
+     AND ((lower(a.txid_range) = t.id::NUMERIC AND NOT a.txid_range @> t.id::NUMERIC)
+      OR (lower(a.txid_range) = t.id::NUMERIC AND a.txid_range @> t.id::NUMERIC))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -616,8 +616,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND ((a.txid_range @> t.id::numeric AND NOT lower(a.txid_range) = t.id::numeric)
-      OR (a.txid_range @> t.id::numeric AND lower(a.txid_range) = t.id::numeric))
+     AND ((lower(a.txid_range) = t.id::NUMERIC AND NOT a.txid_range @> t.id::NUMERIC)
+      OR (lower(a.txid_range) = t.id::NUMERIC AND a.txid_range @> t.id::NUMERIC))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -715,8 +715,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND ((a.txid_range @> q.tid::numeric AND NOT lower(a.txid_range) = q.tid::numeric)
-      OR (a.txid_range @> q.tid::numeric AND lower(a.txid_range) = q.tid::numeric))
+     AND ((lower(a.txid_range) = q.tid::NUMERIC AND NOT a.txid_range @> q.tid::NUMERIC)
+      OR (lower(a.txid_range) = q.tid::NUMERIC AND a.txid_range @> q.tid::NUMERIC))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
@@ -807,8 +807,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND ((a.txid_range @> q.tid::numeric AND NOT lower(a.txid_range) = q.tid::numeric)
-      OR (a.txid_range @> q.tid::numeric AND lower(a.txid_range) = q.tid::numeric))
+     AND ((lower(a.txid_range) = q.tid::NUMERIC AND NOT a.txid_range @> q.tid::NUMERIC)
+      OR (lower(a.txid_range) = q.tid::NUMERIC AND a.txid_range @> q.tid::NUMERIC))
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
