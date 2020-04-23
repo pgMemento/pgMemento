@@ -70,11 +70,11 @@ BEGIN
     pgmemento.table_event_log
   WHERE
     transaction_id = test_transaction
-    AND (op_id = pgmemento.get_operation_id('TRUNCATE')
-     OR op_id = pgmemento.get_operation_id('DROP TABLE'));
+    AND op_id IN (8, 81, 9);  -- TRUNCATE, DROP AUDIT_ID or DROP TABLE event
 
   ASSERT event_keys[1] IS NOT NULL, 'Error: Did not find test entry for TRUNCATE event in table_event_log table!';
-  ASSERT event_keys[2] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
+  ASSERT event_keys[2] IS NOT NULL, 'Error: Did not find test entry for DROP AUDIT_ID event in table_event_log table!';
+  ASSERT event_keys[3] IS NOT NULL, 'Error: Did not find test entry for DROP TABLE event in table_event_log table!';
 END;
 $$
 LANGUAGE plpgsql;

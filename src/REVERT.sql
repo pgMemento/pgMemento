@@ -197,7 +197,7 @@ BEGIN
 
   -- ADD AUDIT_ID case
   WHEN $4 = 21 THEN
-    PERFORM pgmemento.drop_table_audit($5, $6, $7, FALSE, FALSE);
+    PERFORM pgmemento.drop_table_audit($5, $6, $7, TRUE, FALSE);
 
   -- RENAME COLUMN case
   WHEN $4 = 22 THEN
@@ -562,8 +562,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND ((lower(a.txid_range) = t.id::NUMERIC AND NOT a.txid_range @> t.id::NUMERIC)
-      OR (lower(a.txid_range) = t.id::NUMERIC AND a.txid_range @> t.id::NUMERIC))
+     AND ((a.txid_range @> t.id::numeric AND NOT e.op_id IN (1, 11, 21))
+      OR (lower(a.txid_range) = t.id::numeric AND NOT e.op_id IN (81, 9)))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -616,8 +616,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND ((lower(a.txid_range) = t.id::NUMERIC AND NOT a.txid_range @> t.id::NUMERIC)
-      OR (lower(a.txid_range) = t.id::NUMERIC AND a.txid_range @> t.id::NUMERIC))
+     AND ((a.txid_range @> t.id::numeric AND NOT e.op_id IN (1, 11, 21))
+      OR (lower(a.txid_range) = t.id::numeric AND NOT e.op_id IN (81, 9)))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -715,8 +715,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND ((lower(a.txid_range) = q.tid::NUMERIC AND NOT a.txid_range @> q.tid::NUMERIC)
-      OR (lower(a.txid_range) = q.tid::NUMERIC AND a.txid_range @> q.tid::NUMERIC))
+     AND (a.txid_range @> q.tid::numeric
+      OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
@@ -725,8 +725,12 @@ BEGIN
         AND e2.op_id = 9
       )
       AND NOT (
+        e1.op_id = 21
+        AND e2.op_id = 81
+      )
+      AND NOT (
         e1.op_id = 3
-        AND (e2.op_id > 6 AND e2.op_id < 10)
+        AND (e2.op_id BETWEEN 7 AND 9)
       )
     ORDER BY
       dependency_order,
@@ -807,8 +811,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = q.table_name
      AND a.schema_name = q.schema_name
-     AND ((lower(a.txid_range) = q.tid::NUMERIC AND NOT a.txid_range @> q.tid::NUMERIC)
-      OR (lower(a.txid_range) = q.tid::NUMERIC AND a.txid_range @> q.tid::NUMERIC))
+     AND (a.txid_range @> q.tid::numeric
+      OR lower(a.txid_range) = q.tid::numeric)
     LEFT JOIN pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
     WHERE
@@ -817,8 +821,12 @@ BEGIN
         AND e2.op_id = 9
       )
       AND NOT (
+        e1.op_id = 21
+        AND e2.op_id = 81
+      )
+      AND NOT (
         e1.op_id = 3
-        AND (e2.op_id > 6 AND e2.op_id < 10)
+        AND (e2.op_id BETWEEN 7 AND 9)
       )
     ORDER BY
       q.tid DESC,
