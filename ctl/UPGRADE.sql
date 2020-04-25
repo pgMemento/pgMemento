@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.4     2020-04-20   update op_id of DROP AUDIT_ID events             FKun
 -- 0.2.3     2020-03-30   create and fill new audit_schema_log table       FKun
 -- 0.2.2     2020-02-29   reflect new schema of row_log table              FKun
 -- 0.2.1     2020-02-01   reflect more changes in schema                   FKun
@@ -64,6 +65,10 @@ UPDATE pgmemento.table_event_log e
  WHERE atl.relid = e.table_relid
    AND (atl.txid_range @> e.transaction_id::numeric
     OR lower(atl.txid_range) = e.transaction_id::numeric);
+
+UPDATE pgmemento.table_event_log
+   SET op_id = 81
+ WHERE table_operation = 'DROP AUDIT_ID';
 
 -- set columns to NOT NULL and update indexes
 ALTER TABLE pgmemento.table_event_log

@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.7     2020-04-20   add revert for DROP AUDIT_ID event              FKun
 -- 0.7.6     2020-04-19   add revert for REINIT TABLE event               FKun 
 -- 0.7.5     2020-04-13   remove txid from log_table_event                FKun
 -- 0.7.4     2020-03-23   reflect configurable audit_id column            FKun
@@ -64,8 +65,8 @@ CREATE OR REPLACE FUNCTION pgmemento.recover_audit_version(
   aid BIGINT,
   changes JSONB,
   table_op INTEGER,
-  table_name TEXT,
-  schema_name TEXT DEFAULT 'public'::text,
+  tab_name TEXT,
+  tab_schema TEXT DEFAULT 'public'::text,
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
   ) RETURNS SETOF VOID AS
 $$
@@ -73,6 +74,7 @@ DECLARE
   except_tables TEXT[] DEFAULT '{}';
   stmt TEXT;
   table_log_id INTEGER;
+  current_transaction INTEGER;
 BEGIN
   CASE
   -- CREATE TABLE case
@@ -89,6 +91,7 @@ BEGIN
   -- REINIT TABLE case
   WHEN $4 = 11 THEN
     BEGIN
+      -- reinit only given table and exclude all others
       SELECT
         array_agg(table_name)
       INTO
@@ -108,6 +111,23 @@ BEGIN
         table_name = $5
         AND schema_name = $6
         AND upper(txid_range) = $1;
+
+      -- if auditing was stopped within the same transaction (e.g. reverted ADD AUDIT_ID event)
+      -- the REINIT TABLE event will not be logged by reinit function
+      -- therefore, we have to make the insert here
+      IF NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pgmemento.table_event_log
+        WHERE
+          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          AND table_name = $5
+          AND schema_name = $6
+          AND op_id = 11  -- REINIT TABLE event
+      ) THEN
+        PERFORM pgmemento.log_table_event($5, $6, 'REINIT TABLE');
+      END IF;
 
       EXCEPTION
         WHEN others THEN
@@ -177,7 +197,7 @@ BEGIN
 
   -- ADD AUDIT_ID case
   WHEN $4 = 21 THEN
-    PERFORM pgmemento.drop_table_audit($5, $6, $7, FALSE, FALSE);
+    PERFORM pgmemento.drop_table_audit($5, $6, $7, TRUE, FALSE);
 
   -- RENAME COLUMN case
   WHEN $4 = 22 THEN
@@ -396,6 +416,46 @@ BEGIN
       END;
     END IF;
 
+  -- DROP AUDIT_ID case
+  WHEN $4 = 81 THEN
+    -- first check if a preceding CREATE TABLE event already recreated the audit_id
+    BEGIN
+      current_transaction := current_setting('pgmemento.' || txid_current())::int;
+
+      EXCEPTION
+        WHEN undefined_object THEN
+          NULL;
+    END;
+
+    BEGIN
+      IF current_transaction IS NULL OR NOT EXISTS (
+        SELECT
+          1
+        FROM
+          pgmemento.table_event_log
+        WHERE
+          transaction_id = current_transaction
+          AND table_name = $5
+          AND schema_name = $6
+          AND op_id = 1  -- RE/CREATE TABLE event
+      ) THEN
+        -- try to restart auditing for table
+        PERFORM
+          pgmemento.create_table_audit(table_name, schema_name, audit_id_column, log_old_data, log_new_data, FALSE)
+        FROM
+          pgmemento.audit_table_log
+        WHERE
+          table_name = $5
+          AND schema_name = $6
+          AND upper(txid_range) = $1;
+      END IF;
+      
+      -- audit_id already exists
+      EXCEPTION
+        WHEN others THEN
+          RAISE NOTICE 'Could not revert DROP AUDIT_ID event for table %.%: %', $6, $5, SQLERRM;
+    END;
+
   -- DROP TABLE case
   WHEN $4 = 9 THEN
     -- collect information of columns of dropped table
@@ -502,8 +562,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND (a.txid_range @> t.id::numeric
-      OR lower(a.txid_range) = t.id::numeric)
+     AND ((a.txid_range @> t.id::numeric AND NOT e.op_id IN (1, 11, 21))
+      OR (lower(a.txid_range) = t.id::numeric AND NOT e.op_id IN (81, 9)))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -556,8 +616,8 @@ BEGIN
       pgmemento.audit_table_log a
       ON a.table_name = e.table_name
      AND a.schema_name = e.schema_name
-     AND (a.txid_range @> t.id::numeric
-      OR lower(a.txid_range) = t.id::numeric)
+     AND ((a.txid_range @> t.id::numeric AND NOT e.op_id IN (1, 11, 21))
+      OR (lower(a.txid_range) = t.id::numeric AND NOT e.op_id IN (81, 9)))
     LEFT JOIN
       pgmemento.audit_tables_dependency d
       ON d.table_log_id = a.log_id
@@ -665,8 +725,12 @@ BEGIN
         AND e2.op_id = 9
       )
       AND NOT (
+        e1.op_id = 21
+        AND e2.op_id = 81
+      )
+      AND NOT (
         e1.op_id = 3
-        AND (e2.op_id > 6 AND e2.op_id < 10)
+        AND (e2.op_id BETWEEN 7 AND 9)
       )
     ORDER BY
       dependency_order,
@@ -757,8 +821,12 @@ BEGIN
         AND e2.op_id = 9
       )
       AND NOT (
+        e1.op_id = 21
+        AND e2.op_id = 81
+      )
+      AND NOT (
         e1.op_id = 3
-        AND (e2.op_id > 6 AND e2.op_id < 10)
+        AND (e2.op_id BETWEEN 7 AND 9)
       )
     ORDER BY
       q.tid DESC,
