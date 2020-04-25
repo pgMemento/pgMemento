@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.3.0     2020-04-25   copy audit_tables for migration                FKun
 -- 0.2.0     2020-04-04   finalizing script for v0.7                     FKun
 -- 0.1.0     2019-06-09   initial commit                                 FKun
 --
@@ -40,24 +41,10 @@ SELECT EXISTS (
 \echo 'Drop event triggers'
 SELECT pgmemento.drop_schema_event_trigger();
 
-\echo
-\echo 'Rename log_transaction_trigger'
-DO
-$$
-DECLARE
-  rec RECORD;
-BEGIN
-  FOR rec IN
-    SELECT schemaname, tablename
-      FROM pgmemento.audit_tables
-     WHERE tg_is_active
-     ORDER BY schemaname, tablename
-  LOOP
-    EXECUTE format('ALTER TRIGGER log_transaction_trigger ON %I.%I RENAME TO pgmemento_transaction_trigger', rec.schemaname, rec.tablename);
-  END LOOP;
-END;
-$$
-LANGUAGE plpgsql;
+\echo 'Create table from audit_tables view'
+CREATE TABLE IF NOT EXISTS pgmemento.audit_tables_copy AS
+  SELECT schemaname, tablename, tg_is_active
+    FROM pgmemento.audit_tables;
 
 \echo
 \echo 'Close all open ranges for removed/renamed tables'
@@ -110,6 +97,10 @@ UPDATE pgmemento.audit_table_log atl
      WHERE relkind = 'r' AND log_table_exists AND table_changed
     ) t
  WHERE atl.id = t.log_table_id;
+
+\echo
+\echo 'Upgrade log tables'
+\i ctl/UPGRADE.sql
 
 \echo
 \echo 'Remove views'
@@ -172,8 +163,7 @@ DROP FUNCTION IF EXISTS pgmemento.drop_table_audit_id(table_name TEXT, schema_na
 DROP AGGREGATE IF EXISTS pgmemento.jsonb_merge(jsonb);
 
 \echo
-\echo 'Alter tables and recreate functions'
-\i ctl/UPGRADE.sql
+\echo 'Recreate functions'
 \i src/SETUP.sql
 \i src/LOG_UTIL.sql
 \i src/DDL_LOG.sql
@@ -205,7 +195,7 @@ ORDER BY
   lower(schema_txid_range);
 
 \echo
-\echo 'Replace log triggers'
+\echo 'Recreate log triggers'
 DO
 $$
 DECLARE
@@ -213,28 +203,18 @@ DECLARE
   remove_all_tx_tg BOOLEAN := TRUE; 
 BEGIN
   FOR rec IN
-    SELECT schemaname, tablename, tg_is_active
-      FROM pgmemento.audit_tables
+    SELECT schemaname, tablename
+      FROM pgmemento.audit_tables_copy
+     WHERE tg_is_active
      ORDER BY schemaname, tablename
   LOOP
-    -- the first iteration will remove all pgmemento_transaction_triggers
-    IF remove_all_tx_tg THEN
-      DROP FUNCTION IF EXISTS pgmemento.log_transaction() CASCADE;
-      remove_all_tx_tg := FALSE;
-    END IF;
-
-    EXECUTE format('DROP TRIGGER IF EXISTS log_delete_trigger ON %I.%I', rec.schemaname, rec.tablename);
-    EXECUTE format('DROP TRIGGER IF EXISTS log_update_trigger ON %I.%I', rec.schemaname, rec.tablename);
-    EXECUTE format('DROP TRIGGER IF EXISTS log_insert_trigger ON %I.%I', rec.schemaname, rec.tablename);
-    EXECUTE format('DROP TRIGGER IF EXISTS log_truncate_trigger ON %I.%I', rec.schemaname, rec.tablename);
-
-    IF rec.tg_is_active THEN
-      PERFORM pgmemento.create_table_log_trigger(rec.tablename, rec.schemaname, 'audit_id');
-    END IF;
+    PERFORM pgmemento.create_table_log_trigger(rec.tablename, rec.schemaname, 'audit_id');
   END LOOP;
 END;
 $$
 LANGUAGE plpgsql;
+
+DROP TABLE pgmemento.audit_tables_copy;
 
 \echo
 \echo 'Recreate event triggers'
