@@ -671,7 +671,7 @@ JOIN
  AND upper(s.txid_range) IS NULL
 WHERE
   c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($4,'{}'));
+  AND c.relname <> ALL (COALESCE($4,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -704,7 +704,7 @@ BEGIN
     SELECT 1
       FROM pgmemento.audit_tables
      WHERE schemaname = $1
-       AND tablename <> ALL (COALESCE($2,'{}'))
+       AND tablename <> ALL (COALESCE($2,'{}'::text[]))
        AND tg_is_active
   ) THEN
     PERFORM
@@ -713,7 +713,7 @@ BEGIN
       pgmemento.audit_tables
     WHERE
       schemaname = $1
-      AND tablename <> ALL (COALESCE($2,'{}'))
+      AND tablename <> ALL (COALESCE($2,'{}'::text[]))
       AND tg_is_active;
 
     PERFORM pgmemento.stop($1, $2);
@@ -783,7 +783,7 @@ JOIN
  AND upper(s.txid_range) IS NULL
 WHERE
   c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($2,'{}'));
+  AND c.relname <> ALL (COALESCE($2,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -831,7 +831,7 @@ FROM
   pgmemento.audit_tables
 WHERE
   schemaname = $1
-  AND tablename <> ALL (COALESCE($2,'{}'));
+  AND tablename <> ALL (COALESCE($2,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -1385,7 +1385,7 @@ BEGIN
   WHERE
     n.nspname = $1
     AND c.relkind = 'r'
-    AND c.relname <> ALL (COALESCE($7,'{}'))
+    AND c.relname <> ALL (COALESCE($7,'{}'::text[]))
     AND at.tg_is_active IS NULL;
 END;
 $$
@@ -1447,7 +1447,7 @@ BEGIN
     SELECT 1
       FROM pgmemento.audit_tables
      WHERE schemaname = $1
-       AND tablename <> ALL (COALESCE($4,'{}'))
+       AND tablename <> ALL (COALESCE($4,'{}'::text[]))
   ) THEN
     PERFORM
       pgmemento.drop_table_audit(tablename, $1, audit_id_column, $2, $3)
@@ -1455,7 +1455,7 @@ BEGIN
       pgmemento.audit_tables
     WHERE
       schemaname = $1
-      AND tablename <> ALL (COALESCE($4,'{}'));
+      AND tablename <> ALL (COALESCE($4,'{}'::text[]));
 
     PERFORM pgmemento.drop($1, $2, $3, $4);
   END IF;

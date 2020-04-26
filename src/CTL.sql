@@ -183,7 +183,7 @@ BEGIN
     WHERE
       n.nspname = pgmemento.trim_outer_quotes($1)
       AND c.relkind = 'r'
-      AND c.relname <> ALL (COALESCE($6,'{}'))
+      AND c.relname <> ALL (COALESCE($6,'{}'::text[]))
       AND (at.audit_id_column IS DISTINCT FROM $2
        OR at.log_old_data IS DISTINCT FROM $3
        OR at.log_new_data IS DISTINCT FROM $4)
@@ -282,7 +282,7 @@ BEGIN
   WHERE
     n.nspname = pgmemento.trim_outer_quotes($1)
     AND c.relkind = 'r'
-    AND c.relname <> ALL (COALESCE($6,'{}'));
+    AND c.relname <> ALL (COALESCE($6,'{}'::text[]));
 
   -- create event triggers if they were not enabled for schema
   IF $5 AND NOT current_audit_schema_log.trigger_create_table THEN
@@ -433,6 +433,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '57'::text AS build_id;
+SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '58'::text AS build_id;
 $$
 LANGUAGE sql;
