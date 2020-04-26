@@ -130,7 +130,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}'));
+  AND c.relname <> ALL (COALESCE($3,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -234,7 +234,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}'));
+  AND c.relname <> ALL (COALESCE($3,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -299,7 +299,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $2
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($3,'{}'));
+  AND c.relname <> ALL (COALESCE($3,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -423,7 +423,7 @@ BEGIN
     c.relnamespace = n.oid
     AND n.nspname = $2
     AND c.relkind = 'r'
-    AND c.relname <> ALL (COALESCE($3,'{}'));
+    AND c.relname <> ALL (COALESCE($3,'{}'::text[]));
 
   -- remove old schema if data were not copied but moved
   IF NOT $4 THEN
@@ -488,7 +488,7 @@ WHERE
   c.relnamespace = n.oid
   AND n.nspname = $1
   AND c.relkind = 'r'
-  AND c.relname <> ALL (COALESCE($2,'{}'));
+  AND c.relname <> ALL (COALESCE($2,'{}'::text[]));
 $$
 LANGUAGE sql
 SECURITY DEFINER;
