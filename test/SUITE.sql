@@ -52,6 +52,9 @@ VALUES
 \i test/restore/TEST_RESTORE_RECORDSETS.sql;
 \i test/restore/TEST_RESTORE_TABLE_STATE.sql;
 
+-- test util functions
+\i test/log_util/TEST_DELETE_LOGS.sql
+
 -- test CTL functions and uninstalling
 \i test/setup/TEST_STOP_START.sql
 \i test/setup/TEST_UNINSTALL.sql
