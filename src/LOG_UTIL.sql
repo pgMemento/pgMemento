@@ -16,6 +16,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.6     2020-04-28   change new_data in row_log on update/delete    FKun
+--                        cover row_log when deleting events
 -- 0.7.5     2020-03-23   add audit_id_column to audit_table_check       FKun
 -- 0.7.4     2020-03-07   set SECURITY DEFINER where log tables are      FKun
 --                        touched
@@ -204,14 +206,27 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
-DELETE FROM
-  pgmemento.table_event_log
-WHERE
-  transaction_id = $1
-  AND table_name = $2
-  AND schema_name = $3
-RETURNING
-  id;
+WITH delete_table_event AS (
+  DELETE FROM
+    pgmemento.table_event_log
+  WHERE
+    transaction_id = $1
+    AND table_name = $2
+    AND schema_name = $3
+  RETURNING
+    id, event_key
+), delete_row_log_event AS (
+  DELETE FROM
+    pgmemento.row_log r
+  USING
+    delete_table_event dte
+  WHERE
+    dte.event_key = r.event_key
+)
+SELECT
+  id
+FROM
+  delete_table_event;
 $$
 LANGUAGE sql STRICT
 SECURITY DEFINER;
@@ -221,13 +236,26 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_table_event_log(
   schemaname TEXT DEFAULT 'public'::text
   ) RETURNS SETOF INTEGER AS
 $$
-DELETE FROM
-  pgmemento.table_event_log
-WHERE
-  table_name = $1
-  AND schema_name = $2
-RETURNING
-  id;
+WITH delete_table_event AS (
+  DELETE FROM
+    pgmemento.table_event_log
+  WHERE
+    table_name = $1
+    AND schema_name = $2
+  RETURNING
+    id, event_key
+), delete_row_log_event AS (
+  DELETE FROM
+    pgmemento.row_log r
+  USING
+    delete_table_event dte
+  WHERE
+    dte.event_key = r.event_key
+)
+SELECT
+  id
+FROM
+  delete_table_event;
 $$
 LANGUAGE sql STRICT
 SECURITY DEFINER;
@@ -268,7 +296,7 @@ BEGIN
         log_id = table_log_id
         AND upper(txid_range) IS NOT NULL
       RETURNING
-        log_id;
+        id;
   ELSE
     RAISE NOTICE 'Either audit table is not found or the table still exists.';
   END IF;
@@ -290,15 +318,68 @@ CREATE OR REPLACE FUNCTION pgmemento.delete_key(
   old_value anyelement
   ) RETURNS SETOF BIGINT AS
 $$
-UPDATE
-  pgmemento.row_log
-SET
-  old_data = old_data - $2
-WHERE
-  audit_id = $1
-  AND old_data @> jsonb_build_object($2, $3)
-RETURNING
-  id;
+WITH find_log AS (
+  SELECT
+    id AS row_log_id,
+    event_key AS log_event,
+    new_data AS new_log
+  FROM
+    pgmemento.row_log
+  WHERE
+    audit_id = $1
+    AND old_data @> jsonb_build_object($2, $3)
+),
+remove_key AS (
+  UPDATE
+    pgmemento.row_log r
+  SET
+    old_data = r.old_data - $2,
+    new_data = r.new_data - $2
+  FROM
+    find_log f
+  WHERE
+    r.id = f.row_log_id
+  RETURNING
+    r.id
+),
+remove_prev_new_key AS (
+  UPDATE
+    pgmemento.row_log r
+  SET
+    new_data = r.new_data - $2
+  FROM
+    find_log f
+  WHERE
+    r.audit_id = $1
+    AND r.event_key < f.log_event
+    AND r.new_data @> jsonb_build_object($2, $3)
+    AND f.new_log IS NULL
+  RETURNING
+    r.id
+),
+update_prev_new_key AS (
+  UPDATE
+    pgmemento.row_log r
+  SET
+    new_data = jsonb_set(new_data, ARRAY[$2], f.new_log -> $2, FALSE)
+  FROM
+    find_log f
+  WHERE
+    r.audit_id = $1
+    AND r.event_key < f.log_event
+    AND r.new_data @> jsonb_build_object($2, $3)
+    AND f.new_log IS NOT NULL
+  RETURNING
+    r.id
+)
+SELECT id FROM (
+  SELECT id FROM remove_key
+  UNION
+  SELECT id FROM remove_prev_new_key
+  UNION
+  SELECT id FROM update_prev_new_key
+) dlog
+ORDER BY id;
 $$
 LANGUAGE sql
 SECURITY DEFINER;
@@ -310,15 +391,33 @@ CREATE OR REPLACE FUNCTION pgmemento.update_key(
   new_value anyelement
   ) RETURNS SETOF BIGINT AS
 $$
-UPDATE
-  pgmemento.row_log
-SET
-  old_data = jsonb_set(old_data, $2, to_jsonb($4), FALSE)
-WHERE
-  audit_id = $1
-  AND old_data @> jsonb_build_object($2[1], $3)
-RETURNING
-  id;
+WITH update_old_key AS (
+  UPDATE
+    pgmemento.row_log
+  SET
+    old_data = jsonb_set(old_data, $2, to_jsonb($4), FALSE)
+  WHERE
+    audit_id = $1
+    AND old_data @> jsonb_build_object($2[1], $3)
+  RETURNING
+    id
+), update_new_key AS (
+  UPDATE
+    pgmemento.row_log
+  SET
+    new_data = jsonb_set(new_data, $2, to_jsonb($4), FALSE)
+  WHERE
+    audit_id = $1
+    AND new_data @> jsonb_build_object($2[1], $3)
+  RETURNING
+    id
+)
+SELECT id FROM (
+  SELECT id FROM update_old_key
+  UNION
+  SELECT id FROM update_new_key
+) ulog
+ORDER BY id;
 $$
 LANGUAGE sql
 SECURITY DEFINER;
