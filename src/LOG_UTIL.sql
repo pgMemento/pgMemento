@@ -296,7 +296,7 @@ BEGIN
         log_id = table_log_id
         AND upper(txid_range) IS NOT NULL
       RETURNING
-        log_id;
+        id;
   ELSE
     RAISE NOTICE 'Either audit table is not found or the table still exists.';
   END IF;
