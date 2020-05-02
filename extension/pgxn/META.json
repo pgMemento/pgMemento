@@ -10,6 +10,14 @@
         "version": "1.0.0",
         "url": "http://pgxn.org/meta/spec.txt"
     },
+    "prereqs": {
+       "runtime": {
+            "requires": {
+                "plpgsql": 0,
+                "PostgreSQL": "9.5.0"
+            }
+        }
+    },
     "provides": {
         "pgmemento": {
             "abstract": "Audit trail versioning",
