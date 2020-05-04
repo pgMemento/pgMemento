@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.0     2020-05-04   add revision to version endpoint               FKun
 -- 0.4.0     2020-04-19   add reinit endpoint                            FKun
 -- 0.3.2     2020-04-16   better support for quoted schemas              FKun
 -- 0.3.1     2020-04-11   add drop endpoint                              FKun
@@ -430,9 +431,10 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT full_version TEXT,
   OUT major_version INTEGER,
   OUT minor_version INTEGER,
+  OUT revision INTEGER,
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7'::text AS full_version, 0 AS major_version, 7 AS minor_version, '60'::text AS build_id;
+SELECT 'pgMemento 0.7.0'::text AS full_version, 0 AS major_version, 7 AS minor_version, 0 AS revision, '60'::text AS build_id;
 $$
 LANGUAGE sql;
