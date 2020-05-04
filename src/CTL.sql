@@ -37,7 +37,8 @@
 *     log_old_data BOOLEAN DEFAULT TRUE, log_new_data BOOLEAN DEFAULT FALSE, trigger_create_table BOOLEAN DEFAULT FALSE,
 *     except_tables TEXT[] DEFAULT '{}') RETURNS TEXT
 *   stop(schemaname TEXT DEFAULT 'public'::text, except_tables TEXT[] DEFAULT '{}') RETURNS TEXT
-*   version(OUT full_version TEXT, OUT major_version INTEGER, OUT minor_version INTEGER, OUT build_id TEXT) RETURNS RECORD
+*   version(OUT full_version TEXT, OUT major_version INTEGER, OUT minor_version INTEGER, OUT revision INTEGER,
+*     OUT build_id TEXT) RETURNS RECORD
 *
 ***********************************************************/
 
