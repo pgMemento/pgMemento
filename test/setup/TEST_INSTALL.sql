@@ -197,7 +197,7 @@ BEGIN
   ASSERT pgm_objects[90] = 'trim_outer_quotes;text;quoted_string text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[91] = 'unregister_audit_table;SETOF void;audit_table_name text, audit_schema_name text DEFAULT ''public''::text', 'Error: Expected different function and/or arguments';
   ASSERT pgm_objects[92] = 'update_key;SETOF bigint;aid bigint, path_to_key_name text[], old_value anyelement, new_value anyelement', 'Error: Expected different function and/or arguments';
-  ASSERT pgm_objects[93] = 'version;record;OUT full_version text, OUT major_version integer, OUT minor_version integer, OUT build_id text', 'Error: Expected different function and/or arguments';
+  ASSERT pgm_objects[93] = 'version;record;OUT full_version text, OUT major_version integer, OUT minor_version integer, OUT revision integer, OUT build_id text', 'Error: Expected different function and/or arguments';
 END;
 $$
 LANGUAGE plpgsql;

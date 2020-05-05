@@ -9,74 +9,66 @@ database using triggers and server-side functions written in PL/pgSQL.
 It also tracks DDL changes to enable schema versioning and offers
 powerful algorithms to restore or repair past revisions.
 
+Only deltas of changes are logged and they are stored in one data log
+table as JSONB. Transaction and table event metadata is recorded in
+separate log tables making it easier to browse through past write
+operations.
 
-## Index
+## Quickstart
 
-1. License
-2. System requirements
-3. Documentation
-4. Media
-5. Developers
-6. Special thanks
-7. Disclaimer
+To use pgMemento as an extension download and unzip the
+pgmemento-<release-version>.zip archive, change to extracted folder and
+run the following commands from within a shell environment:
 
+```bash
+make
+sudo make install
+```
 
-## 1. License
+Then, connect to your database where you want to use auditing and run:
 
-The scripts for pgMemento are open source under GNU Lesser General
-Public License Version 3.0. See the file LICENSE for more details.
+```sql
+CREATE EXTENSION pgmemento;
+```
 
+All of pgMemento's log tables and functions are created in a separate
+database schema called `pgmemento`. Auditing can be started per schema
+with the `init` command, e.g. for the `public` schema it could be:
 
-## 2. System requirements
+```sql
+SELECT pgmemento.init('public');
+```
+
+A new column `pgmemento_audit_id` is added to every table in the given
+schema to trace different row versions in the central data log - the
+`pgmemento.row_log` table. Each write transaction is also logged in the
+`pgmemento.transaction_log` which can consist of multiple table events
+stored in the `pgmemento.table_event_log` table. The `event_key` column
+in the latter links to the entries in the data log.
+
+Schema versioning takes place in the `pgmemento.audit_table_log` and
+`pgmemento.audit_column_log`. Transaction ranges show the life time of
+an audited table and its columns. Changing the table schema, e.g.
+altering data types or dropping entire columns will produce data logs as
+well. Auditing can also be started automatically for newly created
+tables in schemas where pgMemento has been initialized. This is tracked
+(and configurable) in the `pgmemento.audit_schema_log`.
+
+## System requirements
 
 * PostgreSQL 9.5
 * PL/pgSQL language
 
-
-## 3. Documentation
+## Documentation
 
 Documentation can be found in the [wiki](https://github.com/pgMemento/pgMemento/wiki/Home) section of this repository.
 
+## License
 
-## 4. Media
+The scripts for pgMemento are open source under GNU Lesser General
+Public License Version 3.0. See the file LICENSE for more details.
 
-I presented pgMemento at [FOSSGIS 2015](https://www.youtube.com/watch?v=EqLkLNyI6Yk) (in german)
-and at [FOSSGIS-NA 2016](http://slides.com/fxku/pgmemento_foss4gna16) .
-At [FOSS4G 2017](http://slides.com/fxku/foss4g17_dbversion) I gave a more general overview on database versioning techniques.
-
-Slides of the most up-to-date presentation (which are hopefully even easier to follow) can be found
-[here](https://www.postgresql.eu/events/pgconfde2018/schedule/session/1963-auditing-mit-jsonb-pro-und-kontra/).
-I gave the talk at the german PostgreSQL conference 2018, but the slides are in english.
-
-A demo paper about pgMemento has been accepted at the 15th International
-Symposium for Spatial and Temporal Databases (SSTD) 2017 in Arlington, VA.
-You can find the publication [here](https://link.springer.com/chapter/10.1007/978-3-319-64367-0_27).
-
-
-## 5. Developers
-
-Felix Kunde (felix-kunde [at] gmx.de)
-
-I would be very happy if there are other PostgreSQL developers out there
-who are interested in pgMemento and willing to help me to improve it.
-Together we might create a powerful, easy-to-use versioning approach for
-PostgreSQL.
-
-
-## 6. Special Thanks
-
-* Petra Sauer --> For support and discussions on a pgMemento research paper  
-* Hans-Jürgen Schönig --> recommend to use a generic JSON auditing
-* Christophe Pettus --> recommend to only log changes
-* Claus Nagel --> conceptual advices about logging
-* Ugur Yilmaz --> feedback and suggestions
-* Maximilian Allies --> For setting up Travis yml script
-* Steve --> coming up with the idea of a `session_info` field
-* Adam Brusselback --> benchmarking and bugfixing
-* Franco Ricci --> bugfixing
-
-
-## 7. Disclaimer
+## Disclaimer
 
 pgMemento IS PROVIDED "AS IS" AND "WITH ALL FAULTS."
 I MAKE NO REPRESENTATIONS OR WARRANTIES OF ANY KIND CONCERNING THE

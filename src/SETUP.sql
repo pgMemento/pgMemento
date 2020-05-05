@@ -741,23 +741,11 @@ BEGIN
   -- log as 'add column' event, as it is not done by event triggers
   PERFORM pgmemento.log_table_event($1, $2, 'ADD AUDIT_ID');
 
-  -- add audit column to table if it does not exist, yet
-  IF NOT EXISTS (
-    SELECT
-      1
-    FROM
-      pg_attribute
-    WHERE
-      attrelid = pgmemento.get_table_oid($1, $2)
-      AND attname = $3
-      AND NOT attisdropped
-  ) THEN
-    EXECUTE format(
-      'ALTER TABLE %I.%I ADD COLUMN %I BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
-      $2, $1, $3);
-  ELSE
-    RAISE NOTICE 'Column ''%'' already exists.', $3;
-  END IF;
+  -- add audit column to table
+  -- throws exception if it already exist
+  EXECUTE format(
+    'ALTER TABLE %I.%I ADD COLUMN %I BIGINT DEFAULT nextval(''pgmemento.audit_id_seq''::regclass) UNIQUE NOT NULL',
+    $2, $1, $3);
 END;
 $$
 LANGUAGE plpgsql STRICT
