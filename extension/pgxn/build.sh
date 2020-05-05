@@ -13,6 +13,7 @@ echo "done";
 echo -n "Preparing the filesystem structure ... ";
 mkdir -p $EXTFOLDER/sql ;
 mkdir -p $EXTFOLDER/doc ;
+mkdir -p $EXTFOLDER/doc/pgmemento-docs-$VERSION ;
 mkdir -p $EXTFOLDER/test ;
 echo "done";
 
@@ -24,8 +25,9 @@ cp META.json $EXTFOLDER/. ;
 echo "done";
 
 echo -n "Copying the documentation ... ";
-cp ../../README.md $EXTFOLDER/README.pgmemento ;
-cp -r ../../doc $EXTFOLDER/. ;
+cp ../../README.md $EXTFOLDER/doc/README.pgmemento ;
+cp ../../LICENSE $EXTFOLDER/doc/LICENSE.pgmemento ;
+cp -r ../../doc/. $EXTFOLDER/doc/pgmemento-docs-$VERSION ;
 echo "done";
 
 echo -n "Building the archive ... "
