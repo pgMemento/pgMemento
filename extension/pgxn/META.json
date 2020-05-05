@@ -5,7 +5,7 @@
     "maintainer": [
         "Felix Kunde <felix-kunde@gmx.de>"
     ],
-    "license": "LGPL-3.0",
+    "license": "lgpl_3_0",
     "meta-spec": {
         "version": "1.0.0",
         "url": "http://pgxn.org/meta/spec.txt"
