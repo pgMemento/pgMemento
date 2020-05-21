@@ -88,7 +88,7 @@ COMMENT ON COLUMN pgmemento.transaction_log.id IS 'The Primary Key';
 COMMENT ON COLUMN pgmemento.transaction_log.txid IS 'The internal transaction ID by PostgreSQL (can cycle)';
 COMMENT ON COLUMN pgmemento.transaction_log.txid_time IS 'Stores the result of transaction_timestamp() function';
 COMMENT ON COLUMN pgmemento.transaction_log.process_id IS 'Stores the result of pg_backend_pid() function';
-COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of current_user function';
+COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of session_user function';
 COMMENT ON COLUMN pgmemento.transaction_log.client_name IS 'Stores the result of inet_client_addr() function';
 COMMENT ON COLUMN pgmemento.transaction_log.client_port IS 'Stores the result of inet_client_port() function';
 COMMENT ON COLUMN pgmemento.transaction_log.application_name IS 'Stores the output of current_setting(''application_name'')';
