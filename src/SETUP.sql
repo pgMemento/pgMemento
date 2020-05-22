@@ -949,7 +949,7 @@ BEGIN
   INSERT INTO pgmemento.transaction_log
     (txid, txid_time, process_id, user_name, client_name, client_port, application_name, session_info)
   VALUES
-    ($1, transaction_timestamp(), pg_backend_pid(), current_user, inet_client_addr(), inet_client_port(),
+    ($1, transaction_timestamp(), pg_backend_pid(), session_user, inet_client_addr(), inet_client_port(),
      current_setting('application_name'), session_info_obj
     )
   ON CONFLICT (txid_time, txid)
