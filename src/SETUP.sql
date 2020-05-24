@@ -1304,6 +1304,7 @@ BEGIN
       AND c.relkind = 'r';
 
     PERFORM pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, except_tables);
+    RETURN;
   END IF;
 
   -- remember audit_id_column when registering table in audit_table_log later
