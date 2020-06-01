@@ -31,6 +31,14 @@ Then, connect to your database where you want to use auditing and run:
 CREATE EXTENSION pgmemento;
 ```
 
+Alternatively, you can also add pgMemento to your database the classic
+way by running the INSTALL_PGMEMENTO.sql script, which simply executes
+all SQL files in the right order and updates the search path.
+
+```sql
+psql -h localhost -p 5432 -U my_user -d my_database -f INSTALL_PGMEMENTO.sql
+```
+
 All of pgMemento's log tables and functions are created in a separate
 database schema called `pgmemento`. Auditing can be started per schema
 with the `init` command, e.g. for the `public` schema it could be:
