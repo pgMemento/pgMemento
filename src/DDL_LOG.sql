@@ -727,10 +727,6 @@ BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.command_tag != 'ALTER TABLE' OR obj.object_type != 'table' THEN
-      CONTINUE;
-    END IF;
-
     -- get table from trigger variable - remove quotes if exists
     tg_tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
     tg_schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
