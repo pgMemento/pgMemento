@@ -727,6 +727,10 @@ BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
+    IF obj.command_tag != 'ALTER TABLE' AND obj.object_type != 'table' THEN
+      CONTINUE;
+    END IF;
+
     -- get table from trigger variable - remove quotes if exists
     tg_tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
     tg_schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
@@ -1067,44 +1071,46 @@ BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.object_type = 'table' THEN
-      -- remove quotes if exists
-      tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
-      schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+    IF obj.command_tag != 'CREATE TABLE' AND obj.object_type != 'table' THEN
+      CONTINUE;
+    END IF;
 
-      -- check if auditing is active for schema
-      SELECT
-        default_audit_id_column,
-        default_log_old_data,
-        default_log_new_data
-      INTO
+    -- remove quotes if exists
+    tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+    schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+
+    -- check if auditing is active for schema
+    SELECT
+      default_audit_id_column,
+      default_log_old_data,
+      default_log_new_data
+    INTO
+      current_default_column,
+      current_log_old_data,
+      current_log_new_data
+    FROM
+      pgmemento.audit_schema_log
+    WHERE
+      schema_name = schemaname
+      AND upper(txid_range) IS NULL;
+
+    IF current_default_column IS NOT NULL THEN
+      -- log as 'create table' event
+      PERFORM pgmemento.log_table_event(
+        tablename,
+        schemaname,
+        'CREATE TABLE'
+      );
+
+      -- start auditing for new table
+      PERFORM pgmemento.create_table_audit(
+        tablename,
+        schemaname,
         current_default_column,
         current_log_old_data,
-        current_log_new_data
-      FROM
-        pgmemento.audit_schema_log
-      WHERE
-        schema_name = schemaname
-        AND upper(txid_range) IS NULL;
-
-      IF current_default_column IS NOT NULL THEN
-        -- log as 'create table' event
-        PERFORM pgmemento.log_table_event(
-          tablename,
-          schemaname,
-          'CREATE TABLE'
-        );
-
-        -- start auditing for new table
-        PERFORM pgmemento.create_table_audit(
-          tablename,
-          schemaname,
-          current_default_column,
-          current_log_old_data,
-          current_log_new_data,
-          FALSE
-        );
-      END IF;
+        current_log_new_data,
+        FALSE
+      );
     END IF;
   END LOOP;
 END;
