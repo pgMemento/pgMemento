@@ -1067,7 +1067,7 @@ BEGIN
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
   LOOP
-    IF obj.command_tag != 'CREATE TABLE' OR obj.object_type != 'table' THEN
+    IF obj.command_tag NOT IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO') OR obj.object_type != 'table' THEN
       CONTINUE;
     END IF;
 
