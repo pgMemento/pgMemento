@@ -26,7 +26,7 @@ SET client_min_messages TO WARNING;
 \set ON_ERROR_STOP ON
 
 \echo
-\echo 'Updgrade pgMemento from v0.6.1 to v0.7.0 ...'
+\echo 'Updgrade pgMemento from v0.6.1 to v0.7.1 ...'
 
 SELECT EXISTS (
   SELECT

@@ -1,7 +1,7 @@
 {
     "name": "pgMemento",
     "abstract": "Audit trail with schema versioning for PostgreSQL using transaction-based logging",
-    "version": "0.7.0",
+    "version": "0.7.1",
     "maintainer": [
         "Felix Kunde <felix-kunde@gmx.de>"
     ],
