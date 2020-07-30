@@ -436,6 +436,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.0'::text AS full_version, 0 AS major_version, 7 AS minor_version, 0 AS revision, '69'::text AS build_id;
+SELECT 'pgMemento 0.7.0'::text AS full_version, 0 AS major_version, 7 AS minor_version, 0 AS revision, '71'::text AS build_id;
 $$
 LANGUAGE sql;
