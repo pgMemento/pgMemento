@@ -190,7 +190,7 @@ BEGIN
        OR at.log_old_data IS DISTINCT FROM $3
        OR at.log_new_data IS DISTINCT FROM $4)
   LOOP
-    -- drop auditing from table but do not log or drop anything 
+    -- drop auditing from table but do not log or drop anything
     PERFORM pgmemento.drop_table_audit(rec.table_name, rec.schema_name, rec.audit_id_column, FALSE, FALSE);
 
     -- log reinit event to keep log_id in audit_table_log
@@ -436,6 +436,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.1'::text AS full_version, 0 AS major_version, 7 AS minor_version, 1 AS revision, '71'::text AS build_id;
+SELECT 'pgMemento 0.7.1'::text AS full_version, 0 AS major_version, 7 AS minor_version, 1 AS revision, '72'::text AS build_id;
 $$
 LANGUAGE sql;
