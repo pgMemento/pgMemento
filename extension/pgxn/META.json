@@ -23,7 +23,7 @@
             "abstract": "Audit trail versioning",
             "file": "sql/pgmemento.sql",
             "docfile": "doc/README.pgmemento",
-            "version": "0.7.0"
+            "version": "0.7.1"
         }
     },
     "resources": {
