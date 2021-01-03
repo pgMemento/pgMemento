@@ -1,6 +1,6 @@
 # pgMemento
 
-[![Build Status](https://travis-ci.org/pgMemento/pgMemento.svg?branch=master)](https://travis-ci.org/pgMemento/pgMemento)
+![Tests](https://github.com/pgmemento/pgmemento/workflows/operator-tests/badge.svg)
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
 
@@ -16,9 +16,10 @@ operations.
 
 ## Quickstart
 
-To use pgMemento as an extension download and unzip the
-pgmemento-<release-version>.zip archive, change to extracted folder and
-run the following commands from within a shell environment:
+To use pgMemento as an extension download the pgmemento-<release-version>.zip
+archive either from the release on [GitHub](https://github.com/pgMemento/pgMemento/releases)
+or [PGXN](https://pgxn.org/dist/pgmemento/), change to extracted folder
+and run the following commands from within a shell environment:
 
 ```bash
 make
