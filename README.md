@@ -1,6 +1,6 @@
 # pgMemento
 
-![Tests](https://github.com/pgmemento/pgmemento/workflows/operator-tests/badge.svg)
+![Tests](https://github.com/pgMemento/pgMemento/workflows/pgmemento-tests/badge.svg)
 
 ![alt text](https://github.com/pgMemento/pgMemento/blob/master/material/pgmemento_logo.png "pgMemento Logo")
 
