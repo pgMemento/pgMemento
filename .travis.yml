@@ -54,7 +54,7 @@ addons:
 
 env:
   global:
-    - POSTGRES_HOST_AUTH_METHOD=trust
+    - POSTGRES_PASSWORD=password
 
 before_install:
     - psql -c 'create database pgmemento_testdb;' -U postgres
