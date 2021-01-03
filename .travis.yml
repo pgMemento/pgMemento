@@ -52,6 +52,10 @@ addons:
     packages:
       - postgresql-9.5-postgis-2.5
 
+env:
+  global:
+    - POSTGRES_HOST_AUTH_METHOD=trust
+
 before_install:
     - psql -c 'create database pgmemento_testdb;' -U postgres
     - psql --version
