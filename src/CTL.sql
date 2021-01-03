@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.1     2021-01-02   fix session_info entries                       FKun
 -- 0.5.0     2020-05-04   add revision to version endpoint               FKun
 -- 0.4.0     2020-04-19   add reinit endpoint                            FKun
 -- 0.3.2     2020-04-16   better support for quoted schemas              FKun
@@ -75,9 +76,16 @@ BEGIN
   -- log transaction that initializes pgMemento for a schema
   -- and store configuration in session_info object
   PERFORM set_config(
-    'pgmemento.session_info',
-    format('{"pgmemento_init": {"schema_name": %L, "default_audit_id_column": %L, "default_log_old_data": %L, "default_log_new_data": %L, "log_state": %L, "trigger_create_table": %L, "except_tables": %L}}',
-    to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6), to_jsonb($7))::text,
+    'pgmemento.session_info', '{"pgmemento_init": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'default_audit_id_column', $2,
+      'default_log_old_data', $3,
+      'default_log_new_data', $4,
+      'log_state', $5,
+      'trigger_create_table', $6,
+      'except_tables', $7)::text
+      || '}',
     TRUE
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
@@ -142,9 +150,15 @@ BEGIN
   -- log transaction that reinitializes pgMemento for a schema
   -- and store configuration in session_info object
   PERFORM set_config(
-    'pgmemento.session_info',
-    format('{"pgmemento_reinit": {"schema_name": %L, "default_audit_id_column": %L, "default_log_old_data": %L, "default_log_new_data": %L, "trigger_create_table": %L, "except_tables": %L}}',
-    to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6))::text,
+    'pgmemento.session_info', '{"pgmemento_reinit": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'default_audit_id_column', $2,
+      'default_log_old_data', $3,
+      'default_log_new_data', $4,
+      'trigger_create_table', $5,
+      'except_tables', $6)::text
+    || '}', 
     TRUE
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
@@ -245,10 +259,16 @@ BEGIN
   -- log transaction that starts pgMemento for a schema
   -- and store configuration in session_info object
   PERFORM set_config(
-    'pgmemento.session_info',
-     format('{"pgmemento_start": {"schema_name": %L, "default_audit_id_column": %L, "default_log_old_data": %L, "default_log_new_data": %L, "trigger_create_table": %L, "except_tables": %L}}',
-       to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4), to_jsonb($5), to_jsonb($6))::text,
-     TRUE
+    'pgmemento.session_info', '{"pgmemento_start": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'default_audit_id_column', $2,
+      'default_log_old_data', $3,
+      'default_log_new_data', $4,
+      'trigger_create_table', $5,
+      'except_tables', $6)::text
+    || '}',
+    TRUE
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
 
@@ -322,10 +342,11 @@ BEGIN
 
   -- log transaction that stops pgMemento for a schema
   -- and store configuration in session_info object
-  PERFORM set_config(
-    'pgmemento.session_info',
-     format('{"pgmemento_stop": {"schema_name": %L, "except_tables": %L}}',
-       to_jsonb($1), to_jsonb($2))::text,
+  PERFORM set_config('pgmemento.session_info', '{"pgmemento_stop": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'except_tables', $2)::text
+    || '}',
      TRUE
   );
   PERFORM pgmemento.log_transaction(txid_current());
@@ -394,10 +415,14 @@ BEGIN
   -- log transaction that drops pgMemento from a schema
   -- and store configuration in session_info object
   PERFORM set_config(
-    'pgmemento.session_info',
-     format('{"pgmemento_drop": {"schema_name": %L, "log_state": %L, "drop_log": %L, "except_tables": %L}}',
-       to_jsonb($1), to_jsonb($2), to_jsonb($3), to_jsonb($4))::text,
-     TRUE
+    'pgmemento.session_info', '{"pgmemento_drop": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'log_state', $2,
+      'drop_log', $3,
+      'except_tables', $4)::text
+    || '}',
+    TRUE
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
 
@@ -436,6 +461,6 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.1'::text AS full_version, 0 AS major_version, 7 AS minor_version, 1 AS revision, '72'::text AS build_id;
+SELECT 'pgMemento 0.7.1'::text AS full_version, 0 AS major_version, 7 AS minor_version, 1 AS revision, '76'::text AS build_id;
 $$
 LANGUAGE sql;
