@@ -9,17 +9,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ext: [extension, pgxn]
         pg: [9.6, 10, 11, 12, 13]
     services:
       postgres:
         image: postgis/postgis:${{ matrix.pg }}-3.1
         env:
-          # must specify password for PG Docker container image, see: https://registry.hub.docker.com/_/postgres?tab=description&page=1&name=10
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
           POSTGRES_PORT: 5432
-          TEST: ${{ matrix.ext }}
-          PG: ${{ matrix.pg }}
         ports:
           - 5432:5432
         # needed because the postgres container does not provide a healthcheck
@@ -28,8 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: create new empty database
-        run: psql -c 'create database pgmemento_testdb;' -U postgres
-      - name: Run pgMemento tests
         run: |
-          if [[ $TEST == "extension" ]] ; then ./extension/tests/run.sh $PG ; fi
-          if [[ $TEST == "pgxn" ]] ; then ./extension/pgxn/tests/run.sh $PG ; fi
+          psql -d postgresql://postgres@localhost/postgres -U postgres -tc "create database pgmemento_testdb"
+        env:
+          PGPASSWORD: password
+      - name: run pgmemento tests
+        run: |
+          psql -d postgresql://postgres@localhost/pgmemento_testdb -U postgres -a -f TEST.sql
+        env:
+          PGPASSWORD: password
