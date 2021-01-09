@@ -38,9 +38,13 @@ BEGIN
   -- query for logged transaction
   ASSERT (
     SELECT EXISTS (
-      SELECT session_info ? 'pgmemento_stop'
-        FROM pgmemento.transaction_log
-       WHERE id = current_setting('pgmemento.' || txid_current())::numeric
+      SELECT
+        1
+      FROM
+        pgmemento.transaction_log
+      WHERE
+        id = current_setting('pgmemento.' || txid_current())::numeric
+        AND session_info ? 'pgmemento_stop'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
 
@@ -119,9 +123,13 @@ BEGIN
   -- query for logged transaction
   ASSERT (
     SELECT EXISTS (
-      SELECT session_info ? 'pgmemento_start'
-        FROM pgmemento.transaction_log
-       WHERE id = current_setting('pgmemento.' || txid_current())::numeric
+      SELECT
+        1
+      FROM
+        pgmemento.transaction_log
+      WHERE
+        id = current_setting('pgmemento.' || txid_current())::numeric
+        AND session_info ? 'pgmemento_start'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
 
