@@ -65,7 +65,7 @@ tables in schemas where pgMemento has been initialized. This is tracked
 
 ## System requirements
 
-* PostgreSQL 9.5
+* PostgreSQL 9.5+
 * PL/pgSQL language
 
 ## Documentation
