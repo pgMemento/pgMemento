@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.7.8     2021-03-21   fix jsonb_unroll_for_update for array values   FKun
 -- 0.7.7     2020-07-28   new route function to get column list          FKun
 -- 0.7.6     2020-04-28   change new_data in row_log on update/delete    FKun
 --                        cover row_log when deleting events
@@ -108,7 +109,12 @@ FROM (
     CASE WHEN jsonb_typeof(j.value) = 'object' AND p.typname IS NOT NULL THEN
       pgmemento.jsonb_unroll_for_update($1 || '.' || quote_ident(j.key), j.value, p.typname)
     ELSE
-      $1 || '.' || quote_ident(j.key) || '=' || quote_nullable(j.value->>0)
+      $1 || '.' || quote_ident(j.key) || '=' ||
+      CASE WHEN jsonb_typeof(j.value) = 'array' THEN
+        quote_nullable(translate($2 ->> j.key, '[]', '{}'))
+      ELSE
+        quote_nullable($2 ->> j.key)
+      END
     END AS set_columns
   FROM
     jsonb_each($2) j
