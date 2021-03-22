@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.7     2021-03-21   fix jsonb_populate_value for array values           FKun
 -- 0.7.6     2020-07-28   fix restore for JSONB and array values              FKun
 -- 0.7.5     2020-04-13   fix NULL check in restore_record function           FKun
 -- 0.7.4     2020-03-23   reflect dynamic audit_id in logged tables           FKun
@@ -103,8 +104,13 @@ CREATE OR REPLACE FUNCTION pgmemento.jsonb_populate_value(
 $$
 BEGIN
   IF $1 IS NOT NULL THEN
-    EXECUTE format('SELECT ($1->>$2)::%s', pg_typeof($3))
-      INTO template USING $1, $2;
+    IF right(pg_typeof($3)::text, 2) = '[]' THEN
+      EXECUTE format('SELECT translate($1->>$2, ''[]'', ''{}'')::%s', pg_typeof($3))
+        INTO template USING $1, $2;
+    ELSE
+      EXECUTE format('SELECT ($1->>$2)::%s', pg_typeof($3))
+        INTO template USING $1, $2;
+    END IF;
   ELSE
     EXECUTE format('SELECT NULL::%s', pg_typeof($3))
       INTO template;
