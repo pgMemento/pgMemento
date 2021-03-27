@@ -10,7 +10,7 @@ CREATE TABLE public.object (
 INSERT INTO
   public.object(id, lineage)
 VALUES
-  (1, 'init');
+  (1, NULL);
 
 -- test schema
 \i test/setup/TEST_INSTALL.sql
