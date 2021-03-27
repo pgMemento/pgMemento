@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.8     2021-03-24   fix restoring NULL instead of recent version        FKun
 -- 0.7.7     2021-03-21   fix jsonb_populate_value for array values           FKun
 -- 0.7.6     2020-07-28   fix restore for JSONB and array values              FKun
 -- 0.7.5     2020-04-13   fix NULL check in restore_record function           FKun
