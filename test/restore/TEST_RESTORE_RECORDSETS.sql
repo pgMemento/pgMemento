@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.0     2021-03-27   add NULL case                                    FKun
 -- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-11-13   initial commit                                   FKun
@@ -70,7 +71,7 @@ BEGIN
     AS (log JSONB);
 
   ASSERT jsonb_log->0->>'id' = '1', 'Incorrect historic value for ''id'' column. Expected 1, but found %', jsonb_log->0->>'id';
-  ASSERT jsonb_log->0->>'lineage' = 'init', 'Incorrect historic value for ''lineage'' column. Expected ''init'', but found %', jsonb_log->0->>'lineage';
+  ASSERT jsonb_log->0->>'lineage' IS NULL, 'Incorrect historic value for ''lineage'' column. Expected NULL, but found %', jsonb_log->0->>'lineage';
   ASSERT jsonb_log->0->>'pgmemento_audit_id' = '1', 'Incorrect historic value for ''pgmemento_audit_id'' column. Expected 1, but found %', jsonb_log->0->>'id';
   ASSERT jsonb_log->0->>'table_operation' = 'INSERT' , 'Incorrect historic value for ''table_operation''. Expected ''INSERT'', but found %', jsonb_log->0->>'table_operation';
   ASSERT jsonb_log->0->>'transaction_id' = '14', 'Incorrect historic value for ''transaction_id'' column. Expected 14, but found %', jsonb_log->0->>'transaction_id';
