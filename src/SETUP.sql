@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.11    2021-03-28   exclude audit_tables with empty txid_range          FKun
 -- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
 --                        define new REINIT TABLE event
 -- 0.7.9     2020-04-13   remove txid from log_table_event                    FKun

@@ -35,7 +35,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '84'::text AS build_id;
+SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '86'::text AS build_id;
 $$
 LANGUAGE sql;
 
@@ -371,7 +371,6 @@ BEGIN
   LEFT JOIN
     pgmemento.audit_column_log c_new
     ON c_old.ordinal_position = c_new.ordinal_position
-   AND c_old.data_type = c_new.data_type
    AND c_new.audit_table_id = new_tab_id
    AND upper(c_new.txid_range) IS NULL
    AND lower(c_new.txid_range) IS NOT NULL;
