@@ -280,6 +280,7 @@ BEGIN
             ON c.column_name = j.key
            AND jsonb_typeof(j.value) = 'object'
            AND upper(c.txid_range) IS NULL
+           AND lower(c.txid_range) IS NOT NULL
           LEFT JOIN
             pgmemento.audit_table_log t
             ON t.id = c.audit_table_id

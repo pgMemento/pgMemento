@@ -280,7 +280,8 @@ BEGIN
     ON c_old.ordinal_position = c_new.ordinal_position
    AND c_old.data_type = c_new.data_type
    AND c_new.audit_table_id = new_tab_id
-   AND upper(c_new.txid_range) IS NULL;
+   AND upper(c_new.txid_range) IS NULL
+   AND lower(c_new.txid_range) IS NOT NULL;
 
   -- finish restore query
   query_text := query_text
