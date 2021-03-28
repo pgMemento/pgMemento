@@ -35,7 +35,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '84'::text AS build_id;
+SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '86'::text AS build_id;
 $$
 LANGUAGE sql;
 
@@ -371,9 +371,9 @@ BEGIN
   LEFT JOIN
     pgmemento.audit_column_log c_new
     ON c_old.ordinal_position = c_new.ordinal_position
-   AND c_old.data_type = c_new.data_type
    AND c_new.audit_table_id = new_tab_id
-   AND upper(c_new.txid_range) IS NULL;
+   AND upper(c_new.txid_range) IS NULL
+   AND lower(c_new.txid_range) IS NOT NULL;
 
   -- finish restore query
   query_text := query_text
@@ -693,6 +693,7 @@ BEGIN
             ON c.column_name = j.key
            AND jsonb_typeof(j.value) = 'object'
            AND upper(c.txid_range) IS NULL
+           AND lower(c.txid_range) IS NOT NULL
           LEFT JOIN
             pgmemento.audit_table_log t
             ON t.id = c.audit_table_id
@@ -942,6 +943,73 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE VIEW pgmemento.audit_tables AS
+  SELECT
+    n.nspname AS schemaname,
+    c.relname AS tablename,
+    atl.audit_id_column,
+    atl.log_old_data,
+    atl.log_new_data,
+    bounds.txid_min,
+    bounds.txid_max,
+    CASE WHEN tg.tgenabled IS NOT NULL AND tg.tgenabled <> 'D' THEN
+      TRUE
+    ELSE
+      FALSE
+    END AS tg_is_active
+  FROM
+    pg_class c
+  JOIN
+    pg_namespace n
+    ON c.relnamespace = n.oid
+  JOIN
+    pgmemento.audit_schema_log asl
+    ON asl.schema_name = n.nspname
+   AND upper(asl.txid_range) IS NULL
+   AND lower(asl.txid_range) IS NOT NULL
+  JOIN (
+    SELECT DISTINCT ON (log_id)
+      log_id,
+      table_name,
+      schema_name,
+      audit_id_column,
+      log_old_data,
+      log_new_data
+    FROM
+      pgmemento.audit_table_log
+    WHERE
+      upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL
+    ORDER BY
+      log_id, id
+    ) atl
+    ON atl.table_name = c.relname
+   AND atl.schema_name = n.nspname
+  JOIN
+    pg_attribute a
+    ON a.attrelid = c.oid
+   AND a.attname = atl.audit_id_column
+  JOIN LATERAL (
+    SELECT * FROM pgmemento.get_txid_bounds_to_table(atl.log_id)
+    ) bounds ON (true)
+  LEFT JOIN (
+    SELECT
+      tgrelid,
+      tgenabled
+    FROM
+      pg_trigger
+    WHERE
+      tgname = 'pgmemento_transaction_trigger'::name
+    ) AS tg
+    ON c.oid = tg.tgrelid
+  WHERE
+    c.relkind = 'r'
+  ORDER BY
+    schemaname,
+    tablename;
+
 
 \echo
 \echo 'pgMemento upgrade completed!'

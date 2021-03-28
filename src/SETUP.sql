@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.11    2021-03-28   exclude audit_tables with empty txid_range          FKun
 -- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
 --                        define new REINIT TABLE event
 -- 0.7.9     2020-04-13   remove txid from log_table_event                    FKun
@@ -165,6 +166,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
     pgmemento.audit_schema_log asl
     ON asl.schema_name = n.nspname
    AND upper(asl.txid_range) IS NULL
+   AND lower(asl.txid_range) IS NOT NULL
   JOIN (
     SELECT DISTINCT ON (log_id)
       log_id,
@@ -177,6 +179,7 @@ CREATE OR REPLACE VIEW pgmemento.audit_tables AS
       pgmemento.audit_table_log
     WHERE
       upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL
     ORDER BY
       log_id, id
     ) atl

@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.9     2021-03-28   fix getting column list                             FKun
 -- 0.7.8     2021-03-24   fix restoring NULL instead of recent version        FKun
 -- 0.7.7     2021-03-21   fix jsonb_populate_value for array values           FKun
 -- 0.7.6     2020-07-28   fix restore for JSONB and array values              FKun
@@ -278,9 +279,9 @@ BEGIN
   LEFT JOIN
     pgmemento.audit_column_log c_new
     ON c_old.ordinal_position = c_new.ordinal_position
-   AND c_old.data_type = c_new.data_type
    AND c_new.audit_table_id = new_tab_id
-   AND upper(c_new.txid_range) IS NULL;
+   AND upper(c_new.txid_range) IS NULL
+   AND lower(c_new.txid_range) IS NOT NULL;
 
   -- finish restore query
   query_text := query_text
