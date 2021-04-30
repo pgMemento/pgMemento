@@ -1,0 +1,39 @@
+name: pgmemento-test-upgrade
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pg: [9.6, 10, 11, 12, 13]
+    services:
+      postgres:
+        image: postgis/postgis:${{ matrix.pg }}-3.1
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_PORT: 5432
+        ports:
+          - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: refs/tags/v0.7.1
+      - name: create new empty database of v0.7.1
+        run: |
+          psql -d postgresql://postgres@localhost/postgres -U postgres -tc "create database pgmemento_testdb"
+        env:
+          PGPASSWORD: password
+      - name: run pgmemento tests and upgrade to v0.7.2
+        run: |
+          psql -d postgresql://postgres@localhost/pgmemento_testdb -U postgres -a -f TEST.sql
+        env:
+          PGPASSWORD: password
