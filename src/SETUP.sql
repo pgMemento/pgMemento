@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.13    2021-12-23   concat jsonb logs on upsert                         FKun
+-- 0.7.12    2021-12-23   session variables must start with letter in Pg14    ol-teuto
 -- 0.7.11    2021-03-28   exclude audit_tables with empty txid_range          FKun
 -- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
 --                        define new REINIT TABLE event
@@ -1130,14 +1132,17 @@ BEGIN
   END IF;
 
   IF jsonb_diff_old <> '{}'::jsonb OR jsonb_diff_new <> '{}'::jsonb THEN
-    INSERT INTO pgmemento.row_log
+    -- log delta, on conflict concat logs, for old_data oldest should overwrite, for new_data vice versa
+    INSERT INTO pgmemento.row_log AS r
       (audit_id, event_key, old_data, new_data)
     VALUES
       (new_audit_id,
        concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
        jsonb_diff_old, jsonb_diff_new)
     ON CONFLICT (audit_id, event_key)
-    DO UPDATE SET new_data = excluded.new_data;
+    DO UPDATE SET
+      old_data = excluded.old_data || r.old_data, 
+      new_data = r.new_data || excluded.new_data;
   END IF;
 
   RETURN NULL;
