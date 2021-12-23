@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.4.1     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.4.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log               FKun
 -- 0.2.0     2020-02-29   reflect changes on schema and triggers           FKun
@@ -66,7 +67,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = current_setting('pgmemento.' || test_txid)::int
+    transaction_id = current_setting('pgmemento.t' || test_txid)::int
     AND op_id = 3;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
@@ -137,7 +138,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = current_setting('pgmemento.' || test_txid)::int
+    transaction_id = current_setting('pgmemento.t' || test_txid)::int
     AND op_id = insert_op_id;
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';
@@ -216,7 +217,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = current_setting('pgmemento.' || test_txid)::int
+    transaction_id = current_setting('pgmemento.t' || test_txid)::int
     AND (op_id = pgmemento.get_operation_id('INSERT') OR op_id = pgmemento.get_operation_id('UPDATE'));
 
   ASSERT array_length(event_keys, 1) = 2, 'Error: Did not find entries in table_event_log table!';

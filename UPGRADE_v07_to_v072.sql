@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.2.0     2021-03-21   reflect fixes for v0.7.2                       FKun
 -- 0.1.0     2020-07-30   initial commit                                 FKun
 --
@@ -35,7 +36,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '89'::text AS build_id;
+SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '92'::text AS build_id;
 $$
 LANGUAGE sql;
 
@@ -78,10 +79,10 @@ BEGIN
   END IF;
 
   -- remember audit_id_column when registering table in audit_table_log later
-  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.audit_id.' || txid_current(), $3, TRUE);
+  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.audit_id.t' || txid_current(), $3, TRUE);
 
   -- remember logging behavior when registering table in audit_table_log later
-  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.log_data.' || txid_current(),
+  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.log_data.t' || txid_current(),
     CASE WHEN log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
     CASE WHEN log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
 
@@ -143,9 +144,9 @@ BEGIN
   INTO transaction_log_id;
 
   IF transaction_log_id IS NOT NULL THEN
-    PERFORM set_config('pgmemento.' || $1, transaction_log_id::text, TRUE);
+    PERFORM set_config('pgmemento.t' || $1, transaction_log_id::text, TRUE);
   ELSE
-    transaction_log_id := current_setting('pgmemento.' || $1)::int;
+    transaction_log_id := current_setting('pgmemento.t' || $1)::int;
   END IF;
 
   RETURN transaction_log_id;
@@ -535,7 +536,7 @@ BEGIN
         FROM
           pgmemento.table_event_log
         WHERE
-          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          transaction_id = current_setting('pgmemento.t' || txid_current())::int
           AND table_name = $5
           AND schema_name = $6
           AND op_id = 11  -- REINIT TABLE event
@@ -840,7 +841,7 @@ BEGIN
   WHEN $4 = 81 THEN
     -- first check if a preceding CREATE TABLE event already recreated the audit_id
     BEGIN
-      current_transaction := current_setting('pgmemento.' || txid_current())::int;
+      current_transaction := current_setting('pgmemento.t' || txid_current())::int;
 
       EXCEPTION
         WHEN undefined_object THEN

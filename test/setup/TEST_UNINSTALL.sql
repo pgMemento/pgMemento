@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.2.0     2020-04-12   use new drop function                          FKun
 -- 0.1.0     2017-09-08   initial commit                                 FKun
 --
@@ -44,7 +45,7 @@ BEGIN
       FROM
         pgmemento.transaction_log
       WHERE
-        id = current_setting('pgmemento.' || txid_current())::numeric
+        id = current_setting('pgmemento.t' || txid_current())::numeric
         AND session_info ? 'pgmemento_drop'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
@@ -73,7 +74,7 @@ BEGIN
         pgmemento.audit_schema_log
       WHERE
         schema_name = tab_schema
-        AND upper(txid_range) = current_setting('pgmemento.' || txid_current())::numeric
+        AND upper(txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
     )
   ), 'Error: Did not find entry for % schema in audit_schema_log!', tab_schema;
 END;

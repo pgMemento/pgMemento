@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.1.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.1.0     2020-04-12   initial commit                                 FKun
 --
 
@@ -43,7 +44,7 @@ BEGIN
       FROM
         pgmemento.transaction_log
       WHERE
-        id = current_setting('pgmemento.' || txid_current())::numeric
+        id = current_setting('pgmemento.t' || txid_current())::numeric
         AND session_info ? 'pgmemento_stop'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
@@ -128,7 +129,7 @@ BEGIN
       FROM
         pgmemento.transaction_log
       WHERE
-        id = current_setting('pgmemento.' || txid_current())::numeric
+        id = current_setting('pgmemento.t' || txid_current())::numeric
         AND session_info ? 'pgmemento_start'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;
@@ -142,7 +143,7 @@ BEGIN
         pgmemento.audit_schema_log
       WHERE
         schema_name = tab_schema
-        AND lower(txid_range) = current_setting('pgmemento.' || txid_current())::numeric
+        AND lower(txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
     )
   ), 'Error: Did not find entry for % schema in audit_schema_log!', tab_schema;
 END;

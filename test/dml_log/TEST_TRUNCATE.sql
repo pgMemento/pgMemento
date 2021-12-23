@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.1     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2017-11-20   initial commit                                   FKun
@@ -73,7 +74,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = current_setting('pgmemento.' || test_txid)::int
+    transaction_id = current_setting('pgmemento.t' || test_txid)::int
     AND op_id = pgmemento.get_operation_id('TRUNCATE');
 
   ASSERT test_event IS NOT NULL, 'Error: Did not find test entry in table_event_log table!';

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.4.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.4.0     2020-04-12   call new init function to start auditing       FKun
 -- 0.3.0     2020-03-05   reflect new_data column in row_log             FKun
 -- 0.2.0     2017-09-08   moved drop parts to TEST_UNINSTALL.sql         FKun
@@ -82,7 +83,7 @@ BEGIN
       FROM
         pgmemento.transaction_log
       WHERE
-        id = current_setting('pgmemento.' || txid_current())::numeric
+        id = current_setting('pgmemento.t' || txid_current())::numeric
         AND session_info ? 'pgmemento_init'
     )
   ), 'Error: Could not find entry in transaction_log for stopping audit trail in schema %!', tab_schema;

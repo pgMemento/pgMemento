@@ -425,7 +425,7 @@ BEGIN
   UPDATE
     pgmemento.audit_table_log
   SET
-    txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
+    txid_range = numrange(lower(txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
   WHERE
     table_name = $1
     AND schema_name = $2
@@ -439,7 +439,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log
     SET
-      txid_range = numrange(lower(txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
+      txid_range = numrange(lower(txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
     WHERE
       audit_table_id = tab_id
       AND upper(txid_range) IS NULL
@@ -488,7 +488,7 @@ BEGIN
       FROM
         pgmemento.table_event_log
       WHERE
-        transaction_id = current_setting('pgmemento.' || txid_current())::int
+        transaction_id = current_setting('pgmemento.t' || txid_current())::int
         AND table_name = $1
         AND schema_name = $2
         AND ((op_id = 1 AND table_operation = 'RECREATE TABLE')
@@ -519,10 +519,10 @@ BEGIN
   END IF;
 
   -- get audit_id_column name which was set in create_table_audit_id or in event trigger when renaming the table
-  audit_id_column_name := current_setting('pgmemento.' || $2 || '.' || $1 || '.audit_id.' || txid_current());
+  audit_id_column_name := current_setting('pgmemento.' || $2 || '.' || $1 || '.audit_id.t' || txid_current());
 
   -- get logging behavior which was set in create_table_audit_id or in event trigger when renaming the table
-  log_data_settings := current_setting('pgmemento.' || $2 || '.' || $1 || '.log_data.' || txid_current());
+  log_data_settings := current_setting('pgmemento.' || $2 || '.' || $1 || '.log_data.t' || txid_current());
 
   -- now register table and corresponding columns in audit tables
   INSERT INTO pgmemento.audit_table_log
@@ -531,7 +531,7 @@ BEGIN
     (table_log_id, pgmemento.get_table_oid($1, $2), $2, $1, audit_id_column_name,
      CASE WHEN split_part(log_data_settings, ',' ,1) = 'old=true' THEN TRUE ELSE FALSE END,
      CASE WHEN split_part(log_data_settings, ',' ,2) = 'new=true' THEN TRUE ELSE FALSE END,
-     numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]'))
+     numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]'))
   RETURNING id INTO tab_id;
 
   -- insert columns of new audited table into 'audit_column_log'
@@ -550,7 +550,7 @@ BEGIN
         position('.' IN format_type(a.atttypid, a.atttypmod))+1,
         length(format_type(a.atttypid, a.atttypmod))
       ) AS data_type,
-      numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
+      numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
     FROM
       pg_attribute a
     LEFT JOIN
@@ -963,9 +963,9 @@ BEGIN
   INTO transaction_log_id;
 
   IF transaction_log_id IS NOT NULL THEN
-    PERFORM set_config('pgmemento.' || $1, transaction_log_id::text, TRUE);
+    PERFORM set_config('pgmemento.t' || $1, transaction_log_id::text, TRUE);
   ELSE
-    transaction_log_id := current_setting('pgmemento.' || $1)::int;
+    transaction_log_id := current_setting('pgmemento.t' || $1)::int;
   END IF;
 
   RETURN transaction_log_id;
@@ -1047,7 +1047,7 @@ BEGIN
   FROM
     pgmemento.table_event_log
   WHERE
-    transaction_id = current_setting('pgmemento.' || txid_current())::int
+    transaction_id = current_setting('pgmemento.t' || txid_current())::int
     AND table_name = TG_TABLE_NAME
     AND schema_name = TG_TABLE_SCHEMA
     AND op_id = 8;
@@ -1316,10 +1316,10 @@ BEGIN
   END IF;
 
   -- remember audit_id_column when registering table in audit_table_log later
-  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.audit_id.' || txid_current(), $3, TRUE);
+  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.audit_id.t' || txid_current(), $3, TRUE);
 
   -- remember logging behavior when registering table in audit_table_log later
-  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.log_data.' || txid_current(),
+  PERFORM set_config('pgmemento.' || $2 || '.' || $1 || '.log_data.t' || txid_current(),
     CASE WHEN log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
     CASE WHEN log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
 

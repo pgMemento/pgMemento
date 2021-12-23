@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.9     2021-12-23   session variables starting with letter          ol-teuto
 -- 0.7.8     2021-03-21   fix revert for array columns                    FKun
 -- 0.7.7     2020-04-20   add revert for DROP AUDIT_ID event              FKun
 -- 0.7.6     2020-04-19   add revert for REINIT TABLE event               FKun 
@@ -122,7 +123,7 @@ BEGIN
         FROM
           pgmemento.table_event_log
         WHERE
-          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          transaction_id = current_setting('pgmemento.t' || txid_current())::int
           AND table_name = $5
           AND schema_name = $6
           AND op_id = 11  -- REINIT TABLE event
@@ -427,7 +428,7 @@ BEGIN
   WHEN $4 = 81 THEN
     -- first check if a preceding CREATE TABLE event already recreated the audit_id
     BEGIN
-      current_transaction := current_setting('pgmemento.' || txid_current())::int;
+      current_transaction := current_setting('pgmemento.t' || txid_current())::int;
 
       EXCEPTION
         WHEN undefined_object THEN

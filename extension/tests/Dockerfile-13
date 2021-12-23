@@ -1,2 +1,2 @@
 FROM postgres:13
-RUN apt-get update -y && apt-get install -y postgresql-13-postgis-3 cmake libpq-dev postgresql-server-dev-13 zip unzip python-pip
+RUN apt-get update -y && apt-get install -y postgresql-13-postgis-3 cmake libpq-dev postgresql-server-dev-13 zip unzip python3-pip

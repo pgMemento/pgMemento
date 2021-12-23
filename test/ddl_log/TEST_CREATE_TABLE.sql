@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.3.1     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.3.0     2020-03-27   reflect new name of audit_id column              FKun
 -- 0.2.1     2020-03-05   insert dummy tuple for subsequent tests          FKun
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
@@ -43,7 +44,7 @@ BEGIN
   );
 
   -- save transaction_id for next tests
-  test_transaction := current_setting('pgmemento.' || test_txid)::int;
+  test_transaction := current_setting('pgmemento.t' || test_txid)::int;
   PERFORM set_config('pgmemento.create_table_test', test_transaction::text, FALSE);
 
   -- query for logged transaction
