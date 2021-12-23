@@ -1,2 +1,2 @@
 FROM postgres:12
-RUN apt-get update -y && apt-get install -y postgresql-12-postgis-3 cmake libpq-dev postgresql-server-dev-12 zip unzip python-pip
+RUN apt-get update -y && apt-get install -y postgresql-12-postgis-3 cmake libpq-dev postgresql-server-dev-12 zip unzip python3-pip

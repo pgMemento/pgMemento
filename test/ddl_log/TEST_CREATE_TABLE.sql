@@ -43,7 +43,7 @@ BEGIN
   );
 
   -- save transaction_id for next tests
-  test_transaction := current_setting('pgmemento.' || test_txid)::int;
+  test_transaction := current_setting('pgmemento.t' || test_txid)::int;
   PERFORM set_config('pgmemento.create_table_test', test_transaction::text, FALSE);
 
   -- query for logged transaction

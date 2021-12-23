@@ -1,0 +1,2 @@
+FROM postgres:14
+RUN apt-get update -y && apt-get install -y postgresql-14-postgis-3 cmake libpq-dev postgresql-server-dev-14 zip unzip python3-pip
