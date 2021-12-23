@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.2.1     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.2.0     2020-01-09   reflect changes on schema and triggers           FKun
 -- 0.1.0     2018-08-14   initial commit                                   FKun
 --

@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.2.0     2020-04-12   use new drop function                          FKun
 -- 0.1.0     2017-09-08   initial commit                                 FKun
 --

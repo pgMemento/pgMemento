@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.12    2021-12-23   session variables starting with letter for Pg14     ol-teuto
 -- 0.7.11    2021-03-28   exclude audit_tables with empty txid_range          FKun
 -- 0.7.10    2020-04-19   change signature for drop audit functions and       FKun
 --                        define new REINIT TABLE event

@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.2.1     2021-12-23   session variables starting with letter         ol-teuto
 -- 0.2.0     2021-03-21   reflect fixes for v0.7.2                       FKun
 -- 0.1.0     2020-07-30   initial commit                                 FKun
 --
@@ -35,7 +36,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '89'::text AS build_id;
+SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '91'::text AS build_id;
 $$
 LANGUAGE sql;
 

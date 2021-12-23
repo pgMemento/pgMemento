@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                   | Author
+-- 0.7.9     2021-12-23   session variables starting with letter          ol-teuto
 -- 0.7.8     2021-03-21   fix revert for array columns                    FKun
 -- 0.7.7     2020-04-20   add revert for DROP AUDIT_ID event              FKun
 -- 0.7.6     2020-04-19   add revert for REINIT TABLE event               FKun 

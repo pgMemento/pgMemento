@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.9     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.7.8     2020-04-13   remove txid from log_table_event                 FKun
 -- 0.7.7     2020-04-05   add tags CREATE TABLE AS and SELECT INTO         FKun
 -- 0.7.6     2020-03-29   reflect that logging old data is configurable    FKun

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [9.6, 10, 11, 12, 13, 14]
+        pg: [9.6, 10, 11, 12, 13]
     services:
       postgres:
         image: postgis/postgis:${{ matrix.pg }}-3.1
