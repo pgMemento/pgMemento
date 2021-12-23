@@ -122,7 +122,7 @@ BEGIN
         FROM
           pgmemento.table_event_log
         WHERE
-          transaction_id = current_setting('pgmemento.' || txid_current())::int
+          transaction_id = current_setting('pgmemento.t' || txid_current())::int
           AND table_name = $5
           AND schema_name = $6
           AND op_id = 11  -- REINIT TABLE event
@@ -427,7 +427,7 @@ BEGIN
   WHEN $4 = 81 THEN
     -- first check if a preceding CREATE TABLE event already recreated the audit_id
     BEGIN
-      current_transaction := current_setting('pgmemento.' || txid_current())::int;
+      current_transaction := current_setting('pgmemento.t' || txid_current())::int;
 
       EXCEPTION
         WHEN undefined_object THEN

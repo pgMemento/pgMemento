@@ -363,7 +363,7 @@ BEGIN
         ) AS data_type,
         pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
         a.attnotnull AS not_null,
-        numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
+        numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
       FROM
         pg_attribute a
       LEFT JOIN
@@ -433,7 +433,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
     FROM
       dropped_columns dc
     WHERE
@@ -509,7 +509,7 @@ BEGIN
           data_type,
           column_default,
           not_null,
-          numrange(current_setting('pgmemento.' || txid_current())::numeric, NULL, '(]') AS txid_range
+          numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
         FROM
           updated_columns
       )
@@ -517,7 +517,7 @@ BEGIN
     UPDATE
       pgmemento.audit_column_log acl
     SET
-      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.' || txid_current())::numeric, '(]')
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
     FROM
       updated_columns uc
     WHERE
@@ -563,9 +563,9 @@ BEGIN
     ON c_old.column_name = c_new.column_name
    AND c_old.ordinal_position = c_new.ordinal_position
    AND c_old.audit_table_id = a.id
-   AND upper(c_old.txid_range) = current_setting('pgmemento.' || txid_current())::numeric
+   AND upper(c_old.txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
   WHERE
-    lower(c_new.txid_range) = current_setting('pgmemento.' || txid_current())::numeric
+    lower(c_new.txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
     AND upper(c_new.txid_range) IS NULL;
 
   IF added_columns IS NOT NULL OR array_length(added_columns, 1) > 0 THEN
@@ -722,7 +722,7 @@ DECLARE
   current_log_new_data BOOLEAN;
   event_op_id SMALLINT;
 BEGIN
-  tid := current_setting('pgmemento.' || txid_current())::int;
+  tid := current_setting('pgmemento.t' || txid_current())::int;
 
   FOR obj IN
     SELECT * FROM pg_event_trigger_ddl_commands()
@@ -782,8 +782,8 @@ BEGIN
         AND lower(txid_range) IS NOT NULL;
     ELSE
       -- table got renamed and so remember audit_id_column and logging behavior to register renamed version
-      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.audit_id.' || txid_current(), current_audit_id_column, TRUE);
-      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.log_data.' || txid_current(),
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.audit_id.t' || txid_current(), current_audit_id_column, TRUE);
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.log_data.t' || txid_current(),
         CASE WHEN current_log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
         CASE WHEN current_log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
     END IF;
@@ -1133,7 +1133,7 @@ BEGIN
   LOOP
     IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
       BEGIN
-        tid := current_setting('pgmemento.' || txid_current())::int;
+        tid := current_setting('pgmemento.t' || txid_current())::int;
 
         -- remove quotes if exists
         tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
