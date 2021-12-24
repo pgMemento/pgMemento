@@ -865,7 +865,7 @@ BEGIN
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
        DO UPDATE SET
-         old_data = excluded.old_data || r.old_data',
+         old_data = COALESCE(excluded.old_data, ''{}''::jsonb) || COALESCE(r.old_data, ''{}''::jsonb)',
        $5, $3, $2, $5) USING $4;
   ELSE
     -- log content of entire table
@@ -898,7 +898,7 @@ BEGIN
          SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
-       DO UPDATE SET new_data = r.new_data || excluded.new_data',
+       DO UPDATE SET new_data = COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
        $5, $3, $2, $5) USING $4;
   ELSE
     -- log content of entire table
@@ -1142,8 +1142,8 @@ BEGIN
        jsonb_diff_old, jsonb_diff_new)
     ON CONFLICT (audit_id, event_key)
     DO UPDATE SET
-      old_data = excluded.old_data || r.old_data, 
-      new_data = r.new_data || excluded.new_data;
+      old_data = COALESCE(excluded.old_data, '{}'::jsonb) || COALESCE(r.old_data, '{}'::jsonb),
+      new_data = COALESCE(r.new_data, '{}'::jsonb) || COALESCE(excluded.new_data, '{}'::jsonb);
   END IF;
 
   RETURN NULL;
