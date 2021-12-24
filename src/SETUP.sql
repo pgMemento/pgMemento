@@ -860,11 +860,12 @@ BEGIN
   IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
     -- log content of given columns
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log(audit_id, event_key, old_data)
+      'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, old_data)
          SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
-       DO NOTHING',
+       DO UPDATE SET
+         old_data = excluded.old_data || r.old_data',
        $5, $3, $2, $5) USING $4;
   ELSE
     -- log content of entire table
@@ -893,11 +894,11 @@ BEGIN
   IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
     -- log content of given columns
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log(audit_id, event_key, new_data)
+      'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, new_data)
          SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
-       DO UPDATE SET new_data = excluded.new_data',
+       DO UPDATE SET new_data = r.new_data || excluded.new_data',
        $5, $3, $2, $5) USING $4;
   ELSE
     -- log content of entire table
