@@ -903,11 +903,11 @@ BEGIN
   ELSE
     -- log content of entire table
     EXECUTE format(
-      'INSERT INTO pgmemento.row_log (audit_id, event_key, new_data)
+      'INSERT INTO pgmemento.row_log r (audit_id, event_key, new_data)
          SELECT %I, $1, to_jsonb(%I) AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
-       DO UPDATE SET new_data = excluded.new_data',
+       DO UPDATE SET COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
        $5, $2, $3, $2, $5) USING $4;
   END IF;
 END;
