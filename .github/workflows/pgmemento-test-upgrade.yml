@@ -26,13 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          ref: refs/tags/v0.7.1
-      - name: create new empty database of v0.7.1
+          ref: refs/tags/v0.7.2
+      - name: create new empty database of v0.7.2
         run: |
           psql -d postgresql://postgres@localhost/postgres -U postgres -tc "create database pgmemento_testdb"
         env:
           PGPASSWORD: password
-      - name: run pgmemento tests and upgrade to v0.7.2
+      - name: run pgmemento tests and upgrade to v0.7.3
         run: |
           psql -d postgresql://postgres@localhost/pgmemento_testdb -U postgres -a -f TEST.sql
         env:

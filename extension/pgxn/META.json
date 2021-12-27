@@ -1,7 +1,7 @@
 {
     "name": "pgMemento",
     "abstract": "Audit trail with schema versioning for PostgreSQL using transaction-based logging",
-    "version": "0.7.2",
+    "version": "0.7.3",
     "maintainer": [
         "Felix Kunde <felix-kunde@gmx.de>"
     ],
@@ -23,7 +23,7 @@
             "abstract": "Audit trail versioning",
             "file": "sql/pgmemento.sql",
             "docfile": "doc/README.pgmemento",
-            "version": "0.7.2"
+            "version": "0.7.3"
         }
     },
     "resources": {
