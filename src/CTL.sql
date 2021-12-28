@@ -14,6 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.5.2     2021-12-28   start will call reinit if log params differ    FKun
 -- 0.5.1     2021-01-02   fix session_info entries                       FKun
 -- 0.5.0     2020-05-04   add revision to version endpoint               FKun
 -- 0.4.0     2020-04-19   add reinit endpoint                            FKun
@@ -214,8 +215,8 @@ BEGIN
     PERFORM pgmemento.create_table_audit(rec.table_name, rec.schema_name, $2, $3, $4, FALSE);
   END LOOP;
 
-  -- create event triggers if they were not enabled for schema
-  IF $5 AND NOT current_audit_schema_log.trigger_create_table THEN
+  -- update event triggers
+  IF $5 != current_audit_schema_log.trigger_create_table THEN
     PERFORM pgmemento.create_schema_event_trigger($5);
   END IF;
 
@@ -237,6 +238,7 @@ DECLARE
   schema_quoted TEXT;
   current_audit_schema_log pgmemento.audit_schema_log%ROWTYPE;
   txid_log_id INTEGER;
+  reinit_test TEXT := '';
 BEGIN
   -- make sure schema is quoted no matter how it is passed to start
   schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
@@ -272,31 +274,19 @@ BEGIN
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
 
-  -- configuration differs, so close txid_range for audit_schema_log entry
-  IF current_audit_schema_log.default_log_old_data != $3
-     OR current_audit_schema_log.default_log_new_data != $4
-     OR current_audit_schema_log.trigger_create_table != $5
-  THEN
-    UPDATE pgmemento.audit_schema_log
-       SET txid_range = numrange(lower(txid_range), txid_log_id::numeric, '(]')
-     WHERE id = current_audit_schema_log.id;
-
-    -- create new entry in audit_schema_log
-    INSERT INTO pgmemento.audit_schema_log
-      (log_id, schema_name, default_audit_id_column, default_log_old_data, default_log_new_data, trigger_create_table, txid_range)
-    VALUES
-      (current_audit_schema_log.log_id, $1, $2, $3, $4, $5,
-       numrange(txid_log_id, NULL, '(]'));
-  END IF;
-
   -- enable triggers where they are not active
   PERFORM
-    pgmemento.create_table_log_trigger(c.relname, $1, at.audit_id_column, at.log_old_data, at.log_new_data)
+    pgmemento.create_table_log_trigger(c.relname, $1, at.audit_id_column, asl.default_log_old_data, asl.default_log_new_data)
   FROM
     pg_class c
   JOIN
     pg_namespace n
     ON c.relnamespace = n.oid
+  JOIN
+    pgmemento.audit_schema_log asl
+    ON asl.schema_name = n.nspname
+   AND lower(asl.txid_range) IS NOT NULL
+   AND upper(asl.txid_range) IS NULL
   JOIN pgmemento.audit_tables at
     ON at.tablename = c.relname
    AND at.schemaname = n.nspname
@@ -306,12 +296,16 @@ BEGIN
     AND c.relkind = 'r'
     AND c.relname <> ALL (COALESCE($6,'{}'::text[]));
 
-  -- create event triggers if they were not enabled for schema
-  IF $5 AND NOT current_audit_schema_log.trigger_create_table THEN
-    PERFORM pgmemento.create_schema_event_trigger($5);
+  -- configuration differs, perform reinit
+  IF current_audit_schema_log.default_log_old_data != $3
+     OR current_audit_schema_log.default_log_new_data != $4
+     OR current_audit_schema_log.trigger_create_table != $5
+  THEN
+    PERFORM pgmemento.reinit($1, $2, $3, $4, $5, $6);
+    reinit_test := ' and reinitialized';
   END IF;
 
-  RETURN format('pgMemento is started for %s schema.', schema_quoted);
+  RETURN format('pgMemento is started%s for %s schema.', reinit_test, schema_quoted);
 END;
 $$
 LANGUAGE plpgsql;
