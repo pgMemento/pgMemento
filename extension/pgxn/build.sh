@@ -19,8 +19,9 @@ echo "done";
 
 echo -n "Compiling the extension SQL ... ";
 ../compile.sh > $EXTFOLDER/sql/pgmemento.sql ;
-cp ../../UPGRADE_v07_to_v072.sql $EXTFOLDER/sql/pgmemento--0.7--$VERSION.sql ;
-cp ../../UPGRADE_v07_to_v072.sql $EXTFOLDER/sql/pgmemento--0.7.1--$VERSION.sql ;
+cp ../../UPGRADE_v07_to_v073.sql $EXTFOLDER/sql/pgmemento--0.7--$VERSION.sql ;
+cp ../../UPGRADE_v07_to_v073.sql $EXTFOLDER/sql/pgmemento--0.7.1--$VERSION.sql ;
+cp ../../UPGRADE_v07_to_v073.sql $EXTFOLDER/sql/pgmemento--0.7.2--$VERSION.sql ;
 cp ../pgmemento.control $EXTFOLDER/. ;
 cp Makefile $EXTFOLDER/. ;
 cp META.json $EXTFOLDER/. ;

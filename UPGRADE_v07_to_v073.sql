@@ -1,4 +1,4 @@
--- UPGRADE_v07_to_v072.sql
+-- UPGRADE_v07_to_v073.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script upgrades a pgMemento extension of v0.7.0 to v0.7.2 which
+-- This script upgrades a pgMemento extension of v0.7.0 to v0.7.3 which
 -- replaces some functions (see changelog for more details)
 --
 -------------------------------------------------------------------------------
@@ -16,13 +16,13 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
--- 0.2.1     2021-12-23   session variables starting with letter         ol-teuto
+-- 0.3.0     2021-12-27   bump to 7.3                                    FKun
 -- 0.2.0     2021-03-21   reflect fixes for v0.7.2                       FKun
 -- 0.1.0     2020-07-30   initial commit                                 FKun
 --
 
 \echo
-\echo 'Updgrade pgMemento from v0.7.0 to v0.7.2 ...'
+\echo 'Updgrade pgMemento from v0.7.0 to v0.7.3 ...'
 
 COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of session_user function';
 
@@ -36,9 +36,373 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.2'::text AS full_version, 0 AS major_version, 7 AS minor_version, 2 AS revision, '92'::text AS build_id;
+SELECT 'pgMemento 0.7.3'::text AS full_version, 0 AS major_version, 7 AS minor_version, 3 AS revision, '93'::text AS build_id;
 $$
 LANGUAGE sql;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.unregister_audit_table(
+  audit_table_name TEXT,
+  audit_schema_name TEXT DEFAULT 'public'::text
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  tab_id INTEGER;
+BEGIN
+  -- update txid_range for removed table in audit_table_log table
+  UPDATE
+    pgmemento.audit_table_log
+  SET
+    txid_range = numrange(lower(txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
+  WHERE
+    table_name = $1
+    AND schema_name = $2
+    AND upper(txid_range) IS NULL
+    AND lower(txid_range) IS NOT NULL
+  RETURNING
+    id INTO tab_id;
+
+  IF tab_id IS NOT NULL THEN
+    -- update txid_range for removed columns in audit_column_log table
+    UPDATE
+      pgmemento.audit_column_log
+    SET
+      txid_range = numrange(lower(txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
+    WHERE
+      audit_table_id = tab_id
+      AND upper(txid_range) IS NULL
+      AND lower(txid_range) IS NOT NULL;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION pgmemento.register_audit_table(
+  audit_table_name TEXT,
+  audit_schema_name TEXT DEFAULT 'public'::text
+  ) RETURNS INTEGER AS
+$$
+DECLARE
+  tab_id INTEGER;
+  table_log_id INTEGER;
+  old_table_name TEXT;
+  old_schema_name TEXT;
+  audit_id_column_name TEXT;
+  log_data_settings TEXT;
+BEGIN
+  -- check if affected table exists in 'audit_table_log' (with open range)
+  SELECT
+    id INTO tab_id
+  FROM
+    pgmemento.audit_table_log
+  WHERE
+    table_name = $1
+    AND schema_name = $2
+    AND upper(txid_range) IS NULL
+    AND lower(txid_range) IS NOT NULL;
+
+  IF tab_id IS NOT NULL THEN
+    RETURN tab_id;
+  END IF;
+
+  BEGIN
+    -- check if table exists in 'audit_table_log' with another name (and open range)
+    table_log_id := current_setting('pgmemento.' || quote_ident($2) || '.' || quote_ident($1))::int;
+
+    IF NOT EXISTS (
+      SELECT
+        1
+      FROM
+        pgmemento.table_event_log
+      WHERE
+        transaction_id = current_setting('pgmemento.t' || txid_current())::int
+        AND table_name = $1
+        AND schema_name = $2
+        AND ((op_id = 1 AND table_operation = 'RECREATE TABLE')
+         OR op_id = 11)  -- REINIT TABLE event
+    ) THEN
+      SELECT
+        table_name,
+        schema_name
+      INTO
+        old_table_name,
+        old_schema_name
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        log_id = table_log_id
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+    END IF;
+
+    EXCEPTION
+      WHEN others THEN
+        table_log_id := nextval('pgmemento.table_log_id_seq');
+  END;
+
+  -- if so, unregister first before making new inserts
+  IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
+    PERFORM pgmemento.unregister_audit_table(old_table_name, old_schema_name);
+  END IF;
+
+  -- get audit_id_column name which was set in create_table_audit_id or in event trigger when renaming the table
+  audit_id_column_name := current_setting('pgmemento.' || $2 || '.' || $1 || '.audit_id.t' || txid_current());
+
+  -- get logging behavior which was set in create_table_audit_id or in event trigger when renaming the table
+  log_data_settings := current_setting('pgmemento.' || $2 || '.' || $1 || '.log_data.t' || txid_current());
+
+  -- now register table and corresponding columns in audit tables
+  INSERT INTO pgmemento.audit_table_log
+    (log_id, relid, schema_name, table_name, audit_id_column, log_old_data, log_new_data, txid_range)
+  VALUES
+    (table_log_id, pgmemento.get_table_oid($1, $2), $2, $1, audit_id_column_name,
+     CASE WHEN split_part(log_data_settings, ',' ,1) = 'old=true' THEN TRUE ELSE FALSE END,
+     CASE WHEN split_part(log_data_settings, ',' ,2) = 'new=true' THEN TRUE ELSE FALSE END,
+     numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]'))
+  RETURNING id INTO tab_id;
+
+  -- insert columns of new audited table into 'audit_column_log'
+  INSERT INTO pgmemento.audit_column_log
+    (id, audit_table_id, column_name, ordinal_position, column_default, not_null, data_type, txid_range)
+  (
+    SELECT
+      nextval('pgmemento.audit_column_log_id_seq') AS id,
+      tab_id AS audit_table_id,
+      a.attname AS column_name,
+      a.attnum AS ordinal_position,
+      pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
+      a.attnotnull AS not_null,
+      substr(
+        format_type(a.atttypid, a.atttypmod),
+        position('.' IN format_type(a.atttypid, a.atttypmod))+1,
+        length(format_type(a.atttypid, a.atttypmod))
+      ) AS data_type,
+      numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
+    FROM
+      pg_attribute a
+    LEFT JOIN
+      pg_attrdef d
+      ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+    WHERE
+      a.attrelid = pgmemento.get_table_oid($1, $2)
+      AND a.attname <> audit_id_column_name
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      ORDER BY a.attnum
+  );
+
+  -- rename unique constraint for audit_id column
+  IF old_table_name IS NOT NULL AND old_schema_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE %I.%I RENAME CONSTRAINT %I TO %I',
+      $2, $1, old_table_name || '_' || audit_id_column_name || '_key', $1 || '_' || audit_id_column_name || '_key');
+  END IF;
+
+  RETURN tab_id;
+END;
+$$
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.log_old_table_state(
+  columns TEXT[],
+  tablename TEXT,
+  schemaname TEXT,
+  table_event_key TEXT,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
+    -- log content of given columns
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, old_data)
+         SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+           FROM %I.%I ORDER BY %I
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET
+         old_data = COALESCE(excluded.old_data, ''{}''::jsonb) || COALESCE(r.old_data, ''{}''::jsonb)',
+       $5, $3, $2, $5) USING $4;
+  ELSE
+    -- log content of entire table
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log (audit_id, event_key, old_data)
+         SELECT %I, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY %I
+       ON CONFLICT (audit_id, event_key)
+       DO NOTHING',
+       $5, $2, $3, $2, $5) USING $4;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION pgmemento.log_new_table_state(
+  columns TEXT[],
+  tablename TEXT,
+  schemaname TEXT,
+  table_event_key TEXT,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
+  ) RETURNS SETOF VOID AS
+$$
+BEGIN
+  IF $1 IS NOT NULL AND array_length($1, 1) IS NOT NULL THEN
+    -- log content of given columns
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, new_data)
+         SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+           FROM %I.%I ORDER BY %I
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET new_data = COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
+       $5, $3, $2, $5) USING $4;
+  ELSE
+    -- log content of entire table
+    EXECUTE format(
+      'INSERT INTO pgmemento.row_log r (audit_id, event_key, new_data)
+         SELECT %I, $1, to_jsonb(%I) AS content
+           FROM %I.%I ORDER BY %I
+       ON CONFLICT (audit_id, event_key)
+       DO UPDATE SET COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
+       $5, $2, $3, $2, $5) USING $4;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.log_transaction(current_txid BIGINT) RETURNS INTEGER AS
+$$
+DECLARE
+  session_info_text TEXT;
+  session_info_obj JSONB;
+  transaction_log_id INTEGER;
+BEGIN
+  -- retrieve session_info set by client
+  BEGIN
+    session_info_text := current_setting('pgmemento.session_info');
+
+    IF session_info_text IS NULL OR session_info_text = '' THEN
+      session_info_obj := NULL;
+    ELSE
+      session_info_obj := session_info_text::jsonb;
+    END IF;
+
+    EXCEPTION
+      WHEN undefined_object THEN
+        session_info_obj := NULL;
+      WHEN invalid_text_representation THEN
+        BEGIN
+          session_info_obj := to_jsonb(current_setting('pgmemento.session_info'));
+        END;
+      WHEN others THEN
+        RAISE NOTICE 'Unable to parse session info: %', session_info_text;
+        session_info_obj := NULL;
+  END;
+
+  -- try to log corresponding transaction
+  INSERT INTO pgmemento.transaction_log
+    (txid, txid_time, process_id, user_name, client_name, client_port, application_name, session_info)
+  VALUES
+    ($1, transaction_timestamp(), pg_backend_pid(), session_user, inet_client_addr(), inet_client_port(),
+     current_setting('application_name'), session_info_obj
+    )
+  ON CONFLICT (txid_time, txid)
+    DO NOTHING
+  RETURNING id
+  INTO transaction_log_id;
+
+  IF transaction_log_id IS NOT NULL THEN
+    PERFORM set_config('pgmemento.t' || $1, transaction_log_id::text, TRUE);
+  ELSE
+    transaction_log_id := current_setting('pgmemento.t' || $1)::int;
+  END IF;
+
+  RETURN transaction_log_id;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.log_update() RETURNS trigger AS
+$$
+DECLARE
+  new_audit_id BIGINT;
+  jsonb_diff_old JSONB;
+  jsonb_diff_new JSONB;
+BEGIN
+  EXECUTE 'SELECT $1.' || TG_ARGV[0] USING NEW INTO new_audit_id;
+
+  -- log values of updated columns for the processed row
+  -- therefore, a diff between OLD and NEW is necessary
+  IF TG_ARGV[1] = 'true' THEN
+    SELECT COALESCE(
+      (SELECT
+         ('{' || string_agg(to_json(key) || ':' || value, ',') || '}')
+       FROM
+         jsonb_each(to_jsonb(OLD))
+       WHERE
+         to_jsonb(NEW) ->> key IS DISTINCT FROM to_jsonb(OLD) ->> key
+      ),
+      '{}')::jsonb INTO jsonb_diff_old;
+  END IF;
+
+  IF TG_ARGV[2] = 'true' THEN
+    -- switch the diff to only get the new values
+    SELECT COALESCE(
+      (SELECT
+         ('{' || string_agg(to_json(key) || ':' || value, ',') || '}')
+       FROM
+         jsonb_each(to_jsonb(NEW))
+       WHERE
+         to_jsonb(OLD) ->> key IS DISTINCT FROM to_jsonb(NEW) ->> key
+      ),
+      '{}')::jsonb INTO jsonb_diff_new;
+  END IF;
+
+  IF jsonb_diff_old <> '{}'::jsonb OR jsonb_diff_new <> '{}'::jsonb THEN
+    -- log delta, on conflict concat logs, for old_data oldest should overwrite, for new_data vice versa
+    INSERT INTO pgmemento.row_log AS r
+      (audit_id, event_key, old_data, new_data)
+    VALUES
+      (new_audit_id,
+       concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id(TG_OP), TG_TABLE_NAME, TG_TABLE_SCHEMA),
+       jsonb_diff_old, jsonb_diff_new)
+    ON CONFLICT (audit_id, event_key)
+    DO UPDATE SET
+      old_data = COALESCE(excluded.old_data, '{}'::jsonb) || COALESCE(r.old_data, '{}'::jsonb),
+      new_data = COALESCE(r.new_data, '{}'::jsonb) || COALESCE(excluded.new_data, '{}'::jsonb);
+  END IF;
+
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.log_truncate() RETURNS trigger AS
+$$
+BEGIN
+  -- log the whole content of the truncated table in the row_log table
+  PERFORM
+    pgmemento.log_old_table_state('{}'::text[], TG_TABLE_NAME, TG_TABLE_SCHEMA, event_key, TG_ARGV[0])
+  FROM
+    pgmemento.table_event_log
+  WHERE
+    transaction_id = current_setting('pgmemento.t' || txid_current())::int
+    AND table_name = TG_TABLE_NAME
+    AND schema_name = TG_TABLE_SCHEMA
+    AND op_id = 8;
+
+  RETURN NULL;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
 
 
 CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
@@ -102,54 +466,359 @@ LANGUAGE plpgsql STRICT
 SECURITY DEFINER;
 
 
-CREATE OR REPLACE FUNCTION pgmemento.log_transaction(current_txid BIGINT) RETURNS INTEGER AS
+CREATE OR REPLACE FUNCTION pgmemento.modify_ddl_log_tables(
+  tablename TEXT,
+  schemaname TEXT
+  ) RETURNS SETOF VOID AS
 $$
 DECLARE
-  session_info_text TEXT;
-  session_info_obj JSONB;
-  transaction_log_id INTEGER;
+  tab_id INTEGER;
 BEGIN
-  -- retrieve session_info set by client
-  BEGIN
-    session_info_text := current_setting('pgmemento.session_info');
+  -- get id from audit_table_log for given table
+  tab_id := pgmemento.register_audit_table($1, $2);
 
-    IF session_info_text IS NULL OR session_info_text = '' THEN
-      session_info_obj := NULL;
-    ELSE
-      session_info_obj := session_info_text::jsonb;
-    END IF;
+  IF tab_id IS NOT NULL THEN
+    -- insert columns that do not exist in audit_column_log table
+    INSERT INTO pgmemento.audit_column_log
+      (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
+    (
+      SELECT
+        nextval('pgmemento.audit_column_log_id_seq') AS id,
+        tab_id AS audit_table_id,
+        a.attname AS column_name,
+        a.attnum AS ordinal_position,
+        substr(
+          format_type(a.atttypid, a.atttypmod),
+          position('.' IN format_type(a.atttypid, a.atttypmod))+1,
+          length(format_type(a.atttypid, a.atttypmod))
+        ) AS data_type,
+        pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
+        a.attnotnull AS not_null,
+        numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
+      FROM
+        pg_attribute a
+      LEFT JOIN
+        pg_attrdef d
+        ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+      LEFT JOIN (
+        SELECT
+          a.audit_id_column,
+          c.ordinal_position,
+          c.column_name
+        FROM
+          pgmemento.audit_table_log a
+        JOIN
+          pgmemento.audit_column_log c
+          ON c.audit_table_id = a.id
+        WHERE
+          a.id = tab_id
+          AND upper(a.txid_range) IS NULL
+          AND lower(a.txid_range) IS NOT NULL
+          AND upper(c.txid_range) IS NULL
+          AND lower(c.txid_range) IS NOT NULL
+        ) acl
+      ON acl.ordinal_position = a.attnum
+      OR acl.audit_id_column = a.attname
+      WHERE
+        a.attrelid = pgmemento.get_table_oid($1, $2)
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        AND (acl.ordinal_position IS NULL
+         OR (acl.column_name <> a.attname
+        AND acl.audit_id_column <> a.attname))
+      ORDER BY
+        a.attnum
+    );
 
-    EXCEPTION
-      WHEN undefined_object THEN
-        session_info_obj := NULL;
-      WHEN invalid_text_representation THEN
-        BEGIN
-          session_info_obj := to_jsonb(current_setting('pgmemento.session_info'));
-        END;
-      WHEN others THEN
-        RAISE NOTICE 'Unable to parse session info: %', session_info_text;
-        session_info_obj := NULL;
-  END;
-
-  -- try to log corresponding transaction
-  INSERT INTO pgmemento.transaction_log
-    (txid, txid_time, process_id, user_name, client_name, client_port, application_name, session_info)
-  VALUES
-    ($1, transaction_timestamp(), pg_backend_pid(), session_user, inet_client_addr(), inet_client_port(),
-     current_setting('application_name'), session_info_obj
+    -- EVENT: Column dropped
+    -- update txid_range for removed columns in audit_column_log table
+    WITH dropped_columns AS (
+      SELECT
+        c.id
+      FROM
+        pgmemento.audit_table_log a
+      JOIN
+        pgmemento.audit_column_log c
+        ON c.audit_table_id = a.id
+      LEFT JOIN (
+        SELECT
+          attname AS column_name,
+          $1 AS table_name,
+          $2 AS schema_name
+        FROM
+          pg_attribute
+        WHERE
+          attrelid = pgmemento.get_table_oid($1, $2)
+        ) col
+        ON col.column_name = c.column_name
+        AND col.table_name = a.table_name
+        AND col.schema_name = a.schema_name
+      WHERE
+        a.id = tab_id
+        AND col.column_name IS NULL
+        AND upper(a.txid_range) IS NULL
+        AND lower(a.txid_range) IS NOT NULL
+        AND upper(c.txid_range) IS NULL
+        AND lower(c.txid_range) IS NOT NULL
     )
-  ON CONFLICT (txid_time, txid)
-    DO NOTHING
-  RETURNING id
-  INTO transaction_log_id;
+    UPDATE
+      pgmemento.audit_column_log acl
+    SET
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
+    FROM
+      dropped_columns dc
+    WHERE
+      acl.id = dc.id;
 
-  IF transaction_log_id IS NOT NULL THEN
-    PERFORM set_config('pgmemento.t' || $1, transaction_log_id::text, TRUE);
-  ELSE
-    transaction_log_id := current_setting('pgmemento.t' || $1)::int;
+    -- EVENT: Column altered
+    -- update txid_range for updated columns and insert new versions into audit_column_log table
+    WITH updated_columns AS (
+      SELECT
+        acl.id,
+        acl.audit_table_id,
+        col.column_name,
+        col.ordinal_position,
+        col.data_type,
+        col.column_default,
+        col.not_null
+      FROM (
+        SELECT
+          a.attname AS column_name,
+          a.attnum AS ordinal_position,
+          substr(
+            format_type(a.atttypid, a.atttypmod),
+            position('.' IN format_type(a.atttypid, a.atttypmod))+1,
+            length(format_type(a.atttypid, a.atttypmod))
+          ) AS data_type,
+          pg_get_expr(d.adbin, d.adrelid, TRUE) AS column_default,
+          a.attnotnull AS not_null,
+          $1 AS table_name,
+          $2 AS schema_name
+        FROM
+          pg_attribute a
+        LEFT JOIN
+          pg_attrdef d
+          ON (a.attrelid, a.attnum) = (d.adrelid, d.adnum)
+        WHERE
+          a.attrelid = pgmemento.get_table_oid($1, $2)
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+      ) col
+      JOIN (
+        SELECT
+          c.*,
+          a.table_name,
+          a.schema_name
+        FROM
+          pgmemento.audit_column_log c
+        JOIN
+          pgmemento.audit_table_log a
+          ON a.id = c.audit_table_id
+        WHERE
+          a.id = tab_id
+          AND upper(a.txid_range) IS NULL
+          AND lower(a.txid_range) IS NOT NULL
+          AND upper(c.txid_range) IS NULL
+          AND lower(c.txid_range) IS NOT NULL
+        ) acl
+        ON col.column_name = acl.column_name
+        AND col.table_name = acl.table_name
+        AND col.schema_name = acl.schema_name
+      WHERE
+        col.column_default IS DISTINCT FROM acl.column_default
+        OR col.not_null IS DISTINCT FROM acl.not_null
+        OR col.data_type IS DISTINCT FROM acl.data_type
+    ), insert_new_versions AS (
+      INSERT INTO pgmemento.audit_column_log
+        (id, audit_table_id, column_name, ordinal_position, data_type, column_default, not_null, txid_range)
+      (
+        SELECT
+          nextval('pgmemento.audit_column_log_id_seq') AS id,
+          audit_table_id,
+          column_name,
+          ordinal_position,
+          data_type,
+          column_default,
+          not_null,
+          numrange(current_setting('pgmemento.t' || txid_current())::numeric, NULL, '(]') AS txid_range
+        FROM
+          updated_columns
+      )
+    )
+    UPDATE
+      pgmemento.audit_column_log acl
+    SET
+      txid_range = numrange(lower(acl.txid_range), current_setting('pgmemento.t' || txid_current())::numeric, '(]')
+    FROM
+      updated_columns uc
+    WHERE
+      uc.id = acl.id;
+  END IF;
+END;
+$$
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.modify_row_log(
+  tablename TEXT,
+  schemaname TEXT,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text
+  ) RETURNS SETOF VOID AS
+$$
+DECLARE
+  added_columns TEXT[] := '{}'::text[];
+  altered_columns TEXT[] := '{}'::text[];
+BEGIN
+  SELECT
+    array_agg(c_new.column_name) FILTER (WHERE c_old.column_name IS NULL),
+    array_agg(c_new.column_name) FILTER (WHERE c_old.column_name IS NOT NULL)
+  INTO
+    added_columns,
+    altered_columns
+  FROM
+    pgmemento.audit_column_log c_new
+  JOIN
+    pgmemento.audit_table_log a
+    ON a.id = c_new.audit_table_id
+   AND a.table_name = $1
+   AND a.schema_name = $2
+  LEFT JOIN
+    pgmemento.audit_column_log c_old
+    ON c_old.column_name = c_new.column_name
+   AND c_old.ordinal_position = c_new.ordinal_position
+   AND c_old.audit_table_id = a.id
+   AND upper(c_old.txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
+  WHERE
+    lower(c_new.txid_range) = current_setting('pgmemento.t' || txid_current())::numeric
+    AND upper(c_new.txid_range) IS NULL;
+
+  IF added_columns IS NOT NULL OR array_length(added_columns, 1) > 0 THEN
+    PERFORM pgmemento.log_new_table_state(added_columns, $1, $2,
+      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ADD COLUMN'), $1, $2),
+      $3
+    );
   END IF;
 
-  RETURN transaction_log_id;
+  IF altered_columns IS NOT NULL OR array_length(altered_columns, 1) > 0 THEN
+    PERFORM pgmemento.log_new_table_state(altered_columns, $1, $2,
+      concat_ws(';', extract(epoch from transaction_timestamp()), extract(epoch from statement_timestamp()), txid_current(), pgmemento.get_operation_id('ALTER COLUMN'), $1, $2),
+      $3
+    );
+  END IF;
+END;
+$$
+LANGUAGE plpgsql STRICT
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.table_alter_post_trigger() RETURNS event_trigger AS
+$$
+DECLARE
+  obj RECORD;
+  tid INTEGER;
+  table_log_id INTEGER;
+  tg_tablename TEXT;
+  tg_schemaname TEXT;
+  current_table_name TEXT;
+  current_schema_name TEXT;
+  current_audit_id_column TEXT;
+  current_log_old_data BOOLEAN;
+  current_log_new_data BOOLEAN;
+  event_op_id SMALLINT;
+BEGIN
+  tid := current_setting('pgmemento.t' || txid_current())::int;
+
+  FOR obj IN
+    SELECT * FROM pg_event_trigger_ddl_commands()
+  LOOP
+    -- get table from trigger variable - remove quotes if exists
+    tg_tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+    tg_schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+
+    BEGIN
+      -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
+      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
+
+      -- get old table and schema name for this log_id
+      SELECT
+        table_name,
+        schema_name,
+        audit_id_column,
+        log_old_data,
+        log_new_data
+      INTO
+        current_table_name,
+        current_schema_name,
+        current_audit_id_column,
+        current_log_old_data,
+        current_log_new_data
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        log_id = table_log_id
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+
+      EXCEPTION
+        WHEN others THEN
+          NULL; -- no log id set or no open txid_range. Use names from obj.
+    END;
+
+    IF current_table_name IS NULL THEN
+      current_table_name := tg_tablename;
+      current_schema_name := tg_schemaname;
+
+      -- get current settings for audit table
+      SELECT
+        audit_id_column,
+        log_old_data,
+        log_new_data
+      INTO
+        current_audit_id_column,
+        current_log_old_data,
+        current_log_new_data
+      FROM
+        pgmemento.audit_table_log
+      WHERE
+        table_name = current_table_name
+        AND schema_name = current_schema_name
+        AND upper(txid_range) IS NULL
+        AND lower(txid_range) IS NOT NULL;
+    ELSE
+      -- table got renamed and so remember audit_id_column and logging behavior to register renamed version
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.audit_id.t' || txid_current(), current_audit_id_column, TRUE);
+      PERFORM set_config('pgmemento.' || tg_schemaname || '.' || tg_tablename || '.log_data.t' || txid_current(),
+        CASE WHEN current_log_old_data THEN 'old=true,' ELSE 'old=false,' END ||
+        CASE WHEN current_log_new_data THEN 'new=true' ELSE 'new=false' END, TRUE);
+    END IF;
+
+    -- modify audit_table_log and audit_column_log if DDL events happened
+    SELECT
+      op_id
+    INTO
+      event_op_id
+    FROM
+      pgmemento.table_event_log
+    WHERE
+      transaction_id = tid
+      AND table_name = current_table_name
+      AND schema_name = current_schema_name
+      AND op_id IN (12, 2, 21, 22, 5, 6);
+
+    IF event_op_id IS NOT NULL THEN
+      PERFORM pgmemento.modify_ddl_log_tables(tg_tablename, tg_schemaname);
+    END IF;
+
+    -- update row_log to with new log data
+    IF current_log_new_data AND (event_op_id = 2 OR event_op_id = 5) THEN
+      PERFORM pgmemento.modify_row_log(tg_tablename, tg_schemaname, current_audit_id_column);
+    END IF;
+  END LOOP;
+
+  EXCEPTION
+    WHEN undefined_object THEN
+      RETURN; -- no event has been logged, yet
 END;
 $$
 LANGUAGE plpgsql
@@ -209,6 +878,63 @@ BEGIN
         current_log_new_data,
         FALSE
       );
+    END IF;
+  END LOOP;
+END;
+$$
+LANGUAGE plpgsql
+SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION pgmemento.table_drop_post_trigger() RETURNS event_trigger AS
+$$
+DECLARE
+  obj RECORD;
+  tid INTEGER;
+  tablename TEXT;
+  schemaname TEXT;
+BEGIN
+  FOR obj IN
+    SELECT * FROM pg_event_trigger_dropped_objects()
+  LOOP
+    IF obj.object_type = 'table' AND NOT obj.is_temporary THEN
+      BEGIN
+        tid := current_setting('pgmemento.t' || txid_current())::int;
+
+        -- remove quotes if exists
+        tablename := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,2));
+        schemaname := pgmemento.trim_outer_quotes(split_part(obj.object_identity, '.' ,1));
+
+        -- if DROP AUDIT_ID event exists for table in the current transaction
+        -- only create a DROP TABLE event, because auditing has already stopped
+        IF EXISTS (
+          SELECT
+            1
+          FROM
+            pgmemento.table_event_log
+          WHERE
+            transaction_id = tid
+            AND table_name = tablename
+            AND schema_name = schemaname
+            AND op_id = 81  -- DROP AUDIT_ID event
+        ) THEN
+          PERFORM pgmemento.log_table_event(
+            tablename,
+            schemaname,
+            'DROP TABLE'
+          );
+        ELSE
+          -- update txid_range for removed table in audit_table_log table
+          PERFORM pgmemento.unregister_audit_table(
+            tablename,
+            schemaname
+          );
+        END IF;
+
+        EXCEPTION
+          WHEN undefined_object THEN
+            RETURN; -- no event has been logged, yet. Thus, table was not audited.
+      END;
     END IF;
   END LOOP;
 END;
