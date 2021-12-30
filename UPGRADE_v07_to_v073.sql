@@ -40,6 +40,90 @@ SELECT 'pgMemento 0.7.3'::text AS full_version, 0 AS major_version, 7 AS minor_v
 $$
 LANGUAGE sql;
 
+CREATE OR REPLACE FUNCTION pgmemento.start(
+  schemaname TEXT DEFAULT 'public'::text,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
+  log_old_data BOOLEAN DEFAULT TRUE,
+  log_new_data BOOLEAN DEFAULT FALSE,
+  trigger_create_table BOOLEAN DEFAULT FALSE,
+  except_tables TEXT[] DEFAULT '{}'
+  ) RETURNS TEXT AS
+$$
+DECLARE
+  schema_quoted TEXT;
+  current_audit_schema_log pgmemento.audit_schema_log%ROWTYPE;
+  txid_log_id INTEGER;
+  reinit_test TEXT := '';
+BEGIN
+  -- make sure schema is quoted no matter how it is passed to start
+  schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
+
+  -- check if schema is already logged
+  SELECT
+    *
+  INTO
+    current_audit_schema_log
+  FROM
+    pgmemento.audit_schema_log
+  WHERE
+    schema_name = pgmemento.trim_outer_quotes($1)
+    AND upper(txid_range) IS NULL;
+
+  IF current_audit_schema_log.id IS NULL THEN
+    RETURN format('pgMemento is not yet intialized for %s schema. Run init first.', schema_quoted);
+  END IF;
+
+  -- log transaction that starts pgMemento for a schema
+  -- and store configuration in session_info object
+  PERFORM set_config(
+    'pgmemento.session_info', '{"pgmemento_start": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'default_audit_id_column', $2,
+      'default_log_old_data', $3,
+      'default_log_new_data', $4,
+      'trigger_create_table', $5,
+      'except_tables', $6)::text
+    || '}',
+    TRUE
+  );
+  txid_log_id := pgmemento.log_transaction(txid_current());
+
+  -- enable triggers where they are not active
+  PERFORM
+    pgmemento.create_table_log_trigger(c.relname, $1, at.audit_id_column, asl.default_log_old_data, asl.default_log_new_data)
+  FROM
+    pg_class c
+  JOIN
+    pg_namespace n
+    ON c.relnamespace = n.oid
+  JOIN
+    pgmemento.audit_schema_log asl
+    ON asl.schema_name = n.nspname
+   AND lower(asl.txid_range) IS NOT NULL
+   AND upper(asl.txid_range) IS NULL
+  JOIN pgmemento.audit_tables at
+    ON at.tablename = c.relname
+   AND at.schemaname = n.nspname
+   AND NOT tg_is_active
+  WHERE
+    n.nspname = pgmemento.trim_outer_quotes($1)
+    AND c.relkind = 'r'
+    AND c.relname <> ALL (COALESCE($6,'{}'::text[]));
+
+  -- configuration differs, perform reinit
+  IF current_audit_schema_log.default_log_old_data != $3
+     OR current_audit_schema_log.default_log_new_data != $4
+     OR current_audit_schema_log.trigger_create_table != $5
+  THEN
+    PERFORM pgmemento.reinit($1, $2, $3, $4, $5, $6);
+    reinit_test := ' and reinitialized';
+  END IF;
+
+  RETURN format('pgMemento is started%s for %s schema.', reinit_test, schema_quoted);
+END;
+$$
+LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION pgmemento.unregister_audit_table(
   audit_table_name TEXT,
