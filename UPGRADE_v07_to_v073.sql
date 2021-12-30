@@ -40,6 +40,122 @@ SELECT 'pgMemento 0.7.3'::text AS full_version, 0 AS major_version, 7 AS minor_v
 $$
 LANGUAGE sql;
 
+CREATE OR REPLACE FUNCTION pgmemento.reinit(
+  schemaname TEXT DEFAULT 'public'::text,
+  audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
+  log_old_data BOOLEAN DEFAULT TRUE,
+  log_new_data BOOLEAN DEFAULT FALSE,
+  trigger_create_table BOOLEAN DEFAULT FALSE,
+  except_tables TEXT[] DEFAULT '{}'
+  ) RETURNS TEXT AS
+$$
+DECLARE
+  schema_quoted TEXT;
+  current_audit_schema_log pgmemento.audit_schema_log%ROWTYPE;
+  txid_log_id INTEGER;
+  rec RECORD;
+BEGIN
+  -- make sure schema is quoted no matter how it is passed to reinit
+  schema_quoted := quote_ident(pgmemento.trim_outer_quotes($1));
+
+  -- check if schema is already logged
+  SELECT
+    *
+  INTO
+    current_audit_schema_log
+  FROM
+    pgmemento.audit_schema_log
+  WHERE
+    schema_name = pgmemento.trim_outer_quotes($1)
+  ORDER BY
+    id DESC
+  LIMIT 1;
+
+  IF current_audit_schema_log.id IS NULL THEN
+    RETURN format('pgMemento has never been intialized for %s schema. Run init instread.', schema_quoted);
+  END IF;
+
+  IF upper(current_audit_schema_log.txid_range) IS NOT NULL THEN
+    RETURN format('pgMemento is already dropped from %s schema. Run init instead.', schema_quoted);
+  END IF;
+
+  -- log transaction that reinitializes pgMemento for a schema
+  -- and store configuration in session_info object
+  PERFORM set_config(
+    'pgmemento.session_info', '{"pgmemento_reinit": ' ||
+    jsonb_build_object(
+      'schema_name', $1,
+      'default_audit_id_column', $2,
+      'default_log_old_data', $3,
+      'default_log_new_data', $4,
+      'trigger_create_table', $5,
+      'except_tables', $6)::text
+    || '}', 
+    TRUE
+  );
+  txid_log_id := pgmemento.log_transaction(txid_current());
+
+  -- configuration differs, so reinitialize
+  IF current_audit_schema_log.default_audit_id_column != $2
+     OR current_audit_schema_log.default_log_old_data != $3
+     OR current_audit_schema_log.default_log_new_data != $4
+     OR current_audit_schema_log.trigger_create_table != $5
+  THEN
+    UPDATE pgmemento.audit_schema_log
+       SET txid_range = numrange(lower(txid_range), txid_log_id::numeric, '(]')
+     WHERE id = current_audit_schema_log.id;
+
+    -- create new entry in audit_schema_log
+    INSERT INTO pgmemento.audit_schema_log
+      (log_id, schema_name, default_audit_id_column, default_log_old_data, default_log_new_data, trigger_create_table, txid_range)
+    VALUES
+      (current_audit_schema_log.log_id, $1, $2, $3, $4, $5,
+       numrange(txid_log_id, NULL, '(]'));
+  END IF;
+
+  -- recreate auditing if parameters differ
+  FOR rec IN
+    SELECT
+      c.relname AS table_name,
+      n.nspname AS schema_name,
+      at.audit_id_column
+    FROM
+      pg_class c
+    JOIN
+      pg_namespace n
+      ON c.relnamespace = n.oid
+    JOIN pgmemento.audit_tables at
+      ON at.tablename = c.relname
+     AND at.schemaname = n.nspname
+     AND tg_is_active
+    WHERE
+      n.nspname = pgmemento.trim_outer_quotes($1)
+      AND c.relkind = 'r'
+      AND c.relname <> ALL (COALESCE($6,'{}'::text[]))
+      AND (at.audit_id_column IS DISTINCT FROM $2
+       OR at.log_old_data IS DISTINCT FROM $3
+       OR at.log_new_data IS DISTINCT FROM $4)
+  LOOP
+    -- drop auditing from table but do not log or drop anything
+    PERFORM pgmemento.drop_table_audit(rec.table_name, rec.schema_name, rec.audit_id_column, FALSE, FALSE);
+
+    -- log reinit event to keep log_id in audit_table_log
+    PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'REINIT TABLE');
+
+    -- recreate auditing
+    PERFORM pgmemento.create_table_audit(rec.table_name, rec.schema_name, $2, $3, $4, FALSE);
+  END LOOP;
+
+  -- update event triggers
+  IF $5 != current_audit_schema_log.trigger_create_table THEN
+    PERFORM pgmemento.create_schema_event_trigger($5);
+  END IF;
+
+  RETURN format('pgMemento is reinitialized for %s schema.', schema_quoted);
+END;
+$$
+LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION pgmemento.start(
   schemaname TEXT DEFAULT 'public'::text,
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
