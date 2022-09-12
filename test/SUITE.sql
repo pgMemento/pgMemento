@@ -54,6 +54,7 @@ VALUES
 
 -- test util functions
 \i test/log_util/TEST_DELETE_LOGS.sql
+\i test/function/TEST_JSON_COLUMN_FUNCTION.sql
 
 -- test CTL functions and uninstalling
 \i test/setup/TEST_STOP_START.sql
