@@ -17,6 +17,7 @@ VALUES
 
 -- test setup functions
 \i test/setup/TEST_INIT.sql
+\i test/setup/TEST_JSON_COLUMN_FUNCTION.sql
 
 -- test DDL logging
 \i test/ddl_log/TEST_CREATE_TABLE.sql
@@ -54,7 +55,6 @@ VALUES
 
 -- test util functions
 \i test/log_util/TEST_DELETE_LOGS.sql
-\i test/function/TEST_JSON_COLUMN_FUNCTION.sql
 
 -- test CTL functions and uninstalling
 \i test/setup/TEST_STOP_START.sql

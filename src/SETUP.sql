@@ -838,38 +838,12 @@ SECURITY DEFINER;
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
-DECLARE
-  result TEXT;
-  single_row TEXT;
-  ind integer;
-  local_columns TEXT[] := ARRAY[]::TEXT[];
-BEGIN
-	FOR ind IN array_lower($1, 1)..array_upper($1, 1)
-	LOOP
-		local_columns := local_columns || $1[ind];
-		IF ((ind > 0 AND ind % 50 = 0) OR array_length($1, 1) = ind) THEN
-      single_row := (
-        SELECT
-          'jsonb_build_object(' || array_to_string(array_agg(format('%L, %I', k, v)), ', ') || ')'
-        FROM
-          unnest(local_columns) k,
-          unnest(local_columns) v
-        WHERE
-        k = v
-      );
-      local_columns := ARRAY[]::TEXT[];
-      IF LENGTH(result) > 0 THEN
-		    result := result || ' || ' || single_row;
-      ELSE
-        result := single_row;
-      END IF;
-    END IF;
-	END LOOP;
-
-	RETURN result;
-END;
+  SELECT
+    'SELECT d FROM (SELECT ' || array_to_string(array_agg(format('%I', k)), ', ') || ') d'
+  FROM
+    unnest($1) k
 $$
-LANGUAGE plpgsql IMMUTABLE STRICT;
+LANGUAGE sql IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.log_old_table_state(
   columns TEXT[],
@@ -884,7 +858,7 @@ BEGIN
     -- log content of given columns
     EXECUTE format(
       'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, old_data)
-         SELECT %I, $1, '|| pgmemento.column_array_to_column_list($1) ||' AS content
+         SELECT %I, $1, to_jsonb(('||pgmemento.column_array_to_column_list($1)||')) AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
        DO UPDATE SET
@@ -918,7 +892,7 @@ BEGIN
     -- log content of given columns
     EXECUTE format(
       'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, new_data)
-         SELECT %I, $1, '||pgmemento.column_array_to_column_list($1)||' AS content
+         SELECT %I, $1, to_jsonb(('||pgmemento.column_array_to_column_list($1)||')) AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
        DO UPDATE SET new_data = COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
