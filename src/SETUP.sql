@@ -838,13 +838,10 @@ SECURITY DEFINER;
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
 $$
-SELECT
-  array_to_string(array_agg(format('%L, %I', k, v)), ', ')
-FROM
-  unnest($1) k,
-  unnest($1) v
-WHERE
-  k = v;
+  SELECT
+    'SELECT d FROM (SELECT ' || array_to_string(array_agg(format('%I', k)), ', ') || ') d'
+  FROM
+    unnest($1) k
 $$
 LANGUAGE sql IMMUTABLE STRICT;
 
@@ -861,7 +858,7 @@ BEGIN
     -- log content of given columns
     EXECUTE format(
       'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, old_data)
-         SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+         SELECT %I, $1, to_jsonb(('||pgmemento.column_array_to_column_list($1)||')) AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
        DO UPDATE SET
@@ -895,7 +892,7 @@ BEGIN
     -- log content of given columns
     EXECUTE format(
       'INSERT INTO pgmemento.row_log AS r (audit_id, event_key, new_data)
-         SELECT %I, $1, jsonb_build_object('||pgmemento.column_array_to_column_list($1)||') AS content
+         SELECT %I, $1, to_jsonb(('||pgmemento.column_array_to_column_list($1)||')) AS content
            FROM %I.%I ORDER BY %I
        ON CONFLICT (audit_id, event_key)
        DO UPDATE SET new_data = COALESCE(r.new_data, ''{}''::jsonb) || COALESCE(excluded.new_data, ''{}''::jsonb)',
