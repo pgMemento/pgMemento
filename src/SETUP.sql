@@ -15,6 +15,8 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.14    2022-09-20   use column_array_to_column_list with to_jsonb       ekeuus
+--                        because jsonb_build_object has arg limit of 100
 -- 0.7.13    2021-12-23   concat jsonb logs on upsert                         FKun
 -- 0.7.12    2021-12-23   session variables must start with letter in Pg14    ol-teuto
 -- 0.7.11    2021-03-28   exclude audit_tables with empty txid_range          FKun
