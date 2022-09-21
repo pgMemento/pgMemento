@@ -41,7 +41,7 @@ $$
 LANGUAGE plpgsql;
 
 \echo
-\echo 'TEST ':n'.1: pgmemento.column_array_to_column_list should work with 2 columns'
+\echo 'TEST ':n'.2: pgmemento.column_array_to_column_list should work with 2 columns'
 DO
 $$
 DECLARE
