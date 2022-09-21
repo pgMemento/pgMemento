@@ -14,7 +14,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
--- 0.7.3     2022-09-12   initial commit                                   FKun
+-- 0.1.0     2022-09-20   initial commit                                   ekeuus
 --
 
 -- get test number
