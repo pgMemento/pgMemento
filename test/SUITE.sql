@@ -17,7 +17,7 @@ VALUES
 
 -- test setup functions
 \i test/setup/TEST_INIT.sql
-\i test/setup/TEST_JSON_COLUMN_FUNCTION.sql
+\i test/setup/TEST_COLUMN_ARRAY_TO_COLUMN_LIST.sql
 
 -- test DDL logging
 \i test/ddl_log/TEST_CREATE_TABLE.sql
