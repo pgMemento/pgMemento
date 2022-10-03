@@ -16,6 +16,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.4.0     2022-10-03   bump to 7.4                                    FKun
 -- 0.3.0     2021-12-27   bump to 7.3                                    FKun
 -- 0.2.0     2021-03-21   reflect fixes for v0.7.2                       FKun
 -- 0.1.0     2020-07-30   initial commit                                 FKun

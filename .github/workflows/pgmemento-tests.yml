@@ -12,7 +12,7 @@ jobs:
         pg: [10, 11, 12, 13, 14, 15]
     services:
       postgres:
-        image: postgis/postgis:${{ matrix.pg }}-3.3
+        image: postgis/postgis:${{ matrix.pg }}-3.2
         env:
           POSTGRES_DB: postgres
           POSTGRES_USER: postgres
