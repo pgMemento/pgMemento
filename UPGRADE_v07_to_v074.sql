@@ -1,4 +1,4 @@
--- UPGRADE_v07_to_v073.sql
+-- UPGRADE_v07_to_v074.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -36,7 +36,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.3'::text AS full_version, 0 AS major_version, 7 AS minor_version, 3 AS revision, '93'::text AS build_id;
+SELECT 'pgMemento 0.7.4'::text AS full_version, 0 AS major_version, 7 AS minor_version, 4 AS revision, '100'::text AS build_id;
 $$
 LANGUAGE sql;
 
@@ -404,6 +404,15 @@ $$
 LANGUAGE plpgsql STRICT
 SECURITY DEFINER;
 
+
+CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
+$$
+  SELECT
+    'SELECT d FROM (SELECT ' || array_to_string(array_agg(format('%I', k)), ', ') || ') d'
+  FROM
+    unnest($1) k
+$$
+LANGUAGE sql IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.log_old_table_state(
   columns TEXT[],

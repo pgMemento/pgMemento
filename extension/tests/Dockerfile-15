@@ -1,0 +1,2 @@
+FROM postgres:15
+RUN apt-get update -y && apt-get install -y postgresql-15-postgis-3 cmake libpq-dev postgresql-server-dev-15 zip unzip python3-pip
