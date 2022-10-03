@@ -21,7 +21,7 @@ jobs:
         ports:
           - 5432:5432
         # needed because the postgres container does not provide a healthcheck
-        options: --health-cmd pg_isready --health-interval 20s --health-timeout 5s --health-retries 5
+        options: --health-cmd pg_isready --health-interval 20s --health-timeout 10s --health-retries 5
 
     steps:
       - uses: actions/checkout@v2
@@ -32,7 +32,7 @@ jobs:
           psql -d postgresql://postgres@localhost/postgres -U postgres -tc "create database pgmemento_testdb"
         env:
           PGPASSWORD: password
-      - name: run pgmemento tests and upgrade to v0.7.3
+      - name: run pgmemento tests and upgrade to v0.7.4
         run: |
           psql -d postgresql://postgres@localhost/pgmemento_testdb -U postgres -a -f TEST.sql
         env:
