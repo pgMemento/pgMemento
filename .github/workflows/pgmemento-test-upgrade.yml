@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [11, 12, 13, 14]
+        pg: [11, 12, 13, 14, 15]
     services:
       postgres:
         image: postgis/postgis:${{ matrix.pg }}-3.3
@@ -26,8 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          ref: refs/tags/v0.7.2
-      - name: create new empty database of v0.7.2
+          ref: refs/tags/v0.7.3
+      - name: create new empty database of v0.7.3
         run: |
           psql -d postgresql://postgres@localhost/postgres -U postgres -tc "create database pgmemento_testdb"
         env:
