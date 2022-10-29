@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script upgrades a pgMemento extension of v0.7.0 to v0.7.3 which
+-- This script upgrades a pgMemento extension of v0.7.0 to v0.7.4 which
 -- replaces some functions (see changelog for more details)
 --
 -------------------------------------------------------------------------------
@@ -23,7 +23,7 @@
 --
 
 \echo
-\echo 'Updgrade pgMemento from v0.7.0 to v0.7.3 ...'
+\echo 'Updgrade pgMemento from v0.7.0 to v0.7.4 ...'
 
 COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of session_user function';
 
