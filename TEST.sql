@@ -40,7 +40,7 @@ CREATE EXTENSION postgis;
 \i test/SUITE.sql
 
 -- test upgrade script
-\i UPGRADE_v07_to_v073.sql
+\i UPGRADE_v07_to_v074.sql
 
 \echo
 \echo 'Uninstall pgMemento'

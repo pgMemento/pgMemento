@@ -1,4 +1,4 @@
--- TEST_DELETE_LOGS.sql
+-- TEST_COLUMN_ARRAY_TO_COLUMN_LIST.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --

@@ -1,4 +1,4 @@
--- UPGRADE_v07_to_v073.sql
+-- UPGRADE_v07_to_v074.sql
 --
 -- Author:      Felix Kunde <felix-kunde@gmx.de>
 --
@@ -8,7 +8,7 @@
 --              for more details.
 -------------------------------------------------------------------------------
 -- About:
--- This script upgrades a pgMemento extension of v0.7.0 to v0.7.3 which
+-- This script upgrades a pgMemento extension of v0.7.0 to v0.7.4 which
 -- replaces some functions (see changelog for more details)
 --
 -------------------------------------------------------------------------------
@@ -16,13 +16,14 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                  | Author
+-- 0.4.0     2022-10-03   bump to 7.4                                    FKun
 -- 0.3.0     2021-12-27   bump to 7.3                                    FKun
 -- 0.2.0     2021-03-21   reflect fixes for v0.7.2                       FKun
 -- 0.1.0     2020-07-30   initial commit                                 FKun
 --
 
 \echo
-\echo 'Updgrade pgMemento from v0.7.0 to v0.7.3 ...'
+\echo 'Updgrade pgMemento from v0.7.0 to v0.7.4 ...'
 
 COMMENT ON COLUMN pgmemento.transaction_log.user_name IS 'Stores the result of session_user function';
 
@@ -36,7 +37,7 @@ CREATE OR REPLACE FUNCTION pgmemento.version(
   OUT build_id TEXT
   ) RETURNS RECORD AS
 $$
-SELECT 'pgMemento 0.7.3'::text AS full_version, 0 AS major_version, 7 AS minor_version, 3 AS revision, '93'::text AS build_id;
+SELECT 'pgMemento 0.7.4'::text AS full_version, 0 AS major_version, 7 AS minor_version, 4 AS revision, '100'::text AS build_id;
 $$
 LANGUAGE sql;
 
@@ -404,6 +405,15 @@ $$
 LANGUAGE plpgsql STRICT
 SECURITY DEFINER;
 
+
+CREATE OR REPLACE FUNCTION pgmemento.column_array_to_column_list(columns TEXT[]) RETURNS TEXT AS
+$$
+  SELECT
+    'SELECT d FROM (SELECT ' || array_to_string(array_agg(format('%I', k)), ', ') || ') d'
+  FROM
+    unnest($1) k
+$$
+LANGUAGE sql IMMUTABLE STRICT;
 
 CREATE OR REPLACE FUNCTION pgmemento.log_old_table_state(
   columns TEXT[],

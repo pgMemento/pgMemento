@@ -1,6 +1,6 @@
 # pgMemento extension
 comment = 'Audit trail with schema versioning for PostgreSQL using transaction-based logging'
-default_version = '0.7.3'
+default_version = '0.7.4'
 module_pathname = '$libdir/pgmemento'
 superuser = false
 relocatable = false

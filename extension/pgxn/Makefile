@@ -7,9 +7,9 @@ REGRESS      = $(patsubst test/sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --inputdir=test --load-language=plpgsql
 DOCS         = doc/README.pgmemento
 PG_CONFIG    = pg_config
-PG95         = $(shell $(PG_CONFIG) --version | grep -qE " 8\\.| 9\\.0|9\\.1|9\\.2|9\\.3|9\\.4" && echo no || echo yes)
+PG96         = $(shell $(PG_CONFIG) --version | grep -qE " 8\\.| 9\\.0|9\\.1|9\\.2|9\\.3|9\\.4|9\\.5" && echo no || echo yes)
 
-ifeq ($(PG95),yes)
+ifeq ($(PG96),yes)
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
 

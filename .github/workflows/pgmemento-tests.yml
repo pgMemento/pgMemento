@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [9.6, 10, 11, 12, 13, 14]
+        pg: [11, 12, 13, 14, 15]
     services:
       postgres:
-        image: postgis/postgis:${{ matrix.pg }}-3.1
+        image: postgis/postgis:${{ matrix.pg }}-3.3
         env:
           POSTGRES_DB: postgres
           POSTGRES_USER: postgres
@@ -21,7 +21,7 @@ jobs:
         ports:
           - 5432:5432
         # needed because the postgres container does not provide a healthcheck
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        options: --health-cmd pg_isready --health-interval 20s --health-timeout 60s --health-retries 5
 
     steps:
       - uses: actions/checkout@v2
