@@ -1254,11 +1254,12 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_event_trigger(
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
-    -- Skip event triggers if skip_schema_event_triggers is set to TRUE.
-    -- We are only interested in DML events and this requriers elevated privileges.
-    IF skip_schema_event_triggers THEN
-      RETURN;
-    END IF;
+
+  -- Skip event triggers if skip_schema_event_triggers is set to TRUE.
+  -- We are only interested in DML events and this requriers elevated privileges.
+  IF skip_schema_event_triggers THEN
+    RETURN;
+  END IF;
 
   -- Create event trigger for DROP SCHEMA events to log data
   -- before it is lost

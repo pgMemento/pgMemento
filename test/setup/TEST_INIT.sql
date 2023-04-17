@@ -33,7 +33,7 @@ DO
 $$
 BEGIN
   -- create the event triggers
-  PERFORM pgmemento.create_schema_event_trigger(TRUE);
+  PERFORM pgmemento.create_schema_event_trigger(TRUE, FALSE);
 
   -- query for event triggers
   ASSERT (

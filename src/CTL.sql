@@ -99,7 +99,7 @@ BEGIN
      numrange(txid_log_id, NULL, '(]'));
 
   -- create event trigger to log schema changes
-  PERFORM pgmemento.create_schema_event_trigger($6);
+  PERFORM pgmemento.create_schema_event_trigger($6, FALSE);
 
   -- start auditing for tables in given schema'
   PERFORM pgmemento.create_schema_audit(pgmemento.trim_outer_quotes($1), $2, $3, $4, $5, $6, $7);
@@ -159,7 +159,7 @@ BEGIN
       'default_log_new_data', $4,
       'trigger_create_table', $5,
       'except_tables', $6)::text
-    || '}', 
+    || '}',
     TRUE
   );
   txid_log_id := pgmemento.log_transaction(txid_current());
@@ -217,7 +217,7 @@ BEGIN
 
   -- update event triggers
   IF $5 != current_audit_schema_log.trigger_create_table THEN
-    PERFORM pgmemento.create_schema_event_trigger($5);
+    PERFORM pgmemento.create_schema_event_trigger($5, FALSE);
   END IF;
 
   RETURN format('pgMemento is reinitialized for %s schema.', schema_quoted);

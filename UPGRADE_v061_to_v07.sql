@@ -200,7 +200,7 @@ DO
 $$
 DECLARE
   rec RECORD;
-  remove_all_tx_tg BOOLEAN := TRUE; 
+  remove_all_tx_tg BOOLEAN := TRUE;
 BEGIN
   FOR rec IN
     SELECT schemaname, tablename
@@ -218,7 +218,7 @@ DROP TABLE pgmemento.audit_tables_copy;
 
 \echo
 \echo 'Recreate event triggers'
-SELECT pgmemento.create_schema_event_trigger(:'trigger_create_table_enabled');
+SELECT pgmemento.create_schema_event_trigger(:'trigger_create_table_enabled', FALSE);
 
 \echo
 \echo 'pgMemento upgrade completed!'
