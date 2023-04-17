@@ -1249,10 +1249,17 @@ SECURITY DEFINER;
 * created, altered or dropped
 **********************************************************/
 CREATE OR REPLACE FUNCTION pgmemento.create_schema_event_trigger(
-  trigger_create_table BOOLEAN DEFAULT FALSE
+  trigger_create_table BOOLEAN DEFAULT FALSE,
+  skip_schema_event_triggers BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 BEGIN
+    -- Skip event triggers if skip_schema_event_triggers is set to TRUE.
+    -- We are only interested in DML events and this requriers elevated privileges.
+    IF skip_schema_event_triggers THEN
+      RETURN;
+    END IF;
+
   -- Create event trigger for DROP SCHEMA events to log data
   -- before it is lost
   IF NOT EXISTS (
