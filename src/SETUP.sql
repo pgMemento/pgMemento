@@ -1284,7 +1284,8 @@ CREATE OR REPLACE FUNCTION pgmemento.create_table_audit(
   audit_id_column_name TEXT DEFAULT 'pgmemento_audit_id'::text,
   log_old_data BOOLEAN DEFAULT TRUE,
   log_new_data BOOLEAN DEFAULT FALSE,
-  log_state BOOLEAN DEFAULT FALSE
+  log_state BOOLEAN DEFAULT FALSE,
+  skip_schema_event_triggers boolean DEFAULT false
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -1311,7 +1312,7 @@ BEGIN
       AND c.relname <> $1
       AND c.relkind = 'r';
 
-    PERFORM pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, except_tables);
+    PERFORM pgmemento.create_schema_audit($2, $3, $4, $5, $6, FALSE, except_tables, $7);
     RETURN;
   END IF;
 
@@ -1346,7 +1347,8 @@ CREATE OR REPLACE FUNCTION pgmemento.create_schema_audit(
   log_new_data BOOLEAN DEFAULT FALSE,
   log_state BOOLEAN DEFAULT FALSE,
   trigger_create_table BOOLEAN DEFAULT FALSE,
-  except_tables TEXT[] DEFAULT '{}'
+  except_tables TEXT[] DEFAULT '{}',
+  skip_schema_event_triggers BOOLEAN DEFAULT FALSE
   ) RETURNS SETOF VOID AS
 $$
 DECLARE
@@ -1359,7 +1361,7 @@ BEGIN
 
   -- if not initialize pgMemento, this will also call create_schema_audit
   IF current_txid_range IS NULL THEN
-    PERFORM pgmemento.init($1, $2, $3, $4, $5, $6, $7);
+    PERFORM pgmemento.init($1, $2, $3, $4, $5, $6, $7, $8);
     RETURN;
   ELSE
     IF upper(current_txid_range) IS NOT NULL THEN
@@ -1369,7 +1371,7 @@ BEGIN
   END IF;
 
   PERFORM
-    pgmemento.create_table_audit(c.relname, $1, $2, $3, $4, $5)
+    pgmemento.create_table_audit(c.relname, $1, $2, $3, $4, $5, $8)
   FROM
     pg_class c
   JOIN

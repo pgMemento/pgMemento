@@ -163,7 +163,8 @@ CREATE OR REPLACE FUNCTION pgmemento.start(
   log_old_data BOOLEAN DEFAULT TRUE,
   log_new_data BOOLEAN DEFAULT FALSE,
   trigger_create_table BOOLEAN DEFAULT FALSE,
-  except_tables TEXT[] DEFAULT '{}'
+  except_tables TEXT[] DEFAULT '{}',
+  skip_schema_event_triggers boolean DEFAULT false
   ) RETURNS TEXT AS
 $$
 DECLARE
@@ -233,7 +234,7 @@ BEGIN
      OR current_audit_schema_log.default_log_new_data != $4
      OR current_audit_schema_log.trigger_create_table != $5
   THEN
-    PERFORM pgmemento.reinit($1, $2, $3, $4, $5, $6);
+    PERFORM pgmemento.reinit($1, $2, $3, $4, $5, $6, $7);
     reinit_test := ' and reinitialized';
   END IF;
 

@@ -115,7 +115,8 @@ CREATE OR REPLACE FUNCTION pgmemento.reinit(
   log_old_data BOOLEAN DEFAULT TRUE,
   log_new_data BOOLEAN DEFAULT FALSE,
   trigger_create_table BOOLEAN DEFAULT FALSE,
-  except_tables TEXT[] DEFAULT '{}'
+  except_tables TEXT[] DEFAULT '{}',
+  skip_schema_event_triggers boolean DEFAULT false
   ) RETURNS TEXT AS
 $$
 DECLARE
@@ -212,12 +213,12 @@ BEGIN
     PERFORM pgmemento.log_table_event(rec.table_name, rec.schema_name, 'REINIT TABLE');
 
     -- recreate auditing
-    PERFORM pgmemento.create_table_audit(rec.table_name, rec.schema_name, $2, $3, $4, FALSE);
+    PERFORM pgmemento.create_table_audit(rec.table_name, rec.schema_name, $2, $3, $4, FALSE, $7);
   END LOOP;
 
   -- update event triggers
   IF $5 != current_audit_schema_log.trigger_create_table THEN
-    PERFORM pgmemento.create_schema_event_trigger($5, FALSE);
+    PERFORM pgmemento.create_schema_event_trigger($5, $7);
   END IF;
 
   RETURN format('pgMemento is reinitialized for %s schema.', schema_quoted);
