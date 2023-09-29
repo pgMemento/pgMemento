@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                       | Author
+-- 0.7.15    2023-09-30   no quotes setting in register_audit_table           FKun
 -- 0.7.14    2022-09-20   use column_array_to_column_list with to_jsonb       ekeuus
 --                        because jsonb_build_object has arg limit of 100
 -- 0.7.13    2021-12-23   concat jsonb logs on upsert                         FKun
@@ -482,7 +483,7 @@ BEGIN
 
   BEGIN
     -- check if table exists in 'audit_table_log' with another name (and open range)
-    table_log_id := current_setting('pgmemento.' || quote_ident($2) || '.' || quote_ident($1))::int;
+    table_log_id := current_setting('pgmemento.' || $2 || '.' || $1)::int;
 
     IF NOT EXISTS (
       SELECT
