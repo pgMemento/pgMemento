@@ -15,6 +15,7 @@
 -- ChangeLog:
 --
 -- Version | Date       | Description                                    | Author
+-- 0.7.10    2023-09-30   no quoted variables for set_config               FKun
 -- 0.7.9     2021-12-23   session variables starting with letter           ol-teuto
 -- 0.7.8     2020-04-13   remove txid from log_table_event                 FKun
 -- 0.7.7     2020-04-05   add tags CREATE TABLE AS and SELECT INTO         FKun
@@ -734,7 +735,7 @@ BEGIN
 
     BEGIN
       -- check if event required to remember log_id from audit_table_log (e.g. RENAME)
-      table_log_id := current_setting('pgmemento.' || obj.object_identity)::int;
+      table_log_id := current_setting('pgmemento.' || tg_schemaname || '.' || tg_tablename)::int;
 
       -- get old table and schema name for this log_id
       SELECT
@@ -904,8 +905,8 @@ BEGIN
       -- make sure to quote ident as variable will later be read
       -- from obj trigger variable which can come with quotes
       PERFORM set_config(
-        'pgmemento.' || quote_ident(schemaname) || '.' ||
-        pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text))),
+        'pgmemento.' || schemaname || '.' ||
+        pgmemento.trim_outer_quotes(pgmemento.fetch_ident(substr(ddl_text,11,length(ddl_text)))),
         table_log_id::text,
         TRUE
       );
