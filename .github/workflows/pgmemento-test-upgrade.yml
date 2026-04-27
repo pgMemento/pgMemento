@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        pg: [13, 14, 15, 16, 17]
+        pg: ["13-3.5", "14-3.5", "15-3.5", "16-3.5", "17-3.5", "18-3.6"]
     services:
       postgres:
-        image: postgis/postgis:${{ matrix.pg }}-3.5
+        image: postgis/postgis:${{ matrix.pg }}
         env:
           POSTGRES_DB: postgres
           POSTGRES_USER: postgres
@@ -24,7 +24,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 20s --health-timeout 10s --health-retries 5
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
         with:
           ref: refs/tags/v0.7.3
       - name: create new empty database of v0.7.3
